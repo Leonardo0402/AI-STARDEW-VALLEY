@@ -1,7 +1,7 @@
 /**
  * Core 包测试 — 覆盖 Reducer、Dedup、StateMachine、Store、Policy、Gateway、Projection。
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   SnapshotStore,
   EventDeduplicator,
@@ -21,6 +21,7 @@ import {
   type DomainEvent,
   type RuntimeSnapshot,
   type OfficeCommand,
+  type CommandResult,
   type AgentStatusChangedPayload,
   type TaskCreatedPayload,
   type TaskAssignedPayload,
@@ -40,7 +41,7 @@ function makeEvent<P>(
   seq: number,
   type: string,
   payload: P,
-  overrides: Partial<DomainEvent> = {}
+  overrides: Partial<DomainEvent<P>> = {}
 ): DomainEvent<P> {
   const now = new Date().toISOString();
   return {
@@ -289,11 +290,130 @@ describe("Reducer", () => {
       approvalId: "ap1", status: "rejected" as const, resolvedBy: "user-1",
     })).snapshot;
     expect(snap.approvals[0].status).toBe("rejected");
-    // task should go to revision_required (waiting_approval → revision_required is valid? let's check)
-    // From the state machine: waiting_approval → reviewing, completed, cancelled
-    // Actually revision_required is not in waiting_approval transitions
-    // So the task stays in waiting_approval
-    // This is a design choice - rejection from waiting_approval might need special handling
+    // 断言：审批被拒绝后，Task 必须进入 revision_required
+    expect(snap.tasks[0].status).toBe("revision_required");
+  });
+
+  it("should move task to revision_required when artifact review verdict is revision_required", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(2, EventType.TASK_ASSIGNED, {
+      taskId: "t1", agentId: "w1", roomId: "room-exec",
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(3, EventType.TASK_STARTED, {
+      taskId: "t1", agentId: "w1",
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(4, EventType.ARTIFACT_CREATED, {
+      artifactId: "art1", taskId: "t1", producerAgentId: "w1",
+      type: "report", title: "Report", uri: null, version: 1,
+    })).snapshot;
+    // 审查要求返工
+    snap = reduceEvent(snap, makeEvent(5, EventType.ARTIFACT_REVIEWED, {
+      artifactId: "art1", reviewerId: "r1",
+      verdict: "revision_required" as const, comment: "fix it",
+    })).snapshot;
+    // 断言：artifact 进入 revision_required
+    expect(snap.artifacts[0].status).toBe("revision_required");
+    // 断言：关联 Task 必须进入 revision_required
+    expect(snap.tasks[0].status).toBe("revision_required");
+  });
+
+  it("should prevent task completion when approval is requested", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(2, EventType.TASK_ASSIGNED, {
+      taskId: "t1", agentId: "w1", roomId: "room-exec",
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(3, EventType.TASK_STARTED, {
+      taskId: "t1", agentId: "w1",
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(4, EventType.APPROVAL_REQUESTED, {
+      approvalId: "ap1", taskId: "t1",
+      kind: "artifact_delivery" as const,
+      requestedBy: "r1", reason: "review",
+    })).snapshot;
+    // 审批处于 requested 状态时，Task 不得完成
+    const result = reduceEvent(snap, makeEvent(5, EventType.TASK_COMPLETED, {
+      taskId: "t1",
+    }));
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.snapshot.tasks[0].status).toBe("waiting_approval");
+  });
+
+  it("should prevent task completion when approval is rejected", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(2, EventType.TASK_ASSIGNED, {
+      taskId: "t1", agentId: "w1", roomId: "room-exec",
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(3, EventType.TASK_STARTED, {
+      taskId: "t1", agentId: "w1",
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(4, EventType.APPROVAL_REQUESTED, {
+      approvalId: "ap1", taskId: "t1",
+      kind: "artifact_delivery" as const,
+      requestedBy: "r1", reason: "review",
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(5, EventType.APPROVAL_RESOLVED, {
+      approvalId: "ap1", status: "rejected" as const, resolvedBy: "user-1",
+    })).snapshot;
+    // 审批被拒绝后，Task 处于 revision_required，不得完成
+    const result = reduceEvent(snap, makeEvent(6, EventType.TASK_COMPLETED, {
+      taskId: "t1",
+    }));
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.snapshot.tasks[0].status).toBe("revision_required");
+  });
+
+  it("should clean up old assignee on task reassignment (Worker → Reviewer)", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    // 初始化两个 agent
+    snap = reduceEvent(snap, makeEvent(1, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(2, EventType.AGENT_SPAWNED, {
+      agentId: "r1", name: "Reviewer-1", role: "reviewer" as const,
+    })).snapshot;
+    // 预设两个 room（Room 是初始数据，不通过事件创建）
+    snap.rooms.push(
+      { roomId: "room-exec", runtimeId: RUNTIME_ID, name: "Execution", type: "execution", bounds: { x: 0, y: 0, width: 100, height: 100 }, activeAgentIds: [], visualState: {} },
+      { roomId: "room-review", runtimeId: RUNTIME_ID, name: "Review", type: "review", bounds: { x: 0, y: 0, width: 100, height: 100 }, activeAgentIds: [], visualState: {} },
+    );
+    // 创建任务并分配给 Worker-1
+    snap = reduceEvent(snap, makeEvent(3, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    snap = reduceEvent(snap, makeEvent(4, EventType.TASK_ASSIGNED, {
+      taskId: "t1", agentId: "w1", roomId: "room-exec",
+    })).snapshot;
+    expect(snap.tasks[0].assigneeId).toBe("w1");
+    expect(snap.agents.find((a) => a.agentId === "w1")!.currentTaskId).toBe("t1");
+    expect(snap.rooms.find((r) => r.roomId === "room-exec")!.activeAgentIds).toContain("w1");
+    // 转交给 Reviewer-1（新 room）
+    snap = reduceEvent(snap, makeEvent(5, EventType.TASK_ASSIGNED, {
+      taskId: "t1", agentId: "r1", roomId: "room-review",
+    })).snapshot;
+    // 断言：新 assignee 是 r1
+    expect(snap.tasks[0].assigneeId).toBe("r1");
+    expect(snap.tasks[0].roomId).toBe("room-review");
+    // 断言：旧 Worker 不再持有此 Task
+    expect(snap.agents.find((a) => a.agentId === "w1")!.currentTaskId).toBeNull();
+    // 断言：旧 Worker 已从旧 Room 移除
+    expect(snap.rooms.find((r) => r.roomId === "room-exec")!.activeAgentIds).not.toContain("w1");
+    // 断言：新 Reviewer 持有此 Task
+    expect(snap.agents.find((a) => a.agentId === "r1")!.currentTaskId).toBe("t1");
+    // 断言：新 Reviewer 在新 Room
+    expect(snap.rooms.find((r) => r.roomId === "room-review")!.activeAgentIds).toContain("r1");
   });
 });
 
@@ -362,14 +482,57 @@ describe("SnapshotStore", () => {
 
   it("should reject stale sequence numbers", () => {
     const store = new SnapshotStore(RUNTIME_ID);
-    store.applyEvent(makeEvent(5, EventType.AGENT_SPAWNED, {
+    store.applyEvent(makeEvent(1, EventType.AGENT_SPAWNED, {
       agentId: "w1", name: "Worker-1", role: "worker" as const,
     }));
-    const r = store.applyEvent(makeEvent(3, EventType.AGENT_SPAWNED, {
+    // 相同 sequence（等于 lastSequence），用不同 eventId 避免先被 dedup 拦截
+    const r = store.applyEvent(makeEvent(1, EventType.AGENT_SPAWNED, {
       agentId: "w2", name: "Worker-2", role: "worker" as const,
-    }));
+    }, { eventId: "evt-1b" }));
     expect(r.applied).toBe(false);
     expect(r.reason).toContain("stale sequence");
+  });
+
+  it("should reject runtime mismatch", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    const r = store.applyEvent(makeEvent(1, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    }, { runtimeId: "other-runtime" }));
+    expect(r.applied).toBe(false);
+    expect(r.reason).toContain("runtime mismatch");
+    // 被拒绝的事件不应进入 snapshot
+    expect(store.getSnapshot().agents).toHaveLength(0);
+  });
+
+  it("should reject sequence gap", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    store.applyEvent(makeEvent(1, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    }));
+    // seq=3 跳过了 seq=2
+    const r = store.applyEvent(makeEvent(3, EventType.AGENT_SPAWNED, {
+      agentId: "w2", name: "Worker-2", role: "worker" as const,
+    }, { eventId: "evt-3" }));
+    expect(r.applied).toBe(false);
+    expect(r.reason).toContain("sequence gap");
+  });
+
+  it("should not write rejected events to dedup or event log", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    // 被拒绝的事件（gap）
+    const rejected = makeEvent(5, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    }, { eventId: "evt-rejected" });
+    const r = store.applyEvent(rejected);
+    expect(r.applied).toBe(false);
+    // event log 为空
+    expect(store.getEventLog()).toHaveLength(0);
+    // 同一 eventId 再次提交不应被当作 duplicate（说明未被写入 dedup）
+    // 用合法 sequence 重新提交同一 eventId
+    const r2 = store.applyEvent(makeEvent(1, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    }, { eventId: "evt-rejected" }));
+    expect(r2.applied).toBe(true);
   });
 
   it("should rebuild from event log", () => {
@@ -388,6 +551,63 @@ describe("SnapshotStore", () => {
 
     expect(after.agents).toEqual(before.agents);
     expect(after.tasks).toEqual(before.tasks);
+  });
+
+  it("should preserve event log count after rebuild", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    store.applyEvent(makeEvent(1, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    }));
+    store.applyEvent(makeEvent(2, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    }));
+
+    const logCountBefore = store.getEventLog().length;
+    expect(logCountBefore).toBe(2);
+
+    store.rebuildFromLog();
+    const logCountAfter = store.getEventLog().length;
+    expect(logCountAfter).toBe(logCountBefore);
+  });
+
+  it("should produce consistent results on consecutive replays", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    store.applyEvent(makeEvent(1, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    }));
+    store.applyEvent(makeEvent(2, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    }));
+    store.applyEvent(makeEvent(3, EventType.TASK_ASSIGNED, {
+      taskId: "t1", agentId: "w1", roomId: "room-exec",
+    }));
+
+    store.rebuildFromLog();
+    const snap1 = store.getSnapshot();
+
+    store.rebuildFromLog();
+    const snap2 = store.getSnapshot();
+
+    // 忽略动态字段
+    const { createdAt: _c1, snapshotId: _s1, ...rest1 } = snap1;
+    const { createdAt: _c2, snapshotId: _s2, ...rest2 } = snap2;
+    expect(rest1).toEqual(rest2);
+  });
+
+  it("should rebuild dedup index after replay (rejected duplicate stays rejected)", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    const event = makeEvent(1, EventType.AGENT_SPAWNED, {
+      agentId: "w1", name: "Worker-1", role: "worker" as const,
+    });
+    store.applyEvent(event);
+    // replay 重建 dedup
+    store.rebuildFromLog();
+    // 同一 eventId 再次提交应被 dedup 拦截（说明 dedup 已重建）
+    const r = store.applyEvent(event);
+    expect(r.applied).toBe(false);
+    expect(r.reason).toContain("duplicate");
   });
 
   it("should not allow direct snapshot modification", () => {
@@ -449,5 +669,105 @@ describe("Projection", () => {
     const projection = projectSnapshot(snap);
     // task is blocked
     expect(projection.blockedTasks.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("CommandGateway", () => {
+  function makeCommand(id: string, type: string = CommandType.TASK_CREATE): OfficeCommand {
+    return {
+      commandId: id,
+      commandType: type,
+      timestamp: new Date().toISOString(),
+      source: "user",
+      actorId: "user-1",
+      runtimeId: RUNTIME_ID,
+      targetId: null,
+      payload: {},
+    };
+  }
+
+  function makeFakeAdapter(executeImpl?: (cmd: OfficeCommand) => Promise<CommandResult>) {
+    let resolveFn: ((v: CommandResult) => void) | null = null;
+    const execute = vi.fn(async (cmd: OfficeCommand): Promise<CommandResult> => {
+      if (executeImpl) return executeImpl(cmd);
+      // 默认返回一个可控的 pending Promise（用于 pending duplicate 测试）
+      return new Promise<CommandResult>((resolve) => {
+        resolveFn = resolve;
+      });
+    });
+    return {
+      adapter: {
+        connect: vi.fn(async () => {}),
+        disconnect: vi.fn(async () => {}),
+        getSnapshot: vi.fn(async () => createEmptySnapshot(RUNTIME_ID)),
+        subscribe: vi.fn(() => () => {}),
+        execute,
+        getCapabilities: vi.fn(() => ({
+          supportedEvents: [],
+          supportedCommands: Object.values(CommandType),
+          features: {
+            snapshot: true,
+            sse: false,
+            websocket: false,
+            commandExecution: true,
+            softMapping: false,
+            hardOrchestration: false,
+          },
+        })),
+      },
+      // 手动 resolve 第一个 pending execute
+      resolve: (r: CommandResult) => {
+        resolveFn?.(r);
+      },
+      execute,
+    };
+  }
+
+  it("should return DUPLICATE_COMMAND for pending duplicate (same commandId, adapter called once)", async () => {
+    const { adapter, resolve, execute } = makeFakeAdapter();
+    const gateway = new CommandGateway(adapter);
+    const cmd = makeCommand("cmd-pending-1");
+
+    // 第一次 execute（不 await，让其保持 pending）
+    const p1 = gateway.execute(cmd);
+    // 第二次相同 commandId（pending duplicate）
+    const r2 = await gateway.execute(cmd);
+    expect(r2.status).toBe("rejected");
+    expect(r2.error?.code).toBe("DUPLICATE_COMMAND");
+
+    // resolve 第一次
+    resolve({
+      commandId: "cmd-pending-1",
+      status: "accepted",
+      affectedEventIds: ["evt-1"],
+    });
+    const r1 = await p1;
+    expect(r1.status).toBe("accepted");
+
+    // 断言：adapter.execute 只被调用一次（第二次未到达 adapter）
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("should return cached result for completed duplicate (adapter called once)", async () => {
+    const { adapter, execute } = makeFakeAdapter(async (cmd) => ({
+      commandId: cmd.commandId,
+      status: "accepted",
+      affectedEventIds: [`evt-${cmd.commandId}`],
+    }));
+    const gateway = new CommandGateway(adapter);
+    const cmd = makeCommand("cmd-completed-1");
+
+    // 第一次 execute（完成）
+    const r1 = await gateway.execute(cmd);
+    expect(r1.status).toBe("accepted");
+    expect(r1.affectedEventIds).toEqual(["evt-cmd-completed-1"]);
+
+    // 第二次相同 commandId（completed duplicate）
+    const r2 = await gateway.execute(cmd);
+    expect(r2.status).toBe("accepted");
+    expect(r2.affectedEventIds).toEqual(["evt-cmd-completed-1"]);
+
+    // 断言：adapter.execute 只被调用一次
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

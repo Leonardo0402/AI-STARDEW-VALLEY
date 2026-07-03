@@ -15,9 +15,13 @@ import type {
 } from "@agent-office/protocol";
 import { evaluateCommand, rejectedResult } from "./policy.js";
 
+/** 已完成命令结果的 LRU 缓存上限 */
+const COMPLETED_CACHE_MAX = 1000;
+
 export class CommandGateway {
   private adapter: RuntimeAdapter;
   private pendingCommands = new Set<string>();
+  private completedResults = new Map<string, CommandResult>();
   private lastSnapshot: RuntimeSnapshot | null = null;
 
   constructor(adapter: RuntimeAdapter) {
@@ -31,7 +35,7 @@ export class CommandGateway {
 
   /** 发送命令到 Adapter */
   async execute(command: OfficeCommand): Promise<CommandResult> {
-    // 幂等校验：同一 commandId 不重复执行
+    // 幂等校验 1：同一 commandId 正在执行中（pending duplicate）
     if (this.pendingCommands.has(command.commandId)) {
       return {
         commandId: command.commandId,
@@ -41,10 +45,19 @@ export class CommandGateway {
       };
     }
 
+    // 幂等校验 2：同一 commandId 已完成（completed duplicate），直接返回原结果，不调用 Adapter
+    const cached = this.completedResults.get(command.commandId);
+    if (cached) {
+      // LRU 刷新：删除再重新插入，使其成为最新
+      this.completedResults.delete(command.commandId);
+      this.completedResults.set(command.commandId, cached);
+      return cached;
+    }
+
     // 检查 Adapter 是否支持此命令
     const caps = this.adapter.getCapabilities();
     if (!caps.supportedCommands.includes(command.commandType)) {
-      return {
+      const result: CommandResult = {
         commandId: command.commandId,
         status: "rejected",
         error: {
@@ -53,22 +66,38 @@ export class CommandGateway {
         },
         affectedEventIds: [],
       };
+      this.cacheResult(result);
+      return result;
     }
 
     // Policy 校验
     if (this.lastSnapshot) {
       const decision = evaluateCommand(command, this.lastSnapshot);
       if (!decision.allowed) {
-        return rejectedResult(command.commandId, decision.reason ?? "Policy denied");
+        const result = rejectedResult(command.commandId, decision.reason ?? "Policy denied");
+        this.cacheResult(result);
+        return result;
       }
     }
 
     this.pendingCommands.add(command.commandId);
     try {
       const result = await this.adapter.execute(command);
+      this.cacheResult(result);
       return result;
     } finally {
       this.pendingCommands.delete(command.commandId);
+    }
+  }
+
+  /** 缓存已完成命令结果，达到上限时淘汰最旧条目 */
+  private cacheResult(result: CommandResult): void {
+    this.completedResults.set(result.commandId, result);
+    if (this.completedResults.size > COMPLETED_CACHE_MAX) {
+      const oldest = this.completedResults.keys().next().value;
+      if (oldest !== undefined) {
+        this.completedResults.delete(oldest);
+      }
     }
   }
 
