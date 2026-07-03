@@ -311,6 +311,8 @@ describe("RuntimeSession 硬化 (Issue #4)", () => {
       expect(slowSession.getDiagnostics().hasActiveSubscription).toBe(false);
       // subscribe 从未被调用
       expect(slowAdapter.subscribeCalls).toHaveLength(0);
+      // adapter 连接未泄漏：延迟的 connect 成功后因 epoch 校验被 best-effort 清理
+      expect(slowAdapter.isConnected()).toBe(false);
     });
 
     it("disconnect 期间延迟的 resync bail out，不重建订阅", async () => {
@@ -380,6 +382,23 @@ describe("RuntimeSession 硬化 (Issue #4)", () => {
       const diag = failSession.getDiagnostics();
       expect(diag.lastError).not.toBeNull();
       expect(diag.lastError!.code).toBe("snapshot_failed");
+    });
+
+    it("bootstrap 失败后 adapter 被清理", async () => {
+      const failAdapter = new TestRuntimeAdapter({
+        initialSnapshot: makeInitialSnapshot(),
+        snapshotError: new Error("snapshot boom"),
+      });
+      const failSession = new RuntimeSession(
+        failAdapter,
+        new SnapshotStore(RUNTIME_ID),
+        new CommandGateway(failAdapter)
+      );
+
+      await expect(failSession.connect()).rejects.toThrow("snapshot boom");
+      expect(failSession.getState()).toBe("failed");
+      // adapter 连接被 best-effort 清理，未泄漏
+      expect(failAdapter.isConnected()).toBe(false);
     });
 
     it("subscribe 阶段失败 → lastError.code = subscribe_failed", async () => {

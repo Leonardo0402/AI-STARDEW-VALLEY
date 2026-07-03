@@ -200,6 +200,7 @@ export class RuntimeSession {
 
   private async doConnect(): Promise<void> {
     const myEpoch = this.epoch;
+    let adapterConnected = false;
     try {
       this.setState("connecting");
       try {
@@ -210,7 +211,16 @@ export class RuntimeSession {
           err instanceof Error ? err.message : String(err)
         );
       }
-      if (this.epoch !== myEpoch) return; // disconnect 已发生
+      adapterConnected = true;
+      if (this.epoch !== myEpoch) {
+        // disconnect 已发生 — best-effort 清理 adapter 连接
+        try {
+          await this.adapter.disconnect();
+        } catch {
+          /* best-effort */
+        }
+        return;
+      }
 
       this.setState("synchronizing");
       // 1. 拉取完整 snapshot 作为 checkpoint
@@ -249,6 +259,14 @@ export class RuntimeSession {
     } catch (err) {
       // 若是 disconnect 引发的 epoch 变化，不再写入错误
       if (this.epoch !== myEpoch) return;
+      // bootstrap 失败（snapshot / subscribe）且 adapter 已连接 — best-effort 清理
+      if (adapterConnected) {
+        try {
+          await this.adapter.disconnect();
+        } catch {
+          /* best-effort */
+        }
+      }
       this.recordError(err);
       this.setState("failed");
       throw err;
