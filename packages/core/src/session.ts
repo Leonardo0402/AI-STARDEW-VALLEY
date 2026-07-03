@@ -339,6 +339,7 @@ export class RuntimeSession {
    * 公开方法：DemoControls 的 reset 等场景在重置 adapter 后可手动调用以重新安装 checkpoint。
    */
   async resynchronize(): Promise<void> {
+    if (this.connectPromise) return this.connectPromise;
     if (this.resyncPromise) return this.resyncPromise;
     this.resyncPromise = this.doResynchronize();
     try {
@@ -375,7 +376,14 @@ export class RuntimeSession {
       if (this.options.autoResume) {
         // 重新建立订阅，从新 checkpoint 之后开始
         if (this.epoch !== myEpoch) return; // disconnect 已发生
-        this.installSubscription(snapshot.sequence);
+        try {
+          this.installSubscription(snapshot.sequence);
+        } catch (err) {
+          throw this.makeSessionError(
+            "subscribe_failed",
+            err instanceof Error ? err.message : String(err)
+          );
+        }
       }
 
       this.setState("connected");

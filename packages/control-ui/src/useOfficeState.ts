@@ -88,10 +88,6 @@ export function useOfficeState(
           const errorMessages = result.reducerErrors.map((e) => e.message);
           setErrors((prev) => [...prev.slice(-9), ...errorMessages]);
         }
-        const storeErrors = store.getErrors();
-        if (storeErrors.length > 0) {
-          setErrors(storeErrors.slice(-10).map((e) => e.message));
-        }
       }
     );
 

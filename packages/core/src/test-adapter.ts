@@ -46,8 +46,8 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
   private snapshot: RuntimeSnapshot;
   private eventLog: DomainEvent[] = [];
   private subscribers = new Set<DomainEventHandler>();
-  private connectDelayMs: number;
-  private connectError: Error | undefined;
+  public connectDelayMs: number;
+  public connectError: Error | undefined;
 
   /** 记录所有 subscribe 调用（cursor + 时间） */
   public subscribeCalls: SubscribeCall[] = [];
