@@ -15,6 +15,7 @@ import type {
   OfficeProjection,
   RuntimeSnapshot,
   DomainEvent,
+  EventApplyResult,
 } from "@agent-office/protocol";
 import {
   SnapshotStore,
@@ -63,10 +64,10 @@ export function useOfficeState(
     // 订阅 store 变更（session 在 handleEvent 中已更新 gateway snapshot，此处只更新 projection）
     const unsubStore = store.subscribe((snap: RuntimeSnapshot) => {
       const storeErrors = store.getErrors();
-      const projErrors = storeErrors.slice(-20).map((msg) => ({
+      const projErrors = storeErrors.slice(-20).map((err) => ({
         taskId: null,
         agentId: null,
-        message: msg,
+        message: err.message,
         severity: "warning" as const,
       }));
       setProjection(projectSnapshot(snap, projErrors));
@@ -79,13 +80,20 @@ export function useOfficeState(
     });
 
     // 仅追加已接受事件（transport 拒绝事件不进入 UI 历史）
-    const unsubAccepted = session.onAcceptedEvent((event: DomainEvent) => {
-      setEventLog((prev) => [...prev, event]);
-      const storeErrors = store.getErrors();
-      if (storeErrors.length > 0) {
-        setErrors(storeErrors.slice(-10));
+    const unsubAccepted = session.onAcceptedEvent(
+      (event: DomainEvent, result: EventApplyResult) => {
+        setEventLog((prev) => [...prev, event]);
+        // reducer errors 通过 result.reducerErrors 透传（结构化诊断）
+        if (result.reducerErrors && result.reducerErrors.length > 0) {
+          const errorMessages = result.reducerErrors.map((e) => e.message);
+          setErrors((prev) => [...prev.slice(-9), ...errorMessages]);
+        }
+        const storeErrors = store.getErrors();
+        if (storeErrors.length > 0) {
+          setErrors(storeErrors.slice(-10).map((e) => e.message));
+        }
       }
-    });
+    );
 
     return () => {
       unsubStore();

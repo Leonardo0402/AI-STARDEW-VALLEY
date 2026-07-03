@@ -37,6 +37,7 @@
 import type {
   RuntimeAdapter,
   DomainEvent,
+  EventApplyResult,
 } from "@agent-office/protocol";
 import type { SnapshotStore } from "./store.js";
 import type { CommandGateway } from "./gateway.js";
@@ -70,7 +71,7 @@ export interface SessionStateListener {
 }
 
 export interface AcceptedEventListener {
-  (event: DomainEvent): void;
+  (event: DomainEvent, result: EventApplyResult): void;
 }
 
 export interface GapDiagnostic {
@@ -287,7 +288,7 @@ export class RuntimeSession {
         // 两者都推进了 sequence 并入 log（reducer_rejected 仅状态未变 — 事务性提交保证）
         this.gateway.updateSnapshot(this.store.getSnapshot());
         this.diagnostics.lastSequence = event.sequence;
-        this.notifyAccepted(event);
+        this.notifyAccepted(event, result);
         break;
 
       case "duplicate":
@@ -486,9 +487,9 @@ export class RuntimeSession {
     }
   }
 
-  private notifyAccepted(event: DomainEvent): void {
+  private notifyAccepted(event: DomainEvent, result: EventApplyResult): void {
     for (const listener of this.acceptedEventListeners) {
-      listener(event);
+      listener(event, result);
     }
   }
 }

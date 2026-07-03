@@ -6,6 +6,7 @@
  */
 export { reduceEvent, replayEvents, createEmptySnapshot } from "./reducer.js";
 export type { ReducerResult } from "./reducer.js";
+export type { ReducerError, ReducerErrorCode } from "@agent-office/protocol";
 export {
   isValidAgentTransition,
   isValidTaskTransition,

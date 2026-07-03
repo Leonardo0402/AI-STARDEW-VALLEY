@@ -17,6 +17,7 @@ import type {
   RuntimeSnapshot,
   DomainEvent,
   EventApplyResult,
+  ReducerError,
 } from "@agent-office/protocol";
 import { reduceEvent } from "./reducer.js";
 import { EventDeduplicator } from "./dedup.js";
@@ -55,7 +56,7 @@ export class SnapshotStore {
   private dedup: EventDeduplicator;
   private eventLog: DomainEvent[] = [];
   private lastSequence = 0;
-  private reducerErrors: string[] = [];
+  private reducerErrors: ReducerError[] = [];
 
   constructor(runtimeId: string) {
     this.baseSnapshot = createEmptySnapshot(runtimeId, "snap-init-base");
@@ -133,7 +134,7 @@ export class SnapshotStore {
       return {
         applied: false,
         code: "reducer_rejected",
-        reason: result.errors[0],
+        reason: result.errors[0].message,
         reducerErrors: [...result.errors],
       };
     }
@@ -198,7 +199,7 @@ export class SnapshotStore {
   }
 
   /** 获取 reducer 产生的错误（非法转换等） */
-  getErrors(): string[] {
+  getErrors(): ReducerError[] {
     return [...this.reducerErrors];
   }
 

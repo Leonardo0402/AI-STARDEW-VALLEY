@@ -462,19 +462,28 @@ describe("RuntimeSession 硬化 (Issue #4)", () => {
       expect(store.getLastSequence()).toBe(seqAfterCreate + 1);
       // 但 snapshot 状态未变（tasks 仍为 1）
       expect(store.getSnapshot().tasks).toHaveLength(1);
-      // reducer 错误被记录
+      // reducer 错误被记录（结构化 ReducerError[]）
       const errors = store.getErrors();
       expect(errors.length).toBeGreaterThan(0);
-      expect(errors[errors.length - 1]).toContain("non-existent");
+      expect(errors[errors.length - 1].message).toContain("non-existent");
+      expect(errors[errors.length - 1].code).toBe("entity_not_found");
+      expect(errors[errors.length - 1].entityPath).toBe("tasks:non-existent");
       // 事件入 log
       const log = store.getEventLog();
       expect(log.some((e) => e.eventId === rejectEvt.eventId)).toBe(true);
     });
 
-    it("reducer_rejected 事件仍被 onAcceptedEvent 推送", async () => {
+    it("reducer_rejected 事件仍被 onAcceptedEvent 推送（含结构化 result）", async () => {
       await session.connect();
       const accepted: DomainEvent[] = [];
-      session.onAcceptedEvent((e) => accepted.push(e));
+      const results: { code: string; reducerErrors?: unknown }[] = [];
+      session.onAcceptedEvent((e, result) => {
+        accepted.push(e);
+        results.push({
+          code: result.code,
+          reducerErrors: result.reducerErrors,
+        });
+      });
 
       const baseSeq = store.getLastSequence();
       const rejectEvt = makeTaskStartedEvent(baseSeq + 1, "non-existent");
@@ -482,6 +491,11 @@ describe("RuntimeSession 硬化 (Issue #4)", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(accepted.some((e) => e.eventId === rejectEvt.eventId)).toBe(true);
+      // 验证 result 透传：reducer_rejected 事件携带结构化 reducerErrors
+      const rejectResult = results.find((r) => r.code === "reducer_rejected");
+      expect(rejectResult).toBeDefined();
+      expect(rejectResult!.reducerErrors).toBeDefined();
+      expect((rejectResult!.reducerErrors as Array<{ message: string }>).length).toBeGreaterThan(0);
     });
   });
 

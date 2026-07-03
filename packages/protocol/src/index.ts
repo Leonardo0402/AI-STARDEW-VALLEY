@@ -420,6 +420,24 @@ export type EventApplyCode =
   | "sequence_gap"
   | "reducer_rejected";
 
+/**
+ * Reducer 错误分类（Issue #4 结构化 diagnostics）。
+ *
+ * 调用方依据 code 判断错误类别，message 仅用于展示。
+ */
+export type ReducerErrorCode =
+  | "entity_not_found" // entity 不存在（agent/task/artifact/approval not found）
+  | "invalid_transition" // 状态机转换不允许（含 cascade failures）
+  | "constraint_violation" // 业务规则违反（已存在、审批未通过等）
+  | "validation_error"; // 未知事件类型或校验失败
+
+export interface ReducerError {
+  code: ReducerErrorCode;
+  message: string;
+  /** Entity path，格式 "entityType:entityId"，例如 "tasks:t-1" */
+  entityPath?: string;
+}
+
 export interface EventApplyResult {
   applied: boolean;
   code: EventApplyCode;
@@ -427,7 +445,7 @@ export interface EventApplyResult {
   expectedSequence?: number;
   receivedSequence?: number;
   /** reducer_rejected 时的结构化诊断（所有 reducer errors） */
-  reducerErrors?: string[];
+  reducerErrors?: ReducerError[];
 }
 
 export interface AdapterCapabilities {

@@ -476,18 +476,37 @@ type EventApplyCode =
   | "sequence_gap"       // event.sequence > store.lastSequence + 1
   | "reducer_rejected";  // 通过 transport 校验但 reducer 拒绝（非法状态转换等）
 
+/**
+ * Reducer 错误分类（Issue #4 结构化 diagnostics）。
+ *
+ * 调用方依据 code 判断错误类别，message 仅用于展示。
+ */
+type ReducerErrorCode =
+  | "entity_not_found"      // entity 不存在（agent/task/artifact/approval not found）
+  | "invalid_transition"    // 状态机转换不允许（含 cascade failures）
+  | "constraint_violation"  // 业务规则违反（已存在、审批未通过等）
+  | "validation_error";     // 未知事件类型或校验失败
+
+interface ReducerError {
+  code: ReducerErrorCode;
+  message: string;
+  /** Entity path，格式 "entityType:entityId"，例如 "tasks:t-1" */
+  entityPath?: string;
+}
+
 interface EventApplyResult {
   applied: boolean;       // 是否真正修改了 snapshot
   code: EventApplyCode;   // 类型化结果码
-  reason?: string;        // 仅用于诊断日志，不参与控制流
+  reason?: string;        // 仅用于诊断日志（首个 reducer error 的 message），不参与控制流
   expectedSequence?: number;
   receivedSequence?: number;
   /**
    * reducer_rejected 时的结构化诊断（所有 reducer errors）。
    * 仅在 code === "reducer_rejected" 时存在。
-   * Issue #4 引入：让上层（session / UI）能展示完整的 reducer 拒绝原因列表。
+   * Issue #4 引入：让上层（session / UI）能展示完整的 reducer 拒绝原因列表，
+   * 并通过 onAcceptedEvent 透传给 UI。
    */
-  reducerErrors?: string[];
+  reducerErrors?: ReducerError[];
 }
 ```
 
