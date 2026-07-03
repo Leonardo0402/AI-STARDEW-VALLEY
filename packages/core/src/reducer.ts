@@ -148,16 +148,34 @@ export function reduceEvent(
         errors.push(`Invalid task transition: ${task.status} → assigned for ${p.taskId}`);
         break;
       }
+      // 清理旧 assignee 的残留关系（Task 转交时旧 Worker 不再持有此 Task）
+      const oldAssigneeId = task.assigneeId;
+      const oldRoomId = task.roomId;
+      if (oldAssigneeId && oldAssigneeId !== p.agentId) {
+        const oldAgent = s.agents.find((a) => a.agentId === oldAssigneeId);
+        if (oldAgent && oldAgent.currentTaskId === p.taskId) {
+          oldAgent.currentTaskId = null;
+        }
+      }
+      if (oldRoomId && oldRoomId !== p.roomId) {
+        const oldRoom = s.rooms.find((r) => r.roomId === oldRoomId);
+        if (oldRoom) {
+          oldRoom.activeAgentIds = oldRoom.activeAgentIds.filter(
+            (id) => id !== oldAssigneeId
+          );
+        }
+      }
+      // 设置新 assignee 与新 room
       task.status = "assigned";
       task.assigneeId = p.agentId;
       task.roomId = p.roomId;
-      // 更新 Agent 的 currentTaskId 和 currentRoomId
+      // 更新新 Agent 的 currentTaskId 和 currentRoomId
       const agent = s.agents.find((a) => a.agentId === p.agentId);
       if (agent) {
         agent.currentTaskId = p.taskId;
         agent.currentRoomId = p.roomId;
       }
-      // 更新 Room activeAgentIds
+      // 更新新 Room activeAgentIds
       const room = s.rooms.find((r) => r.roomId === p.roomId);
       if (room && !room.activeAgentIds.includes(p.agentId)) {
         room.activeAgentIds.push(p.agentId);
@@ -302,6 +320,19 @@ export function reduceEvent(
         comment: p.comment,
         reviewedAt: event.occurredAt,
       };
+      // 审查要求返工时，关联 Task 必须进入 revision_required
+      if (p.verdict === "revision_required") {
+        const task = s.tasks.find((t) => t.taskId === artifact.taskId);
+        if (task) {
+          if (isValidTaskTransition(task.status, "revision_required")) {
+            task.status = "revision_required";
+          } else {
+            errors.push(
+              `Invalid task transition: ${task.status} → revision_required for ${task.taskId} (artifact ${p.artifactId} reviewed but task state unchanged)`
+            );
+          }
+        }
+      }
       break;
     }
 

@@ -27,6 +27,7 @@ export type TaskStatus =
   | "waiting_approval"
   | "reviewing"
   | "revision_required"
+  | "blocked"
   | "completed"
   | "failed"
   | "cancelled";

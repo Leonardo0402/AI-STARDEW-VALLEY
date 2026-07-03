@@ -26,7 +26,7 @@ const taskTransitions: Record<TaskStatus, TaskStatus[]> = {
   queued: ["assigned", "cancelled"],
   assigned: ["planning", "running", "cancelled"],
   planning: ["running", "blocked", "cancelled"],
-  running: ["reviewing", "waiting_approval", "blocked", "failed", "completed", "cancelled", "assigned"],
+  running: ["reviewing", "waiting_approval", "blocked", "failed", "completed", "cancelled", "assigned", "revision_required"],
   blocked: ["running", "failed", "cancelled"],
   waiting_approval: ["reviewing", "completed", "cancelled", "revision_required"],
   reviewing: ["revision_required", "completed", "cancelled"],

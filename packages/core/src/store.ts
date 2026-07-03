@@ -42,22 +42,39 @@ export class SnapshotStore {
     this.dedup = new EventDeduplicator(10000);
   }
 
-  /** 应用事件到 snapshot，处理去重和 sequence 校验 */
+  /** 应用事件到 snapshot，处理去重和 sequence 校验。
+   *  校验顺序：runtimeId → duplicate eventId → sequence。
+   *  被拒绝的事件不会写入 dedup 或 event log。 */
   applyEvent(event: DomainEvent): { applied: boolean; reason?: string } {
-    // 去重
-    if (this.dedup.checkAndMark(event.eventId)) {
+    // runtimeId 校验：事件必须属于当前 Runtime
+    if (event.runtimeId !== this.snapshot.runtimeId) {
+      return {
+        applied: false,
+        reason: `runtime mismatch: event.runtimeId=${event.runtimeId} ≠ snapshot.runtimeId=${this.snapshot.runtimeId}`,
+      };
+    }
+
+    // 去重：仅检查，不标记（标记留到所有校验通过后）
+    if (this.dedup.isDuplicate(event.eventId)) {
       return { applied: false, reason: "duplicate eventId" };
     }
 
-    // sequence 校验：严格单调递增，不允许回退或相等
-    // （相等由 dedup 按 eventId 拦截；不同 eventId 但相同 sequence 同样非法）
+    // sequence 校验：严格单调递增，必须是 lastSequence + 1
     if (event.sequence <= this.lastSequence) {
       return { applied: false, reason: `stale sequence ${event.sequence} <= ${this.lastSequence}` };
     }
+    if (event.sequence !== this.lastSequence + 1) {
+      return {
+        applied: false,
+        reason: `sequence gap: expected ${this.lastSequence + 1}, got ${event.sequence}`,
+      };
+    }
 
+    // 所有校验通过：应用事件并更新 dedup / log / sequence
     const result = reduceEvent(this.snapshot, event);
     this.snapshot = result.snapshot;
     this.lastSequence = event.sequence;
+    this.dedup.markSeen(event.eventId);
     this.eventLog.push(event);
     if (result.errors.length > 0) {
       this.reducerErrors.push(...result.errors);
@@ -119,20 +136,46 @@ export class SnapshotStore {
     this.notifyListeners();
   }
 
-  /** 从事件日志重建 snapshot */
+  /** 从事件日志重建 snapshot。
+   *  Replay 直接调用 reduceEvent，绕过 applyEvent 的 sequence/dedup 校验
+   *  （因为事件已经在校验通过时入 log，重放是可信的）。
+   *  Replay 后：snapshot 重建、dedup 重建、event log 保留、lastSequence 恢复。 */
   rebuildFromLog(): void {
+    // 保存完整 append-only log（reset 会清空）
     const events = [...this.eventLog];
     const runtimeId = this.snapshot.runtimeId;
-    this.reset();
+
+    // 重置到初始空 snapshot
+    this.snapshot = {
+      runtimeId,
+      snapshotId: `snap-rebuilt`,
+      sequence: 0,
+      schemaVersion: "1.0",
+      createdAt: new Date().toISOString(),
+      lastEventId: "",
+      agents: [],
+      tasks: [],
+      artifacts: [],
+      approvals: [],
+      rooms: [],
+    };
     this.dedup.clear();
+    this.eventLog = [];
+    this.lastSequence = 0;
+    this.reducerErrors = [];
+
+    // 重放：重建 snapshot + dedup + event log + lastSequence
     for (const event of events) {
       const result = reduceEvent(this.snapshot, event);
       this.snapshot = result.snapshot;
       this.lastSequence = event.sequence;
+      this.dedup.markSeen(event.eventId);
+      this.eventLog.push(event);
       if (result.errors.length > 0) {
         this.reducerErrors.push(...result.errors);
       }
     }
+
     this.notifyListeners();
   }
 
