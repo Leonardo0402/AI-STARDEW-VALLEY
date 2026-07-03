@@ -124,7 +124,10 @@ export class SnapshotStore {
     this.eventLog.push(event);
 
     if (result.errors.length > 0) {
-      // 事务性：不采用 reducer 的候选 snapshot，保持原状态不变
+      // 事务性：不采用 reducer 的候选 snapshot，domain entities 保持不变
+      // 但推进 snapshot 的 transport cursor 字段（sequence / lastEventId），
+      // 使 snapshot.sequence 与 lastSequence 单调一致（修复 cursor 元数据分歧）。
+      this.commitTransportMetadata(event);
       this.reducerErrors.push(...result.errors);
       this.notifyListeners();
       return {
@@ -245,13 +248,34 @@ export class SnapshotStore {
       this.eventLog.push(event);
       if (result.errors.length > 0) {
         this.reducerErrors.push(...result.errors);
-        // 不采用 result.snapshot，保持原状态
+        // 不采用 result.snapshot，domain entities 保持原状态
+        // 但推进 transport cursor 字段（与 applyEvent 一致）
+        this.commitTransportMetadata(event);
       } else {
         this.snapshot = result.snapshot;
       }
     }
 
     this.notifyListeners();
+  }
+
+  /**
+   * 提交 transport cursor 元数据到当前 snapshot（reducer_rejected 时使用）。
+   *
+   * 保留所有 domain entities（agents / tasks / artifacts / approvals / rooms）
+   * 的引用（浅拷贝），仅推进 transport cursor 字段 `sequence` 与 `lastEventId`，
+   * 其他元数据（runtimeId / snapshotId / schemaVersion / createdAt）保持不变。
+   *
+   * 这保证 `getSnapshot().sequence === getLastSequence()`，使 Snapshot 可作为
+   * 接受流位置的可信 cursor（修复 cursor 元数据分歧），不破坏事务性提交原则
+   * （domain entities 仍与原引用一致）。
+   */
+  private commitTransportMetadata(event: DomainEvent): void {
+    this.snapshot = {
+      ...this.snapshot,
+      sequence: event.sequence,
+      lastEventId: event.eventId,
+    };
   }
 
   private notifyListeners(): void {
