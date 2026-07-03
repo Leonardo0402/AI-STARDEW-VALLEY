@@ -426,6 +426,8 @@ export interface EventApplyResult {
   reason?: string;
   expectedSequence?: number;
   receivedSequence?: number;
+  /** reducer_rejected 时的结构化诊断（所有 reducer errors） */
+  reducerErrors?: string[];
 }
 
 export interface AdapterCapabilities {

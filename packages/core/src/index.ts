@@ -23,6 +23,8 @@ export type {
   GapDiagnostic,
   RuntimeSessionOptions,
   AcceptedEventListener,
+  SessionErrorCode,
+  SessionError,
 } from "./session.js";
 export { CommandGateway } from "./gateway.js";
 export { evaluateCommand, hasCapability, rejectedResult } from "./policy.js";

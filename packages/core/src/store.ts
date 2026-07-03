@@ -71,8 +71,14 @@ export class SnapshotStore {
    * 不会写入 dedup、event log，也不推进 lastSequence。
    *
    * reducer_rejected：事件通过 transport 校验，但 reducer 拒绝状态转换。
-   * 此时 sequence 仍推进、事件仍入 log、dedup 仍标记（保持与 Runtime 单调一致），
-   * 但 applied=false 表示 snapshot 状态未变，listeners 仍被通知以便 UI 展示错误。
+   * 此时 sequence 仍推进、事件仍入 log、dedup 仍标记（保持与 Runtime 单调一致）；
+   * 但 **snapshot 状态保持不变**（事务性提交：errors 非空时不采用 reducer 的候选 snapshot），
+   * listeners 仍被通知以便 UI 展示错误。
+   *
+   * 事务性语义：transport 接受 vs domain 提交分离。
+   * - transport 接受：sequence 推进 + 入 log + 标记 dedup（与 Runtime 单调一致）
+   * - domain 提交：仅当 reducer errors 为空时才采用 result.snapshot
+   * replay 时同样逻辑，保证幂等一致。
    */
   applyEvent(event: DomainEvent): EventApplyResult {
     // runtimeId 校验：事件必须属于当前 Runtime
@@ -109,23 +115,28 @@ export class SnapshotStore {
       };
     }
 
-    // transport 校验全部通过：应用事件。
-    // 无论 reducer 是否拒绝，sequence 都推进、事件都入 log、dedup 都标记。
+    // transport 校验全部通过：
+    // - sequence 推进、事件入 log、dedup 标记（无论 reducer 是否拒绝）
+    // - domain 提交：仅当 reducer errors 为空时才采用 result.snapshot
     const result = reduceEvent(this.snapshot, event);
-    this.snapshot = result.snapshot;
     this.lastSequence = event.sequence;
     this.dedup.markSeen(event.eventId);
     this.eventLog.push(event);
+
     if (result.errors.length > 0) {
+      // 事务性：不采用 reducer 的候选 snapshot，保持原状态不变
       this.reducerErrors.push(...result.errors);
       this.notifyListeners();
       return {
         applied: false,
         code: "reducer_rejected",
         reason: result.errors[0],
+        reducerErrors: [...result.errors],
       };
     }
 
+    // domain 提交：reducer 无错误，采用新 snapshot
+    this.snapshot = result.snapshot;
     this.notifyListeners();
     return { applied: true, code: "applied" };
   }
@@ -226,14 +237,17 @@ export class SnapshotStore {
     this.reducerErrors = [];
 
     // 重放：重建 snapshot + dedup + event log + lastSequence
+    // 事务性：reducer errors 非空时不采用候选 snapshot（与 applyEvent 一致）
     for (const event of events) {
       const result = reduceEvent(this.snapshot, event);
-      this.snapshot = result.snapshot;
       this.lastSequence = event.sequence;
       this.dedup.markSeen(event.eventId);
       this.eventLog.push(event);
       if (result.errors.length > 0) {
         this.reducerErrors.push(...result.errors);
+        // 不采用 result.snapshot，保持原状态
+      } else {
+        this.snapshot = result.snapshot;
       }
     }
 
