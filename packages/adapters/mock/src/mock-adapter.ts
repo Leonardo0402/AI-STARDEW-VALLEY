@@ -18,6 +18,7 @@ import type {
   AdapterCapabilities,
   DomainEventHandler,
   Unsubscribe,
+  SubscribeOptions,
   AgentSnapshot,
   TaskSnapshot,
   ArtifactSnapshot,
@@ -197,7 +198,22 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     };
   }
 
-  subscribe(handler: DomainEventHandler): Unsubscribe {
+  /**
+   * 订阅事件。若提供 afterSequence，则在加入订阅者前，先同步重放
+   * 内部 eventLog 中 sequence > afterSequence 的事件给该 handler。
+   * 这保证 snapshot-first bootstrap 顺序下不丢失 snapshot 与订阅之间产生的事件。
+   */
+  subscribe(
+    handler: DomainEventHandler,
+    options?: SubscribeOptions
+  ): Unsubscribe {
+    if (options?.afterSequence !== undefined) {
+      for (const event of this.eventLog) {
+        if (event.sequence > options.afterSequence) {
+          handler(event);
+        }
+      }
+    }
     this.subscribers.add(handler);
     return () => this.subscribers.delete(handler);
   }

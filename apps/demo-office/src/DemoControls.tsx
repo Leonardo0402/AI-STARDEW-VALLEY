@@ -11,19 +11,21 @@
  */
 import type { FC } from "react";
 import type { MockRuntimeAdapter } from "@agent-office/adapter-mock";
-import type { SnapshotStore } from "@agent-office/core";
+import type { SnapshotStore, RuntimeSession } from "@agent-office/core";
 
 interface DemoControlsProps {
   adapter: MockRuntimeAdapter;
   store: SnapshotStore;
+  session: RuntimeSession;
 }
 
-export const DemoControls: FC<DemoControlsProps> = ({ adapter, store }) => {
+export const DemoControls: FC<DemoControlsProps> = ({ adapter, store, session }) => {
   const handleReset = () => {
     adapter.reset();
     store.reset();
-    adapter.getSnapshot().then((snap) => {
-      store.setSnapshot(snap);
+    // 重新安装 checkpoint 并恢复订阅（由 session 统一管理）
+    session.resynchronize().catch((err) => {
+      console.error("[DemoControls] resynchronize 失败：", err);
     });
   };
 
