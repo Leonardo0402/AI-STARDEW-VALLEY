@@ -211,7 +211,7 @@ describe("RuntimeSession 硬化 (Issue #4)", () => {
         new CommandGateway(delayedAdapter)
       );
       await delayedSession.connect();
-      const baseSeq = store.getLastSequence();
+      const baseSeq = delayedSession.getDiagnostics().lastSequence;
 
       // 触发 gap → resync 进入，但 getSnapshot 被 30ms 延迟
       const gapEvent = makeTaskCreatedEvent(baseSeq + 5, "t-gap");
