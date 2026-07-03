@@ -14,7 +14,16 @@ export {
 } from "./state-machine.js";
 export { EventDeduplicator } from "./dedup.js";
 export { SnapshotStore } from "./store.js";
-export type { SnapshotStoreListener } from "./store.js";
+export type { SnapshotStoreListener, InstallCheckpointResult } from "./store.js";
+export { RuntimeSession } from "./session.js";
+export type {
+  SessionState,
+  SessionStateListener,
+  SessionDiagnostics,
+  GapDiagnostic,
+  RuntimeSessionOptions,
+  AcceptedEventListener,
+} from "./session.js";
 export { CommandGateway } from "./gateway.js";
 export { evaluateCommand, hasCapability, rejectedResult } from "./policy.js";
 export type { PolicyDecision } from "./policy.js";

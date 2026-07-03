@@ -1,14 +1,22 @@
 /**
- * SnapshotStore — 持有当前 RuntimeSnapshot，应用事件并通知订阅者。
+ * SnapshotStore — checkpoint 感知的事件溯源存储。
+ *
+ * 持有：
+ * - baseSnapshot：最近一次可信的完整快照（checkpoint）；
+ * - snapshot：当前物化状态（baseSnapshot + 增量事件）；
+ * - eventLog：仅包含 baseSnapshot.sequence 之后被接受的事件。
  *
  * 核心规则：
- * - 外部不能直接修改 snapshot
- * - 所有状态变更必须通过 applyEvent
- * - 事件先经过去重和 sequence 校验
+ * - 外部不能直接修改 snapshot；
+ * - 所有状态变更必须通过 applyEvent；
+ * - 事件先经过 runtimeId / dedup / sequence 校验；
+ * - 安装新 checkpoint（setSnapshot）原子地重置 base + current + log + dedup；
+ * - rebuildFromLog 从 baseSnapshot 克隆开始重放 post-checkpoint 事件。
  */
 import type {
   RuntimeSnapshot,
   DomainEvent,
+  EventApplyResult,
 } from "@agent-office/protocol";
 import { reduceEvent } from "./reducer.js";
 import { EventDeduplicator } from "./dedup.js";
@@ -17,7 +25,31 @@ export interface SnapshotStoreListener {
   (snapshot: RuntimeSnapshot): void;
 }
 
+/** 安装 checkpoint 的结构化结果。 */
+export interface InstallCheckpointResult {
+  ok: boolean;
+  code: "installed" | "runtime_mismatch";
+  reason?: string;
+}
+
+function createEmptySnapshot(runtimeId: string, snapshotId: string): RuntimeSnapshot {
+  return {
+    runtimeId,
+    snapshotId,
+    sequence: 0,
+    schemaVersion: "1.0",
+    createdAt: new Date().toISOString(),
+    lastEventId: "",
+    agents: [],
+    tasks: [],
+    artifacts: [],
+    approvals: [],
+    rooms: [],
+  };
+}
+
 export class SnapshotStore {
+  private baseSnapshot: RuntimeSnapshot;
   private snapshot: RuntimeSnapshot;
   private listeners = new Set<SnapshotStoreListener>();
   private dedup: EventDeduplicator;
@@ -26,51 +58,59 @@ export class SnapshotStore {
   private reducerErrors: string[] = [];
 
   constructor(runtimeId: string) {
-    this.snapshot = {
-      runtimeId,
-      snapshotId: `snap-init`,
-      sequence: 0,
-      schemaVersion: "1.0",
-      createdAt: new Date().toISOString(),
-      lastEventId: "",
-      agents: [],
-      tasks: [],
-      artifacts: [],
-      approvals: [],
-      rooms: [],
-    };
+    this.baseSnapshot = createEmptySnapshot(runtimeId, "snap-init-base");
+    this.snapshot = createEmptySnapshot(runtimeId, "snap-init");
     this.dedup = new EventDeduplicator(10000);
   }
 
-  /** 应用事件到 snapshot，处理去重和 sequence 校验。
-   *  校验顺序：runtimeId → duplicate eventId → sequence。
-   *  被拒绝的事件不会写入 dedup 或 event log。 */
-  applyEvent(event: DomainEvent): { applied: boolean; reason?: string } {
+  /**
+   * 应用事件到 snapshot，处理 runtimeId / dedup / sequence 校验。
+   *
+   * 校验顺序：runtimeId → duplicate eventId → stale sequence → sequence gap → reducer。
+   * 被拒绝的事件（duplicate / runtime_mismatch / stale_sequence / sequence_gap）
+   * 不会写入 dedup、event log，也不推进 lastSequence。
+   *
+   * reducer_rejected：事件通过 transport 校验，但 reducer 拒绝状态转换。
+   * 此时 sequence 仍推进、事件仍入 log、dedup 仍标记（保持与 Runtime 单调一致），
+   * 但 applied=false 表示 snapshot 状态未变，listeners 仍被通知以便 UI 展示错误。
+   */
+  applyEvent(event: DomainEvent): EventApplyResult {
     // runtimeId 校验：事件必须属于当前 Runtime
     if (event.runtimeId !== this.snapshot.runtimeId) {
       return {
         applied: false,
-        reason: `runtime mismatch: event.runtimeId=${event.runtimeId} ≠ snapshot.runtimeId=${this.snapshot.runtimeId}`,
+        code: "runtime_mismatch",
+        reason: `event.runtimeId=${event.runtimeId} ≠ snapshot.runtimeId=${this.snapshot.runtimeId}`,
       };
     }
 
-    // 去重：仅检查，不标记（标记留到所有校验通过后）
+    // 去重：仅检查，不标记（标记留到 transport 校验通过后）
     if (this.dedup.isDuplicate(event.eventId)) {
-      return { applied: false, reason: "duplicate eventId" };
+      return { applied: false, code: "duplicate", reason: "duplicate eventId" };
     }
 
     // sequence 校验：严格单调递增，必须是 lastSequence + 1
     if (event.sequence <= this.lastSequence) {
-      return { applied: false, reason: `stale sequence ${event.sequence} <= ${this.lastSequence}` };
+      return {
+        applied: false,
+        code: "stale_sequence",
+        reason: `stale sequence ${event.sequence} <= ${this.lastSequence}`,
+        expectedSequence: this.lastSequence + 1,
+        receivedSequence: event.sequence,
+      };
     }
     if (event.sequence !== this.lastSequence + 1) {
       return {
         applied: false,
-        reason: `sequence gap: expected ${this.lastSequence + 1}, got ${event.sequence}`,
+        code: "sequence_gap",
+        reason: `expected ${this.lastSequence + 1}, got ${event.sequence}`,
+        expectedSequence: this.lastSequence + 1,
+        receivedSequence: event.sequence,
       };
     }
 
-    // 所有校验通过：应用事件并更新 dedup / log / sequence
+    // transport 校验全部通过：应用事件。
+    // 无论 reducer 是否拒绝，sequence 都推进、事件都入 log、dedup 都标记。
     const result = reduceEvent(this.snapshot, event);
     this.snapshot = result.snapshot;
     this.lastSequence = event.sequence;
@@ -78,23 +118,58 @@ export class SnapshotStore {
     this.eventLog.push(event);
     if (result.errors.length > 0) {
       this.reducerErrors.push(...result.errors);
+      this.notifyListeners();
+      return {
+        applied: false,
+        code: "reducer_rejected",
+        reason: result.errors[0],
+      };
     }
 
     this.notifyListeners();
-    return { applied: true };
+    return { applied: true, code: "applied" };
   }
 
-  /** 直接设置 snapshot（用于初始化或断线恢复后全量拉取） */
-  setSnapshot(snapshot: RuntimeSnapshot): void {
+  /**
+   * 安装一个远程完整快照作为新的 checkpoint。
+   *
+   * 原子地：
+   * - 校验 runtimeId（不匹配则拒绝，store 状态完全不变）；
+   * - 设置 base 和 current snapshot；
+   * - 设置 lastSequence = snapshot.sequence；
+   * - 清空增量 event log；
+   * - 清空 dedup（post-checkpoint 事件重新开始去重）；
+   * - 清空 reducer errors；
+   * - 通知订阅者一次。
+   *
+   * 不保留旧 checkpoint 的增量事件（除非存在显式测试过的合并路径，目前没有）。
+   */
+  setSnapshot(snapshot: RuntimeSnapshot): InstallCheckpointResult {
+    if (snapshot.runtimeId !== this.baseSnapshot.runtimeId) {
+      return {
+        ok: false,
+        code: "runtime_mismatch",
+        reason: `checkpoint.runtimeId=${snapshot.runtimeId} ≠ store.runtimeId=${this.baseSnapshot.runtimeId}`,
+      };
+    }
+    this.baseSnapshot = structuredClone(snapshot);
     this.snapshot = structuredClone(snapshot);
     this.lastSequence = snapshot.sequence;
     this.dedup.clear();
+    this.eventLog = [];
+    this.reducerErrors = [];
     this.notifyListeners();
+    return { ok: true, code: "installed" };
   }
 
   /** 获取当前 snapshot 的只读副本 */
   getSnapshot(): RuntimeSnapshot {
     return structuredClone(this.snapshot);
+  }
+
+  /** 获取当前 base checkpoint 的只读副本 */
+  getBaseSnapshot(): RuntimeSnapshot {
+    return structuredClone(this.baseSnapshot);
   }
 
   /** 订阅 snapshot 变更 */
@@ -103,7 +178,7 @@ export class SnapshotStore {
     return () => this.listeners.delete(listener);
   }
 
-  /** 获取事件日志（append-only） */
+  /** 获取增量事件日志（仅 baseSnapshot 之后被接受的事件） */
   getEventLog(): DomainEvent[] {
     return [...this.eventLog];
   }
@@ -113,22 +188,16 @@ export class SnapshotStore {
     return [...this.reducerErrors];
   }
 
-  /** 重置到初始状态 */
+  /** 当前已应用到的 sequence */
+  getLastSequence(): number {
+    return this.lastSequence;
+  }
+
+  /** 重置到初始空状态（同时清空 base checkpoint） */
   reset(): void {
-    const runtimeId = this.snapshot.runtimeId;
-    this.snapshot = {
-      runtimeId,
-      snapshotId: `snap-reset`,
-      sequence: 0,
-      schemaVersion: "1.0",
-      createdAt: new Date().toISOString(),
-      lastEventId: "",
-      agents: [],
-      tasks: [],
-      artifacts: [],
-      approvals: [],
-      rooms: [],
-    };
+    const runtimeId = this.baseSnapshot.runtimeId;
+    this.baseSnapshot = createEmptySnapshot(runtimeId, "snap-reset-base");
+    this.snapshot = createEmptySnapshot(runtimeId, "snap-reset");
     this.dedup.clear();
     this.eventLog = [];
     this.lastSequence = 0;
@@ -136,32 +205,24 @@ export class SnapshotStore {
     this.notifyListeners();
   }
 
-  /** 从事件日志重建 snapshot。
-   *  Replay 直接调用 reduceEvent，绕过 applyEvent 的 sequence/dedup 校验
-   *  （因为事件已经在校验通过时入 log，重放是可信的）。
-   *  Replay 后：snapshot 重建、dedup 重建、event log 保留、lastSequence 恢复。 */
+  /**
+   * 从 base checkpoint 开始重放 post-checkpoint 事件日志。
+   *
+   * - 从 baseSnapshot 的克隆开始（保留初始 agents/rooms/approvals/artifacts）；
+   * - 仅重放 eventLog 中的事件（已通过 transport 校验的可信事件）；
+   * - 重建 snapshot、dedup、lastSequence、reducer errors、event log；
+   * - 多次调用结果幂等一致。
+   */
   rebuildFromLog(): void {
-    // 保存完整 append-only log（reset 会清空）
+    // 保存完整 post-checkpoint log
     const events = [...this.eventLog];
-    const runtimeId = this.snapshot.runtimeId;
+    const runtimeId = this.baseSnapshot.runtimeId;
 
-    // 重置到初始空 snapshot
-    this.snapshot = {
-      runtimeId,
-      snapshotId: `snap-rebuilt`,
-      sequence: 0,
-      schemaVersion: "1.0",
-      createdAt: new Date().toISOString(),
-      lastEventId: "",
-      agents: [],
-      tasks: [],
-      artifacts: [],
-      approvals: [],
-      rooms: [],
-    };
+    // 从 base checkpoint 克隆开始重建
+    this.snapshot = structuredClone(this.baseSnapshot);
     this.dedup.clear();
     this.eventLog = [];
-    this.lastSequence = 0;
+    this.lastSequence = this.baseSnapshot.sequence;
     this.reducerErrors = [];
 
     // 重放：重建 snapshot + dedup + event log + lastSequence

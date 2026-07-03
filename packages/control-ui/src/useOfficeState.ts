@@ -1,9 +1,14 @@
 /**
- * useOfficeState — React Hook，连接 SnapshotStore 和 CommandGateway。
+ * useOfficeState — React Hook，连接 RuntimeSession 和 CommandGateway。
  *
  * 核心链路：
- * SnapshotStore.subscribe → setState → React 重渲染
- * React UI Action → CommandGateway.execute → Adapter → Event → SnapshotStore
+ *   RuntimeSession（拥有 adapter 订阅、bootstrap、gap 恢复）
+ *     → SnapshotStore.subscribe → setState → React 重渲染
+ *   React UI Action → CommandGateway.execute → Adapter → Event → SnapshotStore
+ *
+ * Hook 不再直接订阅 adapter，也不再实现 bootstrap。
+ * 仅追加已接受事件（applied / reducer_rejected）到 UI 事件历史，
+ * transport 拒绝事件（duplicate / stale / gap / runtime_mismatch）不出现。
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import type {
@@ -14,14 +19,20 @@ import type {
 import {
   SnapshotStore,
   CommandGateway,
+  RuntimeSession,
   projectSnapshot,
 } from "@agent-office/core";
-import type { RuntimeAdapter } from "@agent-office/protocol";
+import type {
+  SessionState,
+  SessionDiagnostics,
+} from "@agent-office/core";
 
 export interface OfficeState {
   projection: OfficeProjection;
   eventLog: DomainEvent[];
   errors: string[];
+  sessionState: SessionState;
+  diagnostics: SessionDiagnostics;
   sendCommand: (
     commandType: string,
     payload: unknown,
@@ -30,7 +41,7 @@ export interface OfficeState {
 }
 
 export function useOfficeState(
-  adapter: RuntimeAdapter,
+  session: RuntimeSession,
   store: SnapshotStore,
   gateway: CommandGateway,
   runtimeId: string
@@ -40,25 +51,35 @@ export function useOfficeState(
   );
   const [eventLog, setEventLog] = useState<DomainEvent[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [sessionState, setSessionState] = useState<SessionState>(() =>
+    session.getState()
+  );
+  const [diagnostics, setDiagnostics] = useState<SessionDiagnostics>(() =>
+    session.getDiagnostics()
+  );
   const cmdCounter = useRef(0);
 
   useEffect(() => {
-    // 订阅 store 变更
+    // 订阅 store 变更（session 在 handleEvent 中已更新 gateway snapshot，此处只更新 projection）
     const unsubStore = store.subscribe((snap: RuntimeSnapshot) => {
       const storeErrors = store.getErrors();
       const projErrors = storeErrors.slice(-20).map((msg) => ({
         taskId: null,
         agentId: null,
         message: msg,
-        severity: "warning",
+        severity: "warning" as const,
       }));
       setProjection(projectSnapshot(snap, projErrors));
-      gateway.updateSnapshot(snap);
     });
 
-    // 订阅 adapter 事件
-    const unsubAdapter = adapter.subscribe((event: DomainEvent) => {
-      store.applyEvent(event);
+    // 订阅 session 状态变更
+    const unsubSessionState = session.onStateChange((state, diag) => {
+      setSessionState(state);
+      setDiagnostics(diag);
+    });
+
+    // 仅追加已接受事件（transport 拒绝事件不进入 UI 历史）
+    const unsubAccepted = session.onAcceptedEvent((event: DomainEvent) => {
       setEventLog((prev) => [...prev, event]);
       const storeErrors = store.getErrors();
       if (storeErrors.length > 0) {
@@ -66,18 +87,12 @@ export function useOfficeState(
       }
     });
 
-    // 初始 snapshot
-    adapter.getSnapshot().then((snap) => {
-      store.setSnapshot(snap);
-      gateway.updateSnapshot(snap);
-      setProjection(projectSnapshot(snap));
-    });
-
     return () => {
       unsubStore();
-      unsubAdapter();
+      unsubSessionState();
+      unsubAccepted();
     };
-  }, [adapter, store, gateway]);
+  }, [session, store]);
 
   const sendCommand = useCallback(
     async (
@@ -107,5 +122,12 @@ export function useOfficeState(
     [gateway, runtimeId]
   );
 
-  return { projection, eventLog, errors, sendCommand };
+  return {
+    projection,
+    eventLog,
+    errors,
+    sessionState,
+    diagnostics,
+    sendCommand,
+  };
 }

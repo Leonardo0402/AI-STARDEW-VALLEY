@@ -476,8 +476,9 @@ describe("SnapshotStore", () => {
     const r2 = store.applyEvent(event);
 
     expect(r1.applied).toBe(true);
+    expect(r1.code).toBe("applied");
     expect(r2.applied).toBe(false);
-    expect(r2.reason).toContain("duplicate");
+    expect(r2.code).toBe("duplicate");
   });
 
   it("should reject stale sequence numbers", () => {
@@ -490,7 +491,7 @@ describe("SnapshotStore", () => {
       agentId: "w2", name: "Worker-2", role: "worker" as const,
     }, { eventId: "evt-1b" }));
     expect(r.applied).toBe(false);
-    expect(r.reason).toContain("stale sequence");
+    expect(r.code).toBe("stale_sequence");
   });
 
   it("should reject runtime mismatch", () => {
@@ -499,7 +500,7 @@ describe("SnapshotStore", () => {
       agentId: "w1", name: "Worker-1", role: "worker" as const,
     }, { runtimeId: "other-runtime" }));
     expect(r.applied).toBe(false);
-    expect(r.reason).toContain("runtime mismatch");
+    expect(r.code).toBe("runtime_mismatch");
     // 被拒绝的事件不应进入 snapshot
     expect(store.getSnapshot().agents).toHaveLength(0);
   });
@@ -514,7 +515,7 @@ describe("SnapshotStore", () => {
       agentId: "w2", name: "Worker-2", role: "worker" as const,
     }, { eventId: "evt-3" }));
     expect(r.applied).toBe(false);
-    expect(r.reason).toContain("sequence gap");
+    expect(r.code).toBe("sequence_gap");
   });
 
   it("should not write rejected events to dedup or event log", () => {
@@ -607,7 +608,7 @@ describe("SnapshotStore", () => {
     // 同一 eventId 再次提交应被 dedup 拦截（说明 dedup 已重建）
     const r = store.applyEvent(event);
     expect(r.applied).toBe(false);
-    expect(r.reason).toContain("duplicate");
+    expect(r.code).toBe("duplicate");
   });
 
   it("should not allow direct snapshot modification", () => {
@@ -621,6 +622,140 @@ describe("SnapshotStore", () => {
     // store's internal snapshot should be unaffected
     const snap2 = store.getSnapshot();
     expect(snap2.agents[0].name).toBe("Worker-1");
+  });
+});
+
+// ─── Checkpoint-aware SnapshotStore（Issue #3）─────────────────
+
+/** 构造一个含 4 agents + 4 rooms 的 checkpoint snapshot */
+function makeCheckpoint(runtimeId: string, sequence: number): RuntimeSnapshot {
+  return {
+    runtimeId,
+    snapshotId: `snap-cp-${sequence}`,
+    sequence,
+    schemaVersion: "1.0",
+    createdAt: new Date().toISOString(),
+    lastEventId: "",
+    agents: [
+      { agentId: "a1", runtimeId, name: "Orch", role: "orchestrator", status: "idle", currentTaskId: null, currentRoomId: "room-command", capabilityGrants: [], lastEventAt: "", blockedReason: null },
+      { agentId: "a2", runtimeId, name: "W1", role: "worker", status: "idle", currentTaskId: null, currentRoomId: "room-exec", capabilityGrants: [], lastEventAt: "", blockedReason: null },
+      { agentId: "a3", runtimeId, name: "W2", role: "worker", status: "idle", currentTaskId: null, currentRoomId: "room-exec", capabilityGrants: [], lastEventAt: "", blockedReason: null },
+      { agentId: "a4", runtimeId, name: "Rev", role: "reviewer", status: "idle", currentTaskId: null, currentRoomId: "room-review", capabilityGrants: [], lastEventAt: "", blockedReason: null },
+    ],
+    tasks: [],
+    artifacts: [],
+    approvals: [],
+    rooms: [
+      { roomId: "room-command", runtimeId, name: "Command", type: "command", bounds: { x: 0, y: 0, width: 10, height: 10 }, activeAgentIds: ["a1"], visualState: {} },
+      { roomId: "room-exec", runtimeId, name: "Execution", type: "execution", bounds: { x: 10, y: 0, width: 10, height: 10 }, activeAgentIds: ["a2", "a3"], visualState: {} },
+      { roomId: "room-review", runtimeId, name: "Review", type: "review", bounds: { x: 20, y: 0, width: 10, height: 10 }, activeAgentIds: ["a4"], visualState: {} },
+      { roomId: "room-delivery", runtimeId, name: "Delivery", type: "approval_delivery", bounds: { x: 30, y: 0, width: 10, height: 10 }, activeAgentIds: [], visualState: {} },
+    ],
+  };
+}
+
+describe("Checkpoint-aware SnapshotStore", () => {
+  it("replay 从 base checkpoint 开始，保留初始 agents/rooms", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    const cp = makeCheckpoint(RUNTIME_ID, 10);
+    store.setSnapshot(cp);
+
+    // 应用增量事件
+    store.applyEvent(makeEvent(11, EventType.TASK_CREATED, {
+      taskId: "t1", title: "T", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    }));
+    store.applyEvent(makeEvent(12, EventType.ARTIFACT_CREATED, {
+      artifactId: "art1", taskId: "t1", producerAgentId: "a2",
+      type: "report", title: "R", uri: null, version: 1,
+    }));
+
+    const before = store.getSnapshot();
+    store.rebuildFromLog();
+    const after = store.getSnapshot();
+
+    // 初始 agents/rooms 来自 checkpoint，replay 后必须保留
+    expect(after.agents).toHaveLength(4);
+    expect(after.rooms).toHaveLength(4);
+    // 增量事件重建的部分一致
+    expect(after.tasks).toEqual(before.tasks);
+    expect(after.artifacts).toEqual(before.artifacts);
+  });
+
+  it("连续两次 replay 结果幂等一致", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    store.setSnapshot(makeCheckpoint(RUNTIME_ID, 5));
+    store.applyEvent(makeEvent(6, EventType.TASK_CREATED, {
+      taskId: "t1", title: "T", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    }));
+
+    store.rebuildFromLog();
+    const snap1 = store.getSnapshot();
+    store.rebuildFromLog();
+    const snap2 = store.getSnapshot();
+
+    const { createdAt: _c1, snapshotId: _s1, ...rest1 } = snap1;
+    const { createdAt: _c2, snapshotId: _s2, ...rest2 } = snap2;
+    expect(rest1).toEqual(rest2);
+  });
+
+  it("安装新 checkpoint 清空旧增量 log", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    store.setSnapshot(makeCheckpoint(RUNTIME_ID, 5));
+    store.applyEvent(makeEvent(6, EventType.TASK_CREATED, {
+      taskId: "t1", title: "T", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    }));
+    expect(store.getEventLog()).toHaveLength(1);
+
+    // 安装 checkpoint B（sequence=20）
+    const cpB = makeCheckpoint(RUNTIME_ID, 20);
+    const result = store.setSnapshot(cpB);
+    expect(result.ok).toBe(true);
+
+    // 旧增量 log 被清空
+    expect(store.getEventLog()).toHaveLength(0);
+    // replay 从 checkpoint B 开始
+    expect(store.getSnapshot().sequence).toBe(20);
+    expect(store.getLastSequence()).toBe(20);
+  });
+
+  it("拒绝不同 runtimeId 的 checkpoint", () => {
+    const store = new SnapshotStore(RUNTIME_ID);
+    const wrongCp = makeCheckpoint("other-runtime", 5);
+    const result = store.setSnapshot(wrongCp);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe("runtime_mismatch");
+    // store 状态不变
+    expect(store.getSnapshot().runtimeId).toBe(RUNTIME_ID);
+  });
+
+  it("reducer_rejected 事件推进 sequence 并入 log，但状态未变", () => {
+    // 决策：reducer-rejected 事件通过 transport 校验后，
+    // sequence 推进、入 log、标记 dedup；applied=false 表示状态未变。
+    const store = new SnapshotStore(RUNTIME_ID);
+    store.applyEvent(makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "T", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    }));
+    // 尝试非法转换：created → completed（无效）
+    const rejected = store.applyEvent(makeEvent(2, EventType.TASK_COMPLETED, {
+      taskId: "t1",
+    }));
+    expect(rejected.applied).toBe(false);
+    expect(rejected.code).toBe("reducer_rejected");
+    // sequence 已推进到 2
+    expect(store.getLastSequence()).toBe(2);
+    // 事件已入 log
+    expect(store.getEventLog()).toHaveLength(2);
+    // 任务状态未变（仍为 created）
+    expect(store.getSnapshot().tasks[0].status).toBe("created");
+    // 下一个合法 sequence 是 3（不是 2），证明 sequence 已推进
+    const next = store.applyEvent(makeEvent(2, EventType.TASK_ASSIGNED, {
+      taskId: "t1", agentId: "a2", roomId: "room-exec",
+    }, { eventId: "evt-2b" }));
+    expect(next.code).toBe("stale_sequence");
   });
 });
 

@@ -393,6 +393,41 @@ export interface CommandResult {
 export type DomainEventHandler = (event: DomainEvent) => void;
 export type Unsubscribe = () => void;
 
+/** 订阅选项。afterSequence 用于请求重放 sequence > afterSequence 的事件。 */
+export interface SubscribeOptions {
+  afterSequence?: number;
+}
+
+// ─── EventApplyResult ───────────────────────────────────────
+
+/**
+ * 事件应用到 SnapshotStore 的结构化结果。
+ *
+ * 调用方不得解析 reason 字符串，必须依据 code 判断。
+ *
+ * 语义：
+ * - applied=true, code="applied"：事件已应用，snapshot 状态可能变更，sequence 推进，事件入 log。
+ * - applied=false, code="reducer_rejected"：事件通过 transport 校验（runtime/dedup/sequence），
+ *   但 reducer 拒绝了状态转换。**sequence 仍推进、事件仍入 log、dedup 仍标记**，
+ *   以保持与 Runtime 的单调一致性；snapshot 状态未变，listeners 仍被通知（以便 UI 展示错误）。
+ * - applied=false, 其余 code：事件被完全拒绝，store 状态、sequence、log、dedup 均不变。
+ */
+export type EventApplyCode =
+  | "applied"
+  | "duplicate"
+  | "runtime_mismatch"
+  | "stale_sequence"
+  | "sequence_gap"
+  | "reducer_rejected";
+
+export interface EventApplyResult {
+  applied: boolean;
+  code: EventApplyCode;
+  reason?: string;
+  expectedSequence?: number;
+  receivedSequence?: number;
+}
+
 export interface AdapterCapabilities {
   supportedEvents: string[];
   supportedCommands: string[];
@@ -410,7 +445,10 @@ export interface RuntimeAdapter {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getSnapshot(): Promise<RuntimeSnapshot>;
-  subscribe(handler: DomainEventHandler): Unsubscribe;
+  subscribe(
+    handler: DomainEventHandler,
+    options?: SubscribeOptions
+  ): Unsubscribe;
   execute(command: OfficeCommand): Promise<CommandResult>;
   getCapabilities(): AdapterCapabilities;
 }

@@ -14,8 +14,7 @@
  * - UI 卸载不影响 Runtime（PixelOfficeScene.destroy 不影响 adapter）
  */
 import { useState, useEffect, useRef, type FC, type ReactNode } from "react";
-import type { RuntimeAdapter } from "@agent-office/protocol";
-import type { SnapshotStore, CommandGateway } from "@agent-office/core";
+import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
 import {
   ControlPanel,
   useOfficeState,
@@ -25,7 +24,7 @@ import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
 
 interface AppProps {
-  adapter: RuntimeAdapter;
+  session: RuntimeSession;
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
@@ -36,9 +35,9 @@ interface AppProps {
 
 type ViewMode = "pixel" | "list";
 
-export const App: FC<AppProps> = ({ adapter, store, gateway, runtimeId, demoControls }) => {
+export const App: FC<AppProps> = ({ session, store, gateway, runtimeId, demoControls }) => {
   const { projection, eventLog, errors, sendCommand } = useOfficeState(
-    adapter,
+    session,
     store,
     gateway,
     runtimeId

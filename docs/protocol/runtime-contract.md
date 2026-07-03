@@ -346,14 +346,40 @@ interface RuntimeAdapter {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getSnapshot(): Promise<RuntimeSnapshot>;
-  subscribe(handler: DomainEventHandler): Unsubscribe;
+  subscribe(handler: DomainEventHandler, options?: SubscribeOptions): Unsubscribe;
   execute(command: OfficeCommand): Promise<CommandResult>;
   getCapabilities(): AdapterCapabilities;
 }
 
 type DomainEventHandler = (event: DomainEvent) => void;
 type Unsubscribe = () => void;
+
+interface SubscribeOptions {
+  /**
+   * 游标订阅：要求 adapter 重放所有 sequence > afterSequence 的事件，
+   * 然后转入实时推送。未提供表示仅订阅实时流（由调用方保证无 gap）。
+   */
+  afterSequence?: number;
+}
 ```
+
+#### 4.1.1 游标订阅契约（Cursor-aware Subscription）
+
+Adapter 必须保证 `subscribe(handler, { afterSequence: N })` 的语义：
+
+1. **同步重放阶段**：在返回 `Unsubscribe` 之前，adapter 必须以调用线程同步方式，
+   把内部 Event Log 中所有 `sequence > N` 的事件依次投递给 `handler`。
+   重放顺序按 `sequence` 升序。
+2. **实时推送阶段**：重放完成后，新产生的事件按到达顺序投递给 `handler`。
+3. **重放失败不静默**：如果 adapter 内部 Event Log 已裁剪导致无法满足 `afterSequence`，
+   adapter 应在 subscribe 调用阶段抛出 `EventLogTrimmedError`，
+   由调用方决定是否拉取新 Snapshot 重启。
+   （MockRuntimeAdapter 因为不裁剪，永远不会触发此错误。）
+4. **重放期间不再二次投递**：重放阶段已投递的事件，进入实时阶段后不会被重复投递。
+
+> 注意：调用方应当先调用 `getSnapshot()` 拿到 checkpoint，再以
+> `snapshot.sequence` 作为 `afterSequence` 调用 `subscribe`。
+> 顺序错误（先 subscribe 后 getSnapshot）会导致 gap 或重复。
 
 ### 4.2 AdapterCapabilities
 
@@ -393,37 +419,151 @@ MockRuntimeAdapter 必须：
 
 ## 5. Snapshot 与事件重建
 
-### 5.1 初始化
+### 5.1 Checkpoint 模型（baseSnapshot + post-checkpoint event log）
+
+Office 端的 `SnapshotStore` 采用 **checkpoint-aware event sourcing**：
 
 ```text
-Client                          Server/Adapter
-  │                                  │
-  │──── GET /snapshot ──────────────→│
-  │←─── RuntimeSnapshot ─────────────│
-  │                                  │
-  │──── GET /events?after=lastEventId│
-  │←─── SSE stream: DomainEvent[] ───│
-  │                                  │
+┌─────────────────────────────────────────────────────────────────┐
+│  SnapshotStore                                                  │
+│                                                                 │
+│  baseSnapshot  ──── 可信 checkpoint（由 setSnapshot 安装）       │
+│       │                                                         │
+│       ▼                                                         │
+│  current snapshot = baseSnapshot + replay(post-checkpoint log)  │
+│                                                                 │
+│  eventLog[]    ──── 仅记录 checkpoint 之后被接受的事件           │
+│  dedup         ──── 仅记录 checkpoint 之后被接受过的 eventId     │
+│  lastSequence  ──── 已观察到的最大 sequence                     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 增量更新
+**不变量**：
+
+- `baseSnapshot.runtimeId === snapshot.runtimeId === current snapshot.runtimeId`
+- `baseSnapshot.sequence ≤ lastSequence`
+- `eventLog` 中所有事件的 `sequence > baseSnapshot.sequence`
+- `dedup` 中所有 `eventId` 对应的 `sequence > baseSnapshot.sequence`
+- 调用 `setSnapshot` 会**原子地**重置 `baseSnapshot`、`snapshot`、`eventLog`、`dedup`、`lastSequence`
+
+### 5.2 初始化（Bootstrap Ordering）
+
+Bootstrap 必须按 **snapshot-first** 顺序：
 
 ```text
-Current State = Snapshot + Events(after snapshot.lastEventId)
+1. adapter.connect()
+2. snapshot = await adapter.getSnapshot()
+3. store.setSnapshot(snapshot)                 // 安装 checkpoint
+4. session.subscribe(handler, {
+     afterSequence: snapshot.sequence          // 游标订阅
+   })
 ```
 
-- 每次收到 DomainEvent，应用事件到本地状态
-- 本地状态 = 上一次 Snapshot 投影 + 增量事件投影
+> 顺序错误示例：先 `subscribe` 再 `getSnapshot` 会导致
+> (a) 重放阶段拿不到任何事件（因为还没安装 checkpoint，store.lastSequence = 0）；
+> (b) 进入实时阶段后，订阅期间产生的事件 sequence 与 store 期望的 sequence 不连续。
 
-### 5.3 断线恢复
+### 5.3 类型化事件应用结果（EventApplyResult）
 
-1. SSE 连接断开
-2. 浏览器自动重连，携带 `Last-Event-ID`
-3. 服务端从 Event Log 中找到 `lastEventId` 之后的事件
-4. 推送增量事件
-5. 如果事件已裁剪（Event Log 中不存在），服务端返回 `410 Gone`，客户端重新拉取完整 Snapshot
+`SnapshotStore.applyEvent(event)` 返回类型化结果，**调用方不得解析 `reason` 字符串**：
 
-### 5.4 Snapshot 重建
+```ts
+type EventApplyCode =
+  | "applied"            // 事件被接受并应用，snapshot 已更新
+  | "duplicate"          // eventId 已在 dedup 中（重复投递）
+  | "runtime_mismatch"   // event.runtimeId !== store.runtimeId
+  | "stale_sequence"     // event.sequence ≤ store.lastSequence
+  | "sequence_gap"       // event.sequence > store.lastSequence + 1
+  | "reducer_rejected";  // 通过 transport 校验但 reducer 拒绝（非法状态转换等）
+
+interface EventApplyResult {
+  applied: boolean;       // 是否真正修改了 snapshot
+  code: EventApplyCode;   // 类型化结果码
+  reason?: string;        // 仅用于诊断日志，不参与控制流
+  expectedSequence?: number;
+  receivedSequence?: number;
+}
+```
+
+**关键决策：reducer_rejected 仍然推进 sequence**
+
+| Code              | applied | 推进 lastSequence | 进入 eventLog | 标记 dedup |
+| ----------------- | ------- | ----------------- | ------------- | ---------- |
+| `applied`         | true    | yes               | yes           | yes        |
+| `reducer_rejected`| false   | **yes**           | **yes**       | **yes**    |
+| `duplicate`       | false   | no                | no            | no         |
+| `stale_sequence`  | false   | no                | no            | no         |
+| `runtime_mismatch`| false   | no                | no            | no         |
+| `sequence_gap`    | false   | no                | no            | no         |
+
+**为什么 reducer_rejected 仍推进 sequence？**
+
+Runtime 已经把该事件计入了自己的 sequence 序列。如果 Office 跳过它，
+后续事件的 `sequence` 会与 `lastSequence + 1` 不对齐，从而被误判为 `sequence_gap`。
+因此 Office 必须把 reducer_rejected 事件作为"已发生但未改变业务状态"的事实接受下来，
+维持与 Runtime 的单调一致性。`applied=false` 仅表示 snapshot 状态未变，
+**不代表**事件被丢弃。
+
+### 5.4 增量更新
+
+```text
+Current State = baseSnapshot + replay(eventLog)
+```
+
+- 每次收到 DomainEvent，调用 `store.applyEvent(event)`
+- 根据 `EventApplyResult.code` 走不同分支（见 §5.5）
+- UI 历史只展示 `applied` 和 `reducer_rejected` 事件（二者都已进入 eventLog）
+- transport 拒绝的 `duplicate / stale / gap / mismatch` 不进入 UI 事件历史
+
+### 5.5 Gap 自动恢复
+
+当 `applyEvent` 返回 `code === "sequence_gap"` 时，由 `RuntimeSession` 触发恢复：
+
+```text
+1. session 进入 "resynchronizing" 状态
+2. 取消当前订阅（unsubscribe）
+3. snapshot' = await adapter.getSnapshot()              // 拉取最新 checkpoint
+4. store.setSnapshot(snapshot')                          // 原子重置
+5. session.subscribe(handler, {
+     afterSequence: snapshot'.sequence
+   })                                                    // 重新游标订阅
+6. session 进入 "connected" 状态
+```
+
+**约束**：
+
+- 恢复过程**串行化**：通过 `resyncing` 标志保证同一时刻只有一个恢复流程在跑
+- 恢复期间收到的 transport 事件必须等到恢复完成后才会被处理（避免乱序）
+- 恢复失败：session 进入 `degraded` 状态，调用方可重试或断开
+- 调用方也可主动调用 `session.resynchronize()` 强制恢复
+
+### 5.6 Snapshot 替换语义
+
+`store.setSnapshot(snapshot)` 是**原子的 checkpoint 安装**：
+
+- 校验 `snapshot.runtimeId === baseSnapshot.runtimeId`，不匹配返回 `{ ok: false, code: "runtime_mismatch" }`
+- 通过校验后：
+  - `baseSnapshot = deepClone(snapshot)`
+  - `snapshot = deepClone(snapshot)`
+  - `lastSequence = snapshot.sequence`
+  - `eventLog = []`
+  - `dedup.clear()`
+  - `reducerErrors = []`
+  - 通知所有 listeners
+- 调用方拿到结果后，必须重新 `subscribe(handler, { afterSequence: snapshot.sequence })`
+
+### 5.7 rebuildFromLog 语义
+
+`store.rebuildFromLog()` 用于断点重放：
+
+- 从 `baseSnapshot` 的 deep clone 开始（不是从空 snapshot）
+- 清空 `eventLog`、`dedup`
+- 重置 `lastSequence = baseSnapshot.sequence`
+- 按原顺序重新应用所有曾经被接受的事件
+- 失败的 reducer_rejected 事件再次应用时仍会被记录为 reducer_rejected
+- 完成后 `snapshot` 与重放前应当等价（除非 reducer 逻辑发生变化）
+
+### 5.8 Snapshot 重建（服务端）
 
 - 服务端定期从 Event Log 重建 materialized Snapshot
 - 重建频率：每 N 个事件或每 T 秒
@@ -503,7 +643,101 @@ requested → cancelled
 
 ---
 
-## 8. 协议版本
+## 8. RuntimeSession 生命周期
+
+### 8.1 角色定位
+
+`RuntimeSession` 是 **框架无关的会话生命周期所有者**，位于 `packages/core`：
+
+- 不依赖 React / Vue / 任何 UI 框架
+- 不持有 UI 状态，只持有：adapter 引用、store 引用、gateway 引用、订阅句柄、内部状态机
+- 对外暴露：`connect / disconnect / resynchronize / onStateChange / onAcceptedEvent`
+- 内部封装：bootstrap ordering、cursor-aware subscribe、gap recovery、状态转换
+
+### 8.2 状态机
+
+```text
+       ┌──────────────┐  connect()    ┌──────────────┐
+       │ disconnected │ ────────────→ │  connecting  │
+       └──────────────┘               └──────┬───────┘
+                                          │ adapter.connect OK
+                                          ▼
+                                   ┌──────────────┐
+                                   │ synchronizing│  (getSnapshot + setSnapshot + subscribe)
+                                   └──────┬───────┘
+                                          │ subscribe OK
+                                          ▼
+                                   ┌──────────────┐
+                ┌──────────────────│   connected  │
+                │                  └──────┬───────┘
+                │ sequence_gap            │ disconnect()
+                ▼                         ▼
+        ┌──────────────┐           ┌──────────────┐
+        │ resynchronizing│          │ disconnected │
+        └──────┬───────┘           └──────────────┘
+               │ resync OK
+               ▼
+        ┌──────────────┐
+        │   connected  │
+        └──────────────┘
+
+  任意状态遇到 runtime_mismatch / 不可恢复错误 → "degraded" 或 "failed"
+  任意状态遇到 disconnect() → "disconnected"
+```
+
+### 8.3 接口
+
+```ts
+type SessionState =
+  | "disconnected"
+  | "connecting"
+  | "synchronizing"
+  | "connected"
+  | "resynchronizing"
+  | "degraded"
+  | "failed";
+
+class RuntimeSession {
+  constructor(adapter, store, gateway, options?);
+  connect(): Promise<void>;           // disconnected → connecting → synchronizing → connected
+  disconnect(): Promise<void>;        // any → disconnected
+  resynchronize(): Promise<void>;     // 主动触发 gap 恢复流程
+  onStateChange(listener): Unsubscribe;
+  onAcceptedEvent(listener): Unsubscribe;  // 仅 applied / reducer_rejected 事件
+  getState(): SessionState;
+  getDiagnostics(): SessionDiagnostics;     // 当前状态、最近错误、gap 计数等
+}
+```
+
+### 8.4 事件分发规则
+
+`session.handleEvent(event)` 内部分发依据 `EventApplyResult.code`：
+
+| Code              | 行为                                                                |
+| ----------------- | ------------------------------------------------------------------- |
+| `applied`         | gateway 接受事件 → 通知 onAcceptedEvent listener                   |
+| `reducer_rejected`| gateway 接受事件（标记 reducer error）→ 通知 onAcceptedEvent listener |
+| `duplicate`       | 静默丢弃（已处理过）                                                |
+| `stale_sequence`  | 静默丢弃（旧序号）                                                  |
+| `runtime_mismatch`| session 进入 `degraded`，暴露 error                                |
+| `sequence_gap`    | 触发 `resynchronize()`                                              |
+
+### 8.5 React 集成约定
+
+- `useOfficeState(session, store, gateway, runtimeId)` 接受 `RuntimeSession` 而非 `RuntimeAdapter`
+- React hook 只订阅 `store`、`session.onStateChange`、`session.onAcceptedEvent`
+- UI 事件历史只追加 `onAcceptedEvent` 推送的事件（即 applied / reducer_rejected）
+- transport 拒绝事件不进入 UI 历史
+- **StrictMode 安全**：session 应在模块作用域创建（如 `main.tsx` 顶层），避免 React StrictMode 双重挂载导致重复订阅
+
+### 8.6 幂等 connect
+
+- `connect()` 在非 `detached` 状态调用是 no-op，直接 resolve
+- 并发 `connect()` 调用：第二次调用 await 同一个 in-flight Promise
+
+---
+
+## 9. 协议版本
 
 - `schemaVersion` 字段标识协议版本
 - MVP 使用 `"1.0"`
