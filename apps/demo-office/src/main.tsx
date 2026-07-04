@@ -13,6 +13,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { readConfigFromEnv, ConfigError } from "./runtime/config.js";
 import { createRuntime } from "./runtime/create-runtime.js";
+import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
 import type { RuntimeComposition } from "./runtime/types.js";
 import { App } from "./App.js";
 import { DemoControls } from "./DemoControls.js";
@@ -63,7 +64,8 @@ if (import.meta.hot) {
 }
 
 // ─── Render ───────────────────────────────────────────────────
-const { session, store, gateway, adapter } = composition;
+const { session, store, gateway } = composition;
+const mockAdapter = configMode === "mock" ? (composition.adapter as MockRuntimeAdapter) : null;
 const root = createRoot(document.getElementById("root")!);
 root.render(
   <React.StrictMode>
@@ -74,8 +76,8 @@ root.render(
       runtimeId={configRuntimeId}
       mode={configMode}
       demoControls={
-        configMode === "mock" ? (
-          <DemoControls adapter={adapter as never} store={store} session={session} />
+        mockAdapter ? (
+          <DemoControls adapter={mockAdapter} store={store} session={session} />
         ) : null
       }
     />
