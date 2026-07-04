@@ -20,6 +20,7 @@
     "pixi.js": "^8.5.0"
   },
   "devDependencies": {
+    "@agent-office/qclaw-swarm": "0.1.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
