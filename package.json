@@ -9,6 +9,9 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=apps/demo-office",
+    "dev:ui": "npm run dev --workspace=apps/demo-office",
+    "dev:runtime": "node --import tsx packages/adapters/qclaw-swarm/src/dev-server.ts --port=3456 --allowed-origins=http://localhost:5173",
+    "dev:remote-demo": "node scripts/dev-remote-demo.mjs",
     "build": "tsc -b && npm run build -w apps/demo-office",
     "test": "vitest run",
     "test:watch": "vitest"
