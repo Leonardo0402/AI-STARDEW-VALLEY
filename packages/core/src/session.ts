@@ -39,8 +39,12 @@ import type {
   DomainEvent,
   EventApplyResult,
   RuntimeStreamObserver,
+  RuntimeStreamState,
   RuntimeSubscription,
+  RuntimeStreamError,
+  ReconnectPolicy,
 } from "@agent-office/protocol";
+import { defaultReconnectPolicy } from "@agent-office/protocol";
 import type { SnapshotStore } from "./store.js";
 import type { CommandGateway } from "./gateway.js";
 
@@ -60,7 +64,8 @@ export type SessionErrorCode =
   | "snapshot_failed"
   | "subscribe_failed"
   | "resync_failed"
-  | "disconnect_failed";
+  | "disconnect_failed"
+  | "reconnect_failed";
 
 export interface SessionError {
   code: SessionErrorCode;
@@ -99,6 +104,8 @@ export interface SessionDiagnostics {
   lastGap: GapDiagnostic | null;
   /** 已发起的 resync 次数 */
   resyncCount: number;
+  /** 累计重连次数（含成功/失败），永不重置 */
+  reconnectCount: number;
   /** 当前是否持有活跃订阅 */
   hasActiveSubscription: boolean;
   /** 当前活跃订阅的 afterSequence 游标；无订阅时为 null */
@@ -108,13 +115,15 @@ export interface SessionDiagnostics {
 export interface RuntimeSessionOptions {
   /** 重同步时是否自动恢复订阅消费，默认 true */
   autoResume?: boolean;
+  /** 重连退避策略；不传使用 defaultReconnectPolicy */
+  reconnectPolicy?: ReconnectPolicy;
 }
 
 export class RuntimeSession {
   private adapter: RuntimeAdapter;
   private store: SnapshotStore;
   private gateway: CommandGateway;
-  private options: Required<RuntimeSessionOptions>;
+  private options: Required<Omit<RuntimeSessionOptions, "reconnectPolicy">>;
 
   private state: SessionState = "disconnected";
   private stateListeners = new Set<SessionStateListener>();
@@ -131,6 +140,12 @@ export class RuntimeSession {
   private connectPromise: Promise<void> | null = null;
   /** 共享 in-flight Promise：并发的 resynchronize() 复用同一个 Promise，真正单飞。 */
   private resyncPromise: Promise<void> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Single-flight: in-flight reconnect Promise. scheduleReconnect() checks BOTH timer AND this. */
+  private reconnectPromise: Promise<void> | null = null;
+  /** Current backoff counter (resets to 0 on successful reconnect). */
+  private reconnectAttempts = 0;
+  private reconnectPolicy: ReconnectPolicy;
   /** 当前活跃订阅的 afterSequence 游标；无订阅时为 null。 */
   private activeSubscriptionCursor: number | null = null;
   private diagnostics: SessionDiagnostics = {
@@ -139,6 +154,7 @@ export class RuntimeSession {
     lastError: null,
     lastGap: null,
     resyncCount: 0,
+    reconnectCount: 0,
     hasActiveSubscription: false,
     activeSubscriptionCursor: null,
   };
@@ -153,6 +169,7 @@ export class RuntimeSession {
     this.store = store;
     this.gateway = gateway;
     this.options = { autoResume: true, ...options };
+    this.reconnectPolicy = options.reconnectPolicy ?? defaultReconnectPolicy;
   }
 
   /** 当前会话状态 */
@@ -378,17 +395,28 @@ export class RuntimeSession {
   async resynchronize(): Promise<void> {
     if (this.connectPromise) return this.connectPromise;
     if (this.resyncPromise) return this.resyncPromise;
-    this.resyncPromise = this.doResynchronize();
+    this.resyncPromise = this.resynchronizeOrThrow();
     try {
       await this.resyncPromise;
+    } catch (err) {
+      // Swallow — Plan 1 compat. State already set to failed inside resynchronizeOrThrow.
+      void err;
     } finally {
       this.resyncPromise = null;
     }
   }
 
-  private async doResynchronize(): Promise<void> {
+  /**
+   * Private resynchronize that RE-THROWS on failure.
+   * Used by doReconnect() which needs to know success/failure to decide
+   * whether to reset reconnectAttempts or schedule another retry.
+   *
+   * On failure: sets state to "failed", records error, then THROWS.
+   * (Caller decides whether to catch — public resynchronize() catches;
+   *  doReconnect() catches to schedule retry.)
+   */
+  private async resynchronizeOrThrow(): Promise<void> {
     const myEpoch = this.epoch;
-    // 立即转 resynchronizing + 拆旧订阅，避免旧订阅在等待 snapshot 期间继续推送
     this.setState("resynchronizing");
     await this.removeSubscription();
 
@@ -451,9 +479,12 @@ export class RuntimeSession {
 
       this.setState("connected");
     } catch (err) {
-      if (this.epoch !== myEpoch) return;
-      // resync 失败：不留活跃订阅，避免错误状态下继续消费
+      // On failure: ensure no stale subscription, set failed, then RE-THROW.
       await this.removeSubscription();
+      if (this.epoch !== myEpoch) return; // disconnect caused the failure — don't set failed
+      // Wrap non-SessionError throws (e.g. raw getSnapshot errors) as resync_failed,
+      // matching Plan 1 doResynchronize behavior. SessionError throws (subscribe_failed
+      // from installSubscription/ready, resync_failed from setSnapshot) pass through.
       this.recordError(
         this.isSessionError(err)
           ? err
@@ -463,6 +494,7 @@ export class RuntimeSession {
             )
       );
       this.setState("failed");
+      throw err;
     }
   }
 
@@ -480,10 +512,15 @@ export class RuntimeSession {
    */
   private triggerResync(): void {
     if (this.resyncPromise) return;
-    this.resyncPromise = this.doResynchronize();
-    void this.resyncPromise.finally(() => {
-      this.resyncPromise = null;
-    });
+    this.resyncPromise = this.resynchronizeOrThrow();
+    void this.resyncPromise
+      .catch(() => {
+        // resynchronizeOrThrow sets state to "failed" and records the error before
+        // re-throwing; swallow here to avoid unhandled rejection.
+      })
+      .finally(() => {
+        this.resyncPromise = null;
+      });
   }
 
   /**
@@ -497,6 +534,20 @@ export class RuntimeSession {
    */
   async disconnect(): Promise<void> {
     this.epoch += 1;
+    // 1. Clear reconnect timer (cancels pending backoff).
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    // 2. Await in-flight reconnect (with epoch guard — epoch already incremented,
+    //    so doReconnectInner will bail out on its epoch check; but we still await
+    //    to ensure no post-disconnect state mutation).
+    if (this.reconnectPromise) {
+      try { await this.reconnectPromise; } catch { /* epoch guard handles */ }
+    }
+    // 3. Reset backoff counter (reconnectCount stays cumulative in diagnostics).
+    this.reconnectAttempts = 0;
+    // 4. Remove subscription + disconnect adapter.
     await this.removeSubscription();
     try {
       await this.adapter.disconnect();
@@ -517,6 +568,8 @@ export class RuntimeSession {
   private installSubscription(afterSequence: number): RuntimeSubscription {
     const observer: RuntimeStreamObserver = {
       onEvent: (event) => this.handleEvent(event),
+      onError: (error) => this.handleStreamError(error),
+      onState: (state) => this.handleStreamState(state),
     };
     const subscription = this.adapter.subscribe(observer, { afterSequence });
     this.subscription = subscription;
@@ -524,6 +577,180 @@ export class RuntimeSession {
     this.diagnostics.hasActiveSubscription = true;
     this.diagnostics.activeSubscriptionCursor = afterSequence;
     return subscription;
+  }
+
+  private handleStreamError(error: RuntimeStreamError): void {
+    if (!this.subscription) return;
+    // event_log_trimmed is paired with onState("reset_required") — route it to
+    // the single reset-recovery path, NOT the backoff-reconnect path.
+    if (error.code === "event_log_trimmed") {
+      // The adapter will also call onState("reset_required") — that triggers
+      // triggerResetRecovery(). Just close the subscription here; don't schedule
+      // a competing backoff reconnect.
+      return;
+    }
+    if (error.recoverable) {
+      // Recoverable: degrade + schedule reconnect (single-flight).
+      this.setState("degraded");
+      this.scheduleReconnect();
+    } else {
+      // Non-recoverable: CLOSE SUBSCRIPTION FIRST, then set failed.
+      void this.handleNonRecoverableError(error);
+    }
+  }
+
+  private async handleNonRecoverableError(error: RuntimeStreamError): Promise<void> {
+    const myEpoch = this.epoch;
+    await this.removeSubscription();
+    if (this.epoch !== myEpoch) return; // disconnect won the race
+    const sessionCode: SessionErrorCode =
+      error.code === "authentication_failed" ? "subscribe_failed" :
+      error.code === "stream_protocol_error" ? "subscribe_failed" :
+      "subscribe_failed";
+    this.recordError(this.makeSessionError(sessionCode, error.message));
+    this.setState("failed");
+  }
+
+  private handleStreamState(state: RuntimeStreamState): void {
+    if (state === "reset_required") {
+      // Immediate resync, no backoff. Shares the reconnectPromise lock with
+      // backoff reconnect so reset_required and event_log_trimmed can't fire
+      // two competing recovery operations.
+      void this.triggerResetRecovery();
+    }
+  }
+
+  /**
+   * Single-flight reset recovery. Shares `reconnectPromise` with `doReconnect()`
+   * so reset_required (from onState) and event_log_trimmed (from onError) can't
+   * fire two competing recovery operations.
+   *
+   * If a backoff timer is pending, cancel it — reset is immediate, no backoff.
+   * If recovery fails, fall back to `scheduleReconnect()` (which may itself
+   * give up at maxAttempts via `handleTerminalReconnectFailure`).
+   */
+  private async triggerResetRecovery(): Promise<void> {
+    if (this.reconnectPromise !== null) return; // recovery already in-flight
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.state === "disconnected" || this.state === "failed") return;
+
+    const myEpoch = this.epoch;
+    const holder: { promise: Promise<void> | null } = { promise: null };
+    holder.promise = (async () => {
+      try {
+        await this.resynchronizeOrThrow();
+        if (this.epoch !== myEpoch) return;
+        // Success — reset backoff counter (reconnectCount stays cumulative).
+        this.reconnectAttempts = 0;
+      } catch (err) {
+        if (this.epoch !== myEpoch) return;
+        void err;
+        // Reset failed — clear the lock BEFORE scheduleReconnect, otherwise the
+        // single-flight guard (reconnectPromise !== null) blocks the next retry.
+        if (this.reconnectPromise === holder.promise) this.reconnectPromise = null;
+        this.setState("degraded");
+        this.scheduleReconnect();
+      }
+    })();
+    this.reconnectPromise = holder.promise;
+    try {
+      await holder.promise;
+    } catch {
+      // swallow — handled above
+    } finally {
+      // Only clear if not already cleared by the inner catch.
+      if (this.reconnectPromise === holder.promise) this.reconnectPromise = null;
+    }
+  }
+
+  /**
+   * Schedule a reconnect with exponential backoff.
+   * Single-flight: checks BOTH reconnectTimer AND reconnectPromise.
+   * If either is set, no-op (closes the timer-fire → clear → resync → second-error → new-timer window).
+   */
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer !== null) return;   // timer pending
+    if (this.reconnectPromise !== null) return; // resync in-flight
+    if (this.state === "disconnected" || this.state === "failed") return;
+
+    if (this.reconnectAttempts >= this.reconnectPolicy.maxAttempts) {
+      // Max attempts exceeded — terminal.
+      void this.handleTerminalReconnectFailure();
+      return;
+    }
+    const policy = this.reconnectPolicy;
+    const base = Math.min(policy.maxDelayMs, policy.initialDelayMs * Math.pow(2, this.reconnectAttempts));
+    const jitter = base * policy.jitterRatio * (Math.random() * 2 - 1);
+    const delay = Math.max(0, base + jitter);
+    this.reconnectAttempts += 1;
+    this.diagnostics.reconnectCount += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.doReconnect();
+    }, delay);
+  }
+
+  /**
+   * Terminal reconnect failure — max attempts exceeded.
+   * Records `reconnect_failed` (SessionErrorCode) and transitions to `failed`.
+   * Closes subscription BEFORE failed (no stale stream).
+   */
+  private async handleTerminalReconnectFailure(): Promise<void> {
+    const myEpoch = this.epoch;
+    await this.removeSubscription();
+    if (this.epoch !== myEpoch) return; // disconnect won the race
+    this.recordError(this.makeSessionError(
+      "reconnect_failed",
+      `Exceeded max reconnect attempts (${this.reconnectPolicy.maxAttempts})`
+    ));
+    this.setState("failed");
+  }
+
+  /**
+   * Perform a single backoff reconnect attempt.
+   * Uses resynchronizeOrThrow() so failure is visible (re-throws).
+   * Sets reconnectPromise at entry, clears in finally (single-flight).
+   *
+   * CRITICAL: the inner catch MUST clear reconnectPromise BEFORE calling
+   * scheduleReconnect(), otherwise the single-flight guard blocks the next retry
+   * and the session can only ever attempt one reconnect.
+   */
+  private async doReconnect(): Promise<void> {
+    if (this.reconnectPromise !== null) return; // single-flight
+    const myEpoch = this.epoch;
+    const holder: { promise: Promise<void> | null } = { promise: null };
+    holder.promise = (async () => {
+      try {
+        await this.resynchronizeOrThrow();
+        if (this.epoch !== myEpoch) return; // disconnect
+        // Success — reset backoff counter (reconnectCount stays cumulative).
+        this.reconnectAttempts = 0;
+        // State already set to "connected" inside resynchronizeOrThrow on success.
+      } catch (err) {
+        if (this.epoch !== myEpoch) return; // disconnect
+        void err;
+        // Resync failed — clear the lock BEFORE scheduleReconnect, otherwise the
+        // single-flight guard blocks the next retry.
+        if (this.reconnectPromise === holder.promise) this.reconnectPromise = null;
+        // Override the "failed" set by resynchronizeOrThrow — we want to retry,
+        // not give up immediately. Only `handleTerminalReconnectFailure` may
+        // set `failed` for reconnect exhaustion.
+        this.setState("degraded");
+        this.scheduleReconnect();
+      }
+    })();
+    this.reconnectPromise = holder.promise;
+    try {
+      await holder.promise;
+    } catch {
+      // swallow — handled above
+    } finally {
+      // Only clear if not already cleared by the inner catch.
+      if (this.reconnectPromise === holder.promise) this.reconnectPromise = null;
+    }
   }
 
   /**
