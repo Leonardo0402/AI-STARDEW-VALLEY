@@ -488,12 +488,17 @@ export class HttpSseRuntimeAdapter implements RuntimeAdapter {
     const closeFn = async (): Promise<void> => {
       if (closed) return;
       closed = true;
-      streamAbort.abort();
       // close-before-ready MUST reject pending ready (Plan Review Issue 3, v3).
       // Without this, `await subscription.ready` after `close()` would hang forever
       // — the Promise was neither resolved (replay didn't finish) nor rejected.
-      // readyReject is a no-op if ready was already settled.
+      // readyReject is idempotent via readySettled: the abort listener's
+      // readyReject (triggered by streamAbort.abort() below) becomes a no-op.
+      // Order matters: call readyReject BEFORE streamAbort.abort() so closeFn
+      // owns the "closed before ready" message (Fix M1). Otherwise the abort
+      // listener settles ready first with "Stream aborted", masking the
+      // close-before-ready cause when debugging.
       readyReject({ code: "aborted", message: "closed before ready", recoverable: false });
+      streamAbort.abort();
       if (opened?.reader) {
         try { await opened.reader.cancel(); } catch { /* best-effort */ }
       }

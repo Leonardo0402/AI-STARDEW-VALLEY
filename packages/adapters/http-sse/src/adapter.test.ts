@@ -369,4 +369,16 @@ describe("HttpSseRuntimeAdapter", () => {
     await adapter.disconnect();
     await expect(sub.ready).rejects.toMatchObject({ code: "aborted" });
   });
+
+  it("connect() after disconnect() throws (one-time adapter, Fix 16)", async () => {
+    globalThis.fetch = vi.fn(async (url: string | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/runtime/capabilities")) return new Response(CAPS_BODY, { status: 200 });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+    const adapter = new HttpSseRuntimeAdapter({ runtimeId: RUNTIME_ID, baseUrl: BASE_URL });
+    await adapter.connect();
+    await adapter.disconnect();
+    await expect(adapter.connect()).rejects.toThrow(/one-time|disconnect/i);
+  });
 });
