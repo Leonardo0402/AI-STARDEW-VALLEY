@@ -1,4 +1,4 @@
-import type { OfficeCommand, CommandResult, RuntimeStreamError } from "@agent-office/protocol";
+import type { OfficeCommand, CommandResult } from "@agent-office/protocol";
 import { validateCommandResult } from "./validators.js";
 
 export interface PostCommandOptions {
@@ -81,8 +81,17 @@ export async function postCommand(
   }
   clearTimeout(timer);
 
-  // Parse body
-  const text = await resp.text();
+  // Parse body — wrapped in try/catch because the connection may drop during
+  // body read (after headers arrived), causing resp.text() to throw. Without
+  // this, the exception propagates through adapter.execute() → gateway.execute()
+  // as an unhandled exception, violating the CommandResult { status: "error" }
+  // contract for network failures.
+  let text: string;
+  try {
+    text = await resp.text();
+  } catch (err) {
+    return errorResult(command.commandId, "NETWORK_ERROR", err instanceof Error ? err.message : String(err));
+  }
 
   // Non-2xx → map to error result (checked BEFORE requiring JSON so a non-JSON
   // error body is classified by HTTP status, not as COMMAND_RESPONSE_INVALID)

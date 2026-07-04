@@ -603,15 +603,12 @@ export class RuntimeSession {
     const myEpoch = this.epoch;
     await this.removeSubscription();
     if (this.epoch !== myEpoch) return; // disconnect won the race
-    const sessionCode: SessionErrorCode =
-      error.code === "authentication_failed" ? "subscribe_failed" :
-      error.code === "stream_protocol_error" ? "subscribe_failed" :
-      "subscribe_failed";
-    this.recordError(this.makeSessionError(sessionCode, error.message));
+    this.recordError(this.makeSessionError("subscribe_failed", error.message));
     this.setState("failed");
   }
 
   private handleStreamState(state: RuntimeStreamState): void {
+    if (!this.subscription) return;
     if (state === "reset_required") {
       // Immediate resync, no backoff. Shares the reconnectPromise lock with
       // backoff reconnect so reset_required and event_log_trimmed can't fire
@@ -630,6 +627,7 @@ export class RuntimeSession {
    * give up at maxAttempts via `handleTerminalReconnectFailure`).
    */
   private async triggerResetRecovery(): Promise<void> {
+    if (this.resyncPromise !== null) return; // gap-triggered resync already in-flight
     if (this.reconnectPromise !== null) return; // recovery already in-flight
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);

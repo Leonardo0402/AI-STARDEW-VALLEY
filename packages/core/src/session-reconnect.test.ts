@@ -143,6 +143,43 @@ describe("RuntimeSession reconnect integration", () => {
     expect(session.getState()).toBe("connected");
   });
 
+  it("reset_required during in-flight gap-triggered resync does not start a second resync", async () => {
+    // Regression test for Fix 2: triggerResetRecovery must check resyncPromise
+    // (not just reconnectPromise). Without this guard, a reset_required arriving
+    // while a gap-triggered resync is in-flight starts a SECOND concurrent
+    // resynchronizeOrThrow(), whose installSubscription overwrites the first
+    // resync's subscription (leaked reader).
+    await session.connect();
+    expect(session.getDiagnostics().resyncCount).toBe(0);
+
+    // Slow down ready so the gap-triggered resync is in the "await ready" window
+    // (where this.subscription IS set but resyncPromise is still pending) when
+    // we inject reset_required. This isolates Fix 2: Fix 3's !subscription guard
+    // does NOT fire (subscription is set), so only the resyncPromise guard can
+    // prevent the second resync.
+    adapter.subscribeReadyDelayMs = 200;
+
+    // Emit a gap event (seq=5 when snapshot seq=0) → triggers triggerResync.
+    adapter.emit(makeEvent(5));
+
+    // Wait for the resync to reach "await subscription.ready" — getSnapshot
+    // (sync) and installSubscription have completed, so this.subscription is
+    // set, but ready (200ms) is still pending.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Inject reset_required. Without Fix 2, triggerResetRecovery proceeds
+    // (reconnectPromise is null) and starts a SECOND concurrent resync.
+    // With Fix 2, triggerResetRecovery bails because resyncPromise is set.
+    adapter.injectResetRequired();
+
+    // Wait for everything to settle (ready resolves at ~200ms).
+    await new Promise((r) => setTimeout(r, 350));
+
+    // Only ONE resync should have happened (the gap-triggered one).
+    expect(session.getDiagnostics().resyncCount).toBe(1);
+    expect(session.getState()).toBe("connected");
+  });
+
   it("non-recoverable error closes subscription BEFORE entering failed (no stale stream)", async () => {
     await session.connect();
     // Verify subscription is active

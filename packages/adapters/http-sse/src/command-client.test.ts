@@ -69,6 +69,21 @@ describe("postCommand", () => {
     expect(r.error?.code).toBe("NETWORK_ERROR");
   });
 
+  it("returns error CommandResult when response body read throws (network drop mid-body)", async () => {
+    // Simulate: headers arrived but connection drops during body read.
+    // resp.text() throws — without the try/catch, this propagates as an
+    // unhandled exception through adapter.execute() → gateway.execute().
+    const mockResp = {
+      ok: true,
+      status: 200,
+      text: () => Promise.reject(new TypeError("connection dropped mid-body")),
+    } as unknown as Response;
+    globalThis.fetch = mockFetch(mockResp) as unknown as typeof fetch;
+    const r = await postCommand("https://example.com/cmd", makeCommand(), {});
+    expect(r.status).toBe("error");
+    expect(r.error?.code).toBe("NETWORK_ERROR");
+  });
+
   it("returns error CommandResult on timeout", async () => {
     // Use a fetch that never resolves; abort via short timeout
     const ac = new AbortController();
