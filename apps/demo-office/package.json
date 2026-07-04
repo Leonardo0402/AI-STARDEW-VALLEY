@@ -12,6 +12,7 @@
     "@agent-office/protocol": "1.0.0",
     "@agent-office/core": "1.0.0",
     "@agent-office/adapter-mock": "1.0.0",
+    "@agent-office/adapter-http-sse": "1.0.0",
     "@agent-office/pixel-office": "1.0.0",
     "@agent-office/control-ui": "1.0.0",
     "react": "^18.3.0",

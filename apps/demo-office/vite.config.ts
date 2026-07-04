@@ -19,6 +19,7 @@ export default defineConfig({
       "@agent-office/protocol",
       "@agent-office/core",
       "@agent-office/adapter-mock",
+      "@agent-office/adapter-http-sse",
       "@agent-office/pixel-office",
       "@agent-office/control-ui",
     ],
