@@ -325,3 +325,70 @@ describe("QclawTestRuntime SSE stream", () => {
     reader.cancel();
   });
 });
+
+describe("QclawTestRuntime CORS", () => {
+  let runtime: QclawTestRuntime;
+
+  afterEach(async () => {
+    if (runtime) await runtime.stop();
+  });
+
+  it("GET /runtime/snapshot includes CORS headers for allowed origin", async () => {
+    runtime = new QclawTestRuntime({
+      port: 0,
+      allowedOrigins: ["http://localhost:5173"],
+    });
+    await runtime.start();
+
+    const res = await fetch(runtime.getBaseUrl() + "/runtime/snapshot", {
+      headers: { origin: "http://localhost:5173" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+  });
+
+  it("OPTIONS preflight returns 204 with CORS headers", async () => {
+    runtime = new QclawTestRuntime({
+      port: 0,
+      allowedOrigins: ["http://localhost:5173"],
+    });
+    await runtime.start();
+
+    const res = await fetch(runtime.getBaseUrl() + "/runtime/commands", {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://localhost:5173",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type,idempotency-key",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(res.headers.get("access-control-allow-headers")).toContain("content-type");
+  });
+
+  it("disallowed origin does not get CORS allow-origin header reflected", async () => {
+    runtime = new QclawTestRuntime({
+      port: 0,
+      allowedOrigins: ["http://localhost:5173"],
+    });
+    await runtime.start();
+
+    const res = await fetch(runtime.getBaseUrl() + "/runtime/snapshot", {
+      headers: { origin: "http://evil.example.com" },
+    });
+    expect(res.status).toBe(200); // request still succeeds (no auth)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("default allowedOrigins is http://localhost:5173 when not specified", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+
+    const res = await fetch(runtime.getBaseUrl() + "/runtime/snapshot", {
+      headers: { origin: "http://localhost:5173" },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+  });
+});

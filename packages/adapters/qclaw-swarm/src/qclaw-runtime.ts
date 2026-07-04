@@ -22,6 +22,8 @@ import { reduceEvent } from "@agent-office/core";
 
 const RUNTIME_ID = "qclaw-swarm-runtime-001";
 
+const DEFAULT_ALLOWED_ORIGINS = ["http://localhost:5173"];
+
 // ─── 房间 ID ────────────────────────────────────────────────
 const QCLAW_ROOM_COMMAND = "qclaw-room-command";
 const QCLAW_ROOM_EXECUTION = "qclaw-room-execution";
@@ -112,6 +114,8 @@ const BINDINGS: RoomBinding[] = [
 
 export interface QclawRuntimeOptions {
   port?: number;
+  /** Allowed CORS origins for dev server. Defaults to ["http://localhost:5173"]. */
+  allowedOrigins?: string[];
 }
 
 /**
@@ -127,6 +131,7 @@ export interface QclawRuntimeOptions {
 export class QclawTestRuntime {
   private server: http.Server;
   private port: number;
+  private allowedOrigins: string[];
   private capabilities: AdapterCapabilities;
 
   // 内存状态
@@ -149,6 +154,7 @@ export class QclawTestRuntime {
 
   constructor(opts: QclawRuntimeOptions = {}) {
     this.port = opts.port ?? 0;
+    this.allowedOrigins = opts.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
     this.correlationId = "corr-qclaw-init";
     this.traceId = "trace-qclaw-init";
     this.capabilities = {
@@ -194,17 +200,38 @@ export class QclawTestRuntime {
     return this.buildInternalSnapshot();
   }
 
+  private corsHeaders(origin: string | undefined): Record<string, string> {
+    if (origin && this.allowedOrigins.includes(origin)) {
+      return {
+        "access-control-allow-origin": origin,
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-headers": "content-type, idempotency-key",
+        "access-control-max-age": "86400",
+      };
+    }
+    return {};
+  }
+
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = req.url ?? "";
+    const origin = req.headers.origin;
+    const cors = this.corsHeaders(origin);
+
+    // OPTIONS preflight — respond before route matching
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, cors);
+      res.end();
+      return;
+    }
 
     if (req.method === "GET" && url.endsWith("/runtime/snapshot")) {
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { "content-type": "application/json", ...cors });
       res.end(JSON.stringify(this.getSnapshot()));
       return;
     }
 
     if (req.method === "GET" && url.endsWith("/runtime/capabilities")) {
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { "content-type": "application/json", ...cors });
       res.end(JSON.stringify(this.capabilities));
       return;
     }
@@ -216,6 +243,7 @@ export class QclawTestRuntime {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
         connection: "keep-alive",
+        ...cors,
       });
 
       // Replay phase: send all events with sequence > afterSeq
@@ -246,7 +274,7 @@ export class QclawTestRuntime {
       try {
         cmd = JSON.parse(body) as OfficeCommand;
       } catch {
-        res.writeHead(400);
+        res.writeHead(400, cors);
         res.end(JSON.stringify({
           commandId: "unknown",
           status: "error",
@@ -256,7 +284,7 @@ export class QclawTestRuntime {
         return;
       }
       const result = this.executeCommand(cmd);
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { "content-type": "application/json", ...cors });
       res.end(JSON.stringify(result));
       return;
     }
@@ -264,18 +292,18 @@ export class QclawTestRuntime {
     // Demo-only endpoints (for golden workflow script)
     if (req.method === "POST" && url.endsWith("/runtime/demo/trigger-artifact-review")) {
       this.triggerArtifactAndReviewForTest();
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { "content-type": "application/json", ...cors });
       res.end(JSON.stringify({ status: "ok" }));
       return;
     }
 
     if (req.method === "GET" && url.endsWith("/runtime/demo/event-log")) {
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { "content-type": "application/json", ...cors });
       res.end(JSON.stringify(this.eventLog));
       return;
     }
 
-    res.writeHead(404);
+    res.writeHead(404, cors);
     res.end("not found");
   }
 
