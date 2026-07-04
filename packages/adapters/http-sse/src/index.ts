@@ -14,3 +14,5 @@ export { httpGet } from "./http-client.js";
 export type { HttpResponse, HttpGetOptions } from "./http-client.js";
 export { postCommand } from "./command-client.js";
 export type { PostCommandOptions } from "./command-client.js";
+export { resolveAuthHeaders, sanitizeHeadersForLog, sanitizeErrorMessage } from "./auth.js";
+export type { AuthHeaderProvider } from "./auth.js";

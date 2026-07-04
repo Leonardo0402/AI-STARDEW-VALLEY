@@ -16,6 +16,7 @@ import { postCommand } from "./command-client.js";
 import { openEventStream } from "./stream-client.js";
 import { createSseParser } from "./sse-parser.js";
 import { validateEvent } from "./validators.js";
+import { resolveAuthHeaders } from "./auth.js";
 
 export const defaultEndpoints = {
   snapshot: "/runtime/snapshot",
@@ -524,9 +525,6 @@ export class HttpSseRuntimeAdapter implements RuntimeAdapter {
   }
 
   private async resolveHeaders(): Promise<Record<string, string>> {
-    if (typeof this.opts.headers === "function") {
-      return await this.opts.headers();
-    }
-    return this.opts.headers ?? {};
+    return resolveAuthHeaders(this.opts.headers);
   }
 }
