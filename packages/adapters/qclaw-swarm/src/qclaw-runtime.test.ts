@@ -194,3 +194,134 @@ describe("QclawTestRuntime command handling", () => {
     expect(result.error.code).toBe("UNSUPPORTED_COMMAND");
   });
 });
+
+describe("QclawTestRuntime SSE stream", () => {
+  let runtime: QclawTestRuntime;
+
+  afterEach(async () => {
+    if (runtime) await runtime.stop();
+  });
+
+  it("replays events with sequence > afterSequence and sends replay-complete", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    // Emit 6 events via the test helper
+    runtime.driveToApprovalRequestedForTest();
+    const snap = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    const afterSeq = snap.sequence - 2; // replay last 2 events
+
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/events?afterSequence=${afterSeq}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let eventCount = 0;
+    let gotReplayComplete = false;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        if (frame.includes("event: domain-event")) eventCount++;
+        if (frame.includes("event: replay-complete")) gotReplayComplete = true;
+      }
+      if (gotReplayComplete) break;
+    }
+    expect(eventCount).toBe(2);
+    expect(gotReplayComplete).toBe(true);
+    reader.cancel();
+  });
+
+  it("replay-complete has matching id and data.lastSequence", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    runtime.driveToApprovalRequestedForTest();
+    const snap = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    const lastSeq = snap.sequence;
+
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/events?afterSequence=0`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let replayFrame = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        if (frame.includes("event: replay-complete")) {
+          replayFrame = frame;
+          break;
+        }
+      }
+      if (replayFrame) break;
+    }
+    // Extract id: and data.lastSequence
+    const idMatch = replayFrame.match(/^id: (\d+)$/m);
+    const dataMatch = replayFrame.match(/"lastSequence":(\d+)/);
+    expect(idMatch).not.toBeNull();
+    expect(dataMatch).not.toBeNull();
+    expect(idMatch![1]).toBe(dataMatch![1]);
+    expect(idMatch![1]).toBe(String(lastSeq));
+    reader.cancel();
+  });
+
+  it("pushes live events to connected clients after replay-complete", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    // Open stream with afterSequence=0 (no events to replay yet)
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/events?afterSequence=0`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Wait for replay-complete
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      if (buffer.includes("event: replay-complete")) break;
+    }
+
+    // Emit a live event via a command
+    await fetch(`${runtime.getBaseUrl()}/runtime/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "cmd-live-1" },
+      body: JSON.stringify({
+        commandId: "cmd-live-1",
+        commandType: "agent.pause",
+        timestamp: new Date().toISOString(),
+        source: "user",
+        actorId: "qclaw-agent-orchestrator",
+        runtimeId: "qclaw-swarm-runtime-001",
+        targetId: null,
+        payload: { agentId: "qclaw-agent-worker-1" },
+      }),
+    });
+
+    // Read the live event
+    buffer = "";
+    let gotLiveEvent = false;
+    const timeout = new Promise((r) => setTimeout(r, 2000));
+    const readLoop = (async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        if (buffer.includes("event: domain-event")) {
+          gotLiveEvent = true;
+          break;
+        }
+      }
+    })();
+    await Promise.race([readLoop, timeout]);
+    expect(gotLiveEvent).toBe(true);
+    reader.cancel();
+  });
+});

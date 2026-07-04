@@ -138,6 +138,7 @@ export class QclawTestRuntime {
   private bindings: RoomBinding[] = BINDINGS;
   private profiles: Record<string, ExecutionProfile> = PROFILES;
   private eventLog: DomainEvent[] = [];
+  private liveClients: Array<{ res: http.ServerResponse; afterSequence: number }> = [];
   private sequence = 0;
   private correlationId = "";
   private traceId = "";
@@ -178,6 +179,10 @@ export class QclawTestRuntime {
   }
 
   async stop(): Promise<void> {
+    for (const client of this.liveClients) {
+      try { client.res.end(); } catch { /* best-effort */ }
+    }
+    this.liveClients = [];
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -204,10 +209,34 @@ export class QclawTestRuntime {
       return;
     }
 
-    // Stub: /runtime/events and /runtime/commands will be implemented in later tasks.
+    // GET /runtime/events?afterSequence=N — SSE stream with replay + replay-complete + live push
     if (req.method === "GET" && url.includes("/runtime/events")) {
-      res.writeHead(501);
-      res.end('{"error":"not implemented yet"}');
+      const afterSeq = parseInt(new URL(`http://x${url}`).searchParams.get("afterSequence") ?? "0", 10);
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+
+      // Replay phase: send all events with sequence > afterSeq
+      let lastReplayedSeq = afterSeq;
+      for (const ev of this.eventLog) {
+        if (ev.sequence > afterSeq) {
+          res.write(`event: domain-event\nid: ${ev.sequence}\ndata: ${JSON.stringify(ev)}\n\n`);
+          lastReplayedSeq = ev.sequence;
+        }
+      }
+
+      // Send replay-complete control frame
+      res.write(`event: replay-complete\nid: ${lastReplayedSeq}\ndata: {"lastSequence":${lastReplayedSeq}}\n\n`);
+
+      // Register as live client for subsequent pushEvent calls
+      const clientEntry = { res, afterSequence: afterSeq };
+      this.liveClients.push(clientEntry);
+      res.on("close", () => {
+        const idx = this.liveClients.indexOf(clientEntry);
+        if (idx >= 0) this.liveClients.splice(idx, 1);
+      });
       return;
     }
 
@@ -655,6 +684,19 @@ export class QclawTestRuntime {
   private emit(event: DomainEvent): void {
     this.eventLog.push(event);
     this.applyEventInternal(event);
+    this.pushEvent(event);
+  }
+
+  private pushEvent(event: DomainEvent): void {
+    for (const client of this.liveClients) {
+      if (event.sequence > client.afterSequence) {
+        try {
+          client.res.write(`event: domain-event\nid: ${event.sequence}\ndata: ${JSON.stringify(event)}\n\n`);
+        } catch {
+          // best-effort — client may have disconnected
+        }
+      }
+    }
   }
 
   private applyEventInternal(event: DomainEvent): void {
