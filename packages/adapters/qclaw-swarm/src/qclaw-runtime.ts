@@ -261,6 +261,20 @@ export class QclawTestRuntime {
       return;
     }
 
+    // Demo-only endpoints (for golden workflow script)
+    if (req.method === "POST" && url.endsWith("/runtime/demo/trigger-artifact-review")) {
+      this.triggerArtifactAndReviewForTest();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+
+    if (req.method === "GET" && url.endsWith("/runtime/demo/event-log")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(this.eventLog));
+      return;
+    }
+
     res.writeHead(404);
     res.end("not found");
   }
@@ -568,6 +582,53 @@ export class QclawTestRuntime {
       reason: "Artifact approved, request delivery approval",
     });
     this.emit(approvalRequested);
+  }
+
+  // TEST-ONLY: Simulates the worker producing an artifact and the reviewer approving it.
+  // In a real runtime, these would be agent-driven actions.
+  public triggerArtifactAndReviewForTest(): void {
+    // Find the current running task
+    let task: TaskSnapshot | undefined;
+    for (const t of this.tasks.values()) {
+      if (t.status === "running") {
+        task = t;
+        break;
+      }
+    }
+    if (!task) {
+      throw new Error("No running task found — call task.create first");
+    }
+
+    const artifactId = `qclaw-artifact-${++this.artifactCounter}`;
+    const approvalId = `qclaw-approval-${++this.approvalCounter}`;
+
+    // Emit artifact.created (producer = the assigned worker)
+    this.emit(this.createEvent(EventType.ARTIFACT_CREATED, {
+      artifactId,
+      taskId: task.taskId,
+      producerAgentId: task.assigneeId!,
+      type: "report",
+      title: "Demo artifact",
+      uri: null,
+      version: 1,
+    }));
+
+    // Emit artifact.reviewed (reviewer = qclaw-agent-reviewer, verdict = approved)
+    this.emit(this.createEvent(EventType.ARTIFACT_REVIEWED, {
+      artifactId,
+      reviewerId: QCLAW_AGENT_REVIEWER,
+      verdict: "approved",
+      comment: "Artifact approved by reviewer",
+    }));
+
+    // Emit approval.requested
+    this.emit(this.createEvent(EventType.APPROVAL_REQUESTED, {
+      approvalId,
+      taskId: task.taskId,
+      kind: "artifact_delivery",
+      requestedBy: QCLAW_AGENT_REVIEWER,
+      reason: "Artifact approved, requesting delivery approval",
+    }));
   }
 
   // ─── 内部方法 ──────────────────────────────────────────────

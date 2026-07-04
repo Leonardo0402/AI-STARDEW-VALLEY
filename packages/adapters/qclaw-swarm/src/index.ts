@@ -7,3 +7,5 @@
  */
 export { QclawTestRuntime } from "./qclaw-runtime.js";
 export type { QclawRuntimeOptions } from "./qclaw-runtime.js";
+export { playGoldenFlow } from "./demo-script.js";
+export type { GoldenFlowResult } from "./demo-script.js";
