@@ -390,7 +390,18 @@ export interface CommandResult {
 
 // ─── RuntimeAdapter ─────────────────────────────────────────
 
+/**
+ * @deprecated Plan 1 introduced `RuntimeStreamObserver` and
+ * `RuntimeSubscription` as the canonical event-delivery API.
+ * `DomainEventHandler` is retained only for backwards compatibility
+ * and should not be used in new code.
+ */
 export type DomainEventHandler = (event: DomainEvent) => void;
+
+/**
+ * @deprecated Use `RuntimeSubscription.close()` instead.
+ * `Unsubscribe` is retained only for backwards compatibility.
+ */
 export type Unsubscribe = () => void;
 
 /** 订阅选项。afterSequence 用于请求重放 sequence > afterSequence 的事件。 */

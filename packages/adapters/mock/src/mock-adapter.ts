@@ -229,11 +229,7 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
       if (cursor !== undefined) {
         for (const event of this.eventLog) {
           if (closed) {
-            throw {
-              code: "aborted",
-              message: "closed during replay",
-              recoverable: false,
-            } satisfies RuntimeStreamError;
+            return;
           }
           if (event.sequence > cursor) {
             observer.onEvent(event);
@@ -242,11 +238,7 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
       }
 
       if (closed) {
-        throw {
-          code: "aborted",
-          message: "closed before ready",
-          recoverable: false,
-        } satisfies RuntimeStreamError;
+        return;
       }
       this.subscribers.add(observer);
       observer.onState?.("ready");
