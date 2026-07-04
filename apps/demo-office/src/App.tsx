@@ -28,6 +28,7 @@ interface AppProps {
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
+  mode?: string;  // added by Task 6, used by Task 7+8
   /** 演示层专用控件（如 DemoControls），由装配层 main.tsx 注入。
    *  App 本身不依赖任何 Mock 专用类型。 */
   demoControls?: ReactNode;

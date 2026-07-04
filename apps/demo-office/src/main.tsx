@@ -1,43 +1,69 @@
 /**
- * demo-office 入口。
+ * demo-office entry — runtime composition root.
  *
- * 装配：
- * - MockRuntimeAdapter（模拟 Runtime）
- * - SnapshotStore（checkpoint 感知 + 事件去重 + 序号校验）
- * - CommandGateway（命令校验 + 路由）
- * - RuntimeSession（拥有 bootstrap / 订阅 / gap 恢复 / 断开生命周期）
- * - useOfficeState（React Hook 订阅 Store + Session）
- * - PixelOfficeScene（PixiJS 渲染层）
- * - ControlPanel（React DOM 控制面板）
+ * Reads config from Vite env vars, constructs the runtime composition
+ * (adapter + store + gateway + session) at module level, and renders App.
  *
- * 数据流：
- *   UI → CommandGateway → MockRuntimeAdapter → DomainEvent
- *      → RuntimeSession.handleEvent → SnapshotStore → OfficeProjection → UI
+ * Invalid config renders a startup error screen instead of falling back.
  *
- * RuntimeSession 在模块级创建（单例），React StrictMode mount/unmount 不会重建 session，
- * 也不会产生重复 adapter 订阅。Pixel 视图卸载不影响 session 连接。
+ * StrictMode-safe: module-level singleton; React double-mount does not
+ * re-create the session. HMR calls dispose() via import.meta.hot.
  */
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
-import { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
+import { readConfigFromEnv, ConfigError } from "./runtime/config.js";
+import { createRuntime } from "./runtime/create-runtime.js";
+import type { RuntimeComposition } from "./runtime/types.js";
 import { App } from "./App.js";
 import { DemoControls } from "./DemoControls.js";
 
-// ─── 装配运行时（模块级单例）──────────────────────────────────
-const RUNTIME_ID = "mock-runtime-001";
-const adapter = new MockRuntimeAdapter({ eventDelayMs: 250 });
-const store = new SnapshotStore(RUNTIME_ID);
-const gateway = new CommandGateway(adapter);
-const session = new RuntimeSession(adapter, store, gateway);
+// ─── Runtime composition (module-level singleton) ─────────────
+let composition: RuntimeComposition;
+let configMode: string;
+let configRuntimeId: string;
 
-// 启动会话：connect → snapshot checkpoint → subscribe(afterSequence)
-// bootstrap 完全由 session 拥有，React 不再重复实现。
-session.connect().catch((err) => {
-  console.error("[demo-office] RuntimeSession 启动失败：", err);
-});
+try {
+  const config = readConfigFromEnv(import.meta.env as unknown as Record<string, string>);
+  configMode = config.mode;
+  configRuntimeId = config.runtimeId;
+  composition = createRuntime(config);
 
-// ─── 渲染 ────────────────────────────────────────────────────
+  // Bootstrap the session (connect → snapshot → subscribe)
+  composition.session.connect().catch((err) => {
+    console.error("[demo-office] RuntimeSession bootstrap failed:", err);
+  });
+} catch (err) {
+  if (err instanceof ConfigError) {
+    console.error("[demo-office] Configuration error:", err.message);
+  } else {
+    console.error("[demo-office] Unexpected startup error:", err);
+  }
+
+  const root = createRoot(document.getElementById("root")!);
+  root.render(
+    <React.StrictMode>
+      <div style={{ padding: 24, fontFamily: "monospace", color: "#ff6666", background: "#1a1a2e", minHeight: "100vh" }}>
+        <h2>demo-office startup error</h2>
+        <pre>{err instanceof Error ? err.message : String(err)}</pre>
+        <p style={{ color: "#888", marginTop: 16 }}>
+          Check your <code>.env</code> or Vite environment variables.
+          See <code>.env.example</code> for required values.
+        </p>
+      </div>
+    </React.StrictMode>
+  );
+  throw err;
+}
+
+// ─── HMR disposal ─────────────────────────────────────────────
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    composition.dispose();
+  });
+}
+
+// ─── Render ───────────────────────────────────────────────────
+const { session, store, gateway, adapter } = composition;
 const root = createRoot(document.getElementById("root")!);
 root.render(
   <React.StrictMode>
@@ -45,8 +71,13 @@ root.render(
       session={session}
       store={store}
       gateway={gateway}
-      runtimeId={RUNTIME_ID}
-      demoControls={<DemoControls adapter={adapter} store={store} session={session} />}
+      runtimeId={configRuntimeId}
+      mode={configMode}
+      demoControls={
+        configMode === "mock" ? (
+          <DemoControls adapter={adapter as never} store={store} session={session} />
+        ) : null
+      }
     />
   </React.StrictMode>
 );
