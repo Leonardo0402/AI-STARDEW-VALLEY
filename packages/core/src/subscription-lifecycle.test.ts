@@ -95,7 +95,7 @@ describe("subscription lifecycle (async)", () => {
     );
     await sub.ready;
     // ready resolved — replay completed
-    expect(sub.ready).resolves.toBeUndefined();
+    await expect(sub.ready).resolves.toBeUndefined();
   });
 
   it("session transitions to connected only after subscription.ready", async () => {

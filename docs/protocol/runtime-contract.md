@@ -855,3 +855,123 @@ class RuntimeSession {
 - MVP 使用 `"1.0"`
 - 版本升级时，Adapter 需同时支持旧版本 Snapshot 的读取
 - 新版本字段必须向后兼容（新增可选字段，不删除已有字段）
+
+---
+
+## 4.3 HTTP/SSE Wire Protocol (Plan 2)
+
+This section normatively describes the HTTP/SSE transport implemented by
+`@agent-office/adapter-http-sse`. It is a profile of the generic
+RuntimeAdapter contract in §4.
+
+### 4.3.1 Endpoints
+
+| Method | Path                       | Purpose                                    |
+|--------|----------------------------|--------------------------------------------|
+| GET    | `/runtime/snapshot`        | Fetch current `RuntimeSnapshot`            |
+| GET    | `/runtime/capabilities`    | Fetch `AdapterCapabilities`                |
+| GET    | `/runtime/events`          | Open SSE stream (query `afterSequence`)    |
+| POST   | `/runtime/commands`        | Submit `OfficeCommand`, returns `CommandResult` |
+
+Endpoint paths are configurable via `HttpSseAdapterOptions.endpoints`.
+Defaults are the paths above.
+
+### 4.3.2 Snapshot Response
+
+- HTTP 200 with `Content-Type: application/json`
+- Body: a single `RuntimeSnapshot` object
+- Client validates via `validateSnapshot(raw, expectedRuntimeId)` before
+  installing into Core. Invalid snapshot → `snapshot_failed` session error.
+
+### 4.3.3 Capabilities Response
+
+- HTTP 200 with `Content-Type: application/json`
+- Body: a single `AdapterCapabilities` object
+- Client validates via `validateCapabilities(raw)`.
+
+### 4.3.4 SSE Event Stream
+
+- HTTP 200 with `Content-Type: text/event-stream`
+- Query parameter: `afterSequence=<non-negative integer>`
+- Each `DomainEvent` is delivered as one SSE frame:
+  ```
+  event: domain-event
+  id: <event.sequence>
+  data: <JSON-encoded DomainEvent>
+  ```
+- Server MAY send heartbeats as SSE comments (`: keep-alive`).
+- Server MAY send a named `event: reset-required` frame with empty data
+  to signal `reset_required` to the client.
+- **Replay Completion (Architecture Decision H):** after replaying all
+  events with `sequence > afterSequence`, the server MUST send a
+  `replay-complete` control frame:
+  ```
+  event: replay-complete
+  id: <lastReplayedSequence>
+  data: {"lastSequence": <lastReplayedSequence>}
+  ```
+  - `id:` and `data.lastSequence` MUST be equal. Mismatch → `stream_protocol_error`.
+  - If no events were replayed, `lastSequence === afterSequence`.
+  - The server MUST send this frame even if the replay set is empty.
+  - The client uses this frame to resolve `subscription.ready` and
+    transition from REPLAY to LIVE mode — **`reader.done` is NOT used
+    as a replay boundary** (SSE is long-lived; `reader.done` only fires
+    on server close or abort).
+  - If the server closes the stream before sending `replay-complete`,
+    `ready` rejects with `stream_protocol_error`.
+- Replay (events with `sequence > afterSequence`) MUST be contiguous
+  starting at `afterSequence + 1`. A gap rejects `subscription.ready`
+  with `RuntimeErrorCode.replay_gap`.
+- SSE `id:` field MUST equal `event.sequence`. Mismatch rejects `ready`
+  with `RuntimeErrorCode.stream_protocol_error`.
+- **Invalid DomainEvent handling:** during replay, an invalid event
+  rejects `ready` with `event_invalid`. During live, an invalid event
+  triggers `onError({ code: "event_invalid", recoverable: false })` and
+  closes the stream — invalid events are NEVER silently dropped.
+
+### 4.3.5 Command POST
+
+- HTTP POST with `Content-Type: application/json`
+- Required header: `Idempotency-Key: <commandId>`
+- Body: a single `OfficeCommand` object
+- Response: 2xx with `CommandResult` JSON, OR 4xx/5xx (mapped to
+  `CommandResult { status: "error", error: { code, message } }`)
+- Client does NOT auto-retry POST. **Manual retry MUST generate a new
+  `commandId`** — `CommandGateway` caches completed results by
+  `commandId`, so reusing the same ID returns the cached result without
+  calling the adapter. The original `commandId` is only for querying
+  the original operation's result.
+
+### 4.3.6 Authentication
+
+- Client sends auth via headers, configured through
+  `HttpSseAdapterOptions.headers` (static object or async provider) and
+  `HttpSseAdapterOptions.credentials` (forwarded to `fetch`).
+- Tokens MUST NOT appear in URLs, query parameters, error messages,
+  diagnostics, or logs.
+- `Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization` are
+  redacted to `<redacted>` in any diagnostic structure.
+- Async header providers are re-invoked on every reconnect and every
+  command POST.
+
+### 4.3.7 Stream Lifecycle Ownership
+
+- Adapter performs ONE stream attempt per `subscribe()` call. The same
+  read loop handles both replay and live frames (single fetch, single
+  reader, single loop — see Architecture Decision H).
+- Adapter does NOT auto-reconnect.
+- `RuntimeSession` is the sole retry/resync owner.
+- On `onError(recoverable=true)`: session enters `degraded` and
+  schedules a single-flight reconnect with bounded exponential backoff.
+  Single-flight is enforced via BOTH `reconnectTimer` AND
+  `reconnectPromise` (Architecture Decision J).
+- On `onState("reset_required")`: session triggers immediate
+  `resynchronizeOrThrow()` (no backoff).
+- On `onError(recoverable=false)`: session FIRST closes the current
+  subscription (`await removeSubscription()`), THEN sets `lastError`,
+  THEN enters `failed`. No stale stream remains in a `failed` session.
+- Reconnect policy: `{ initialDelayMs, maxDelayMs, maxAttempts, jitterRatio }`.
+  Delay = `min(maxDelayMs, initialDelayMs * 2^attempt) * (1 ± jitterRatio)`.
+  On `maxAttempts` exceeded: session enters `failed`.
+- `reconnectCount` in diagnostics is **cumulative** — never resets on
+  success. `reconnectAttempts` (private, for backoff) resets to 0.

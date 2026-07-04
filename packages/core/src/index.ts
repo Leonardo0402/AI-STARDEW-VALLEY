@@ -13,7 +13,9 @@ export type {
   RuntimeStreamError,
   RuntimeStreamObserver,
   RuntimeSubscription,
+  ReconnectPolicy,
 } from "@agent-office/protocol";
+export { defaultReconnectPolicy } from "@agent-office/protocol";
 export {
   isValidAgentTransition,
   isValidTaskTransition,

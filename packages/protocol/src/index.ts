@@ -390,7 +390,18 @@ export interface CommandResult {
 
 // ─── RuntimeAdapter ─────────────────────────────────────────
 
+/**
+ * @deprecated Plan 1 introduced `RuntimeStreamObserver` and
+ * `RuntimeSubscription` as the canonical event-delivery API.
+ * `DomainEventHandler` is retained only for backwards compatibility
+ * and should not be used in new code.
+ */
 export type DomainEventHandler = (event: DomainEvent) => void;
+
+/**
+ * @deprecated Use `RuntimeSubscription.close()` instead.
+ * `Unsubscribe` is retained only for backwards compatibility.
+ */
 export type Unsubscribe = () => void;
 
 /** 订阅选项。afterSequence 用于请求重放 sequence > afterSequence 的事件。 */
@@ -481,6 +492,32 @@ export interface RuntimeSubscription {
   ready: Promise<void>;
   close(): Promise<void> | void;
 }
+
+// ─── Reconnect Policy (Issue #6 Plan 2) ─────────────────────
+
+/**
+ * Reconnect 退避策略。RuntimeSession 在 post-ready recoverable 错误时使用。
+ *
+ * - initialDelayMs: 首次重连等待时间（默认 500ms）
+ * - maxDelayMs: 单次重连最大等待时间（默认 30000ms）
+ * - maxAttempts: 最大重连次数（默认 10）；超过后转 failed
+ * - jitterRatio: 抖动比例（默认 0.2，即 ±20%）
+ *
+ * 退避公式：delay = min(maxDelayMs, initialDelayMs * 2^attempt) * (1 ± jitterRatio)
+ */
+export interface ReconnectPolicy {
+  initialDelayMs: number;
+  maxDelayMs: number;
+  maxAttempts: number;
+  jitterRatio: number;
+}
+
+export const defaultReconnectPolicy: ReconnectPolicy = {
+  initialDelayMs: 500,
+  maxDelayMs: 30000,
+  maxAttempts: 10,
+  jitterRatio: 0.2,
+};
 
 // ─── EventApplyResult ───────────────────────────────────────
 
