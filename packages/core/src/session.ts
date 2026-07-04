@@ -347,7 +347,7 @@ export class RuntimeSession {
       case "sequence_gap":
         // 触发重同步
         this.recordGap(event, result.expectedSequence ?? 0);
-        void this.resynchronize();
+        this.triggerResync();
         break;
     }
   }
@@ -464,6 +464,26 @@ export class RuntimeSession {
       );
       this.setState("failed");
     }
+  }
+
+  /**
+   * 内部触发重同步：从 handleEvent（replay-time gap）调用。
+   *
+   * 与 resynchronize() 的区别：跳过 connectPromise 守卫。handleEvent 可能在
+   * doConnect 的 replay 期间被调用（subscription.ready 微任务内），此时
+   * connectPromise 仍非空，但 replay-time gap 必须立即触发 resync —— 否则
+   * 永远不会进入 resync（resyncCount 卡在 0）。
+   *
+   * 仍保留 resyncPromise 单飞：若已有 resync 进行中，直接返回。
+   * 外部调用方仍应使用 resynchronize()（保留 connectPromise 守卫防止
+   * in-flight connect 期间外部 resync 造成订阅泄漏）。
+   */
+  private triggerResync(): void {
+    if (this.resyncPromise) return;
+    this.resyncPromise = this.doResynchronize();
+    void this.resyncPromise.finally(() => {
+      this.resyncPromise = null;
+    });
   }
 
   /**

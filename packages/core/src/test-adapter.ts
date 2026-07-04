@@ -166,12 +166,11 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
       // cursor-aware replay
       if (cursor !== undefined) {
         for (const event of this.eventLog) {
+          // If closed mid-replay (e.g. resync triggered by a gap), resolve
+          // ready instead of rejecting — the caller (doConnect / doResync)
+          // detects the bail-out via `this.subscription !== subscription`.
           if (closed) {
-            throw {
-              code: "aborted",
-              message: "closed during replay",
-              recoverable: false,
-            } satisfies RuntimeStreamError;
+            return;
           }
           if (event.sequence > cursor) {
             observer.onEvent(event);
@@ -180,11 +179,7 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
       }
 
       if (closed) {
-        throw {
-          code: "aborted",
-          message: "closed before ready",
-          recoverable: false,
-        } satisfies RuntimeStreamError;
+        return;
       }
       this.subscribers.add(observer);
       observer.onState?.("ready");
