@@ -1,8 +1,110 @@
 import http from "node:http";
-import type { RuntimeSnapshot, AdapterCapabilities } from "@agent-office/protocol";
+import type {
+  RuntimeSnapshot,
+  DomainEvent,
+  AdapterCapabilities,
+  AgentSnapshot,
+  TaskSnapshot,
+  ArtifactSnapshot,
+  ApprovalSnapshot,
+  RoomSnapshot,
+  ExecutionProfile,
+  RoomBinding,
+  CapabilityGrant,
+  AgentRole,
+} from "@agent-office/protocol";
 import { CommandType, ALL_EVENT_TYPES } from "@agent-office/protocol";
+import { reduceEvent } from "@agent-office/core";
 
 const RUNTIME_ID = "qclaw-swarm-runtime-001";
+
+// ─── 房间 ID ────────────────────────────────────────────────
+const QCLAW_ROOM_COMMAND = "qclaw-room-command";
+const QCLAW_ROOM_EXECUTION = "qclaw-room-execution";
+const QCLAW_ROOM_REVIEW = "qclaw-room-review";
+const QCLAW_ROOM_DELIVERY = "qclaw-room-delivery";
+
+// ─── Agent ID ───────────────────────────────────────────────
+const QCLAW_AGENT_ORCHESTRATOR = "qclaw-agent-orchestrator";
+const QCLAW_AGENT_WORKER_1 = "qclaw-agent-worker-1";
+const QCLAW_AGENT_WORKER_2 = "qclaw-agent-worker-2";
+const QCLAW_AGENT_REVIEWER = "qclaw-agent-reviewer";
+
+// ─── ExecutionProfile ───────────────────────────────────────
+const PROFILES: Record<string, ExecutionProfile> = {
+  "qclaw-profile-command": {
+    profileId: "qclaw-profile-command",
+    name: "Command Profile",
+    toolAllowlist: [],
+    toolDenylist: [],
+    permissionScopes: ["task:create", "task:assign"],
+    contextScopes: ["global"],
+    workspaceRef: null,
+    tokenBudget: null,
+    timeBudgetSec: null,
+    networkPolicy: "none",
+    approvalPolicy: "none",
+    inputArtifactTypes: [],
+    outputArtifactTypes: ["task_spec"],
+    maxConcurrency: 1,
+  },
+  "qclaw-profile-execution": {
+    profileId: "qclaw-profile-execution",
+    name: "Execution Profile",
+    toolAllowlist: ["tool:web.search", "tool:code.read", "tool:code.write"],
+    toolDenylist: [],
+    permissionScopes: ["artifact:write"],
+    contextScopes: ["workspace"],
+    workspaceRef: "ws://local/workspace-1",
+    tokenBudget: 10000,
+    timeBudgetSec: 300,
+    networkPolicy: "limited",
+    approvalPolicy: "on_external_effect",
+    inputArtifactTypes: ["task_spec"],
+    outputArtifactTypes: ["report", "code_patch", "data"],
+    maxConcurrency: 2,
+  },
+  "qclaw-profile-review": {
+    profileId: "qclaw-profile-review",
+    name: "Review Profile",
+    toolAllowlist: ["tool:artifact.read", "tool:comment.write"],
+    toolDenylist: ["tool:code.write"],
+    permissionScopes: ["artifact:review"],
+    contextScopes: ["review"],
+    workspaceRef: null,
+    tokenBudget: 5000,
+    timeBudgetSec: 120,
+    networkPolicy: "none",
+    approvalPolicy: "none",
+    inputArtifactTypes: ["report", "code_patch", "data"],
+    outputArtifactTypes: ["review_comment"],
+    maxConcurrency: 1,
+  },
+  "qclaw-profile-delivery": {
+    profileId: "qclaw-profile-delivery",
+    name: "Delivery Profile",
+    toolAllowlist: [],
+    toolDenylist: [],
+    permissionScopes: ["approval:request"],
+    contextScopes: ["delivery"],
+    workspaceRef: null,
+    tokenBudget: null,
+    timeBudgetSec: null,
+    networkPolicy: "none",
+    approvalPolicy: "always",
+    inputArtifactTypes: ["review_comment"],
+    outputArtifactTypes: [],
+    maxConcurrency: 1,
+  },
+};
+
+// ─── RoomBinding ────────────────────────────────────────────
+const BINDINGS: RoomBinding[] = [
+  { bindingId: "qclaw-bind-1", roomId: QCLAW_ROOM_COMMAND, profileId: "qclaw-profile-command", overrides: {} },
+  { bindingId: "qclaw-bind-2", roomId: QCLAW_ROOM_EXECUTION, profileId: "qclaw-profile-execution", overrides: {} },
+  { bindingId: "qclaw-bind-3", roomId: QCLAW_ROOM_REVIEW, profileId: "qclaw-profile-review", overrides: {} },
+  { bindingId: "qclaw-bind-4", roomId: QCLAW_ROOM_DELIVERY, profileId: "qclaw-profile-delivery", overrides: {} },
+];
 
 export interface QclawRuntimeOptions {
   port?: number;
@@ -21,25 +123,29 @@ export interface QclawRuntimeOptions {
 export class QclawTestRuntime {
   private server: http.Server;
   private port: number;
-  private snapshot: RuntimeSnapshot;
   private capabilities: AdapterCapabilities;
+
+  // 内存状态
+  private agents: Map<string, AgentSnapshot> = new Map();
+  private tasks: Map<string, TaskSnapshot> = new Map();
+  private artifacts: Map<string, ArtifactSnapshot> = new Map();
+  private approvals: Map<string, ApprovalSnapshot> = new Map();
+  private rooms: Map<string, RoomSnapshot> = new Map();
+  private bindings: RoomBinding[] = BINDINGS;
+  private profiles: Record<string, ExecutionProfile> = PROFILES;
+  private eventLog: DomainEvent[] = [];
+  private sequence = 0;
+  private correlationId = "";
+  private traceId = "";
+  private taskCounter = 0;
+  private artifactCounter = 0;
+  private approvalCounter = 0;
+  private grantCounter = 0;
 
   constructor(opts: QclawRuntimeOptions = {}) {
     this.port = opts.port ?? 0;
-    const emptySnap: RuntimeSnapshot = {
-      runtimeId: RUNTIME_ID,
-      snapshotId: "snap-init",
-      sequence: 0,
-      schemaVersion: "1.0",
-      createdAt: new Date().toISOString(),
-      lastEventId: "",
-      agents: [],
-      tasks: [],
-      artifacts: [],
-      approvals: [],
-      rooms: [],
-    };
-    this.snapshot = emptySnap;
+    this.correlationId = "corr-qclaw-init";
+    this.traceId = "trace-qclaw-init";
     this.capabilities = {
       supportedEvents: [...ALL_EVENT_TYPES],
       supportedCommands: Object.values(CommandType),
@@ -52,6 +158,8 @@ export class QclawTestRuntime {
         hardOrchestration: false,
       },
     };
+    this.initRooms();
+    this.initAgents();
     this.server = http.createServer((req, res) => this.handle(req, res));
   }
 
@@ -73,12 +181,16 @@ export class QclawTestRuntime {
     return `http://localhost:${this.port}`;
   }
 
+  getSnapshot(): RuntimeSnapshot {
+    return this.buildInternalSnapshot();
+  }
+
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = req.url ?? "";
 
     if (req.method === "GET" && url.endsWith("/runtime/snapshot")) {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(this.snapshot));
+      res.end(JSON.stringify(this.getSnapshot()));
       return;
     }
 
@@ -103,5 +215,153 @@ export class QclawTestRuntime {
 
     res.writeHead(404);
     res.end("not found");
+  }
+
+  // ─── 内部方法 ──────────────────────────────────────────────
+
+  private initRooms(): void {
+    const rooms: Array<[string, string, RoomSnapshot["type"]]> = [
+      [QCLAW_ROOM_COMMAND, "指挥区", "command"],
+      [QCLAW_ROOM_EXECUTION, "执行区", "execution"],
+      [QCLAW_ROOM_REVIEW, "审查区", "review"],
+      [QCLAW_ROOM_DELIVERY, "审批与交付区", "approval_delivery"],
+    ];
+
+    for (const [roomId, name, type] of rooms) {
+      this.rooms.set(roomId, {
+        roomId,
+        runtimeId: RUNTIME_ID,
+        name,
+        type: type as RoomSnapshot["type"],
+        bounds: this.getRoomBounds(type as RoomSnapshot["type"]),
+        activeAgentIds: [],
+        visualState: {},
+      });
+    }
+  }
+
+  private getRoomBounds(type: RoomSnapshot["type"]): { x: number; y: number; width: number; height: number } {
+    switch (type) {
+      case "command": return { x: 0, y: 0, width: 400, height: 300 };
+      case "execution": return { x: 400, y: 0, width: 400, height: 300 };
+      case "review": return { x: 0, y: 300, width: 400, height: 300 };
+      case "approval_delivery": return { x: 400, y: 300, width: 400, height: 300 };
+      default: return { x: 0, y: 0, width: 400, height: 300 };
+    }
+  }
+
+  private initAgents(): void {
+    const agents: Array<[string, string, AgentRole]> = [
+      [QCLAW_AGENT_ORCHESTRATOR, "Orchestrator", "orchestrator"],
+      [QCLAW_AGENT_WORKER_1, "Worker-1", "worker"],
+      [QCLAW_AGENT_WORKER_2, "Worker-2", "worker"],
+      [QCLAW_AGENT_REVIEWER, "Reviewer", "reviewer"],
+    ];
+
+    for (const [agentId, name, role] of agents) {
+      const grants: CapabilityGrant[] = this.getGrantsForRole(role, agentId);
+      this.agents.set(agentId, {
+        agentId,
+        runtimeId: RUNTIME_ID,
+        name,
+        role,
+        status: "idle",
+        currentTaskId: null,
+        currentRoomId: role === "orchestrator" ? QCLAW_ROOM_COMMAND : null,
+        capabilityGrants: grants,
+        lastEventAt: new Date().toISOString(),
+        blockedReason: null,
+      });
+    }
+  }
+
+  private getGrantsForRole(role: AgentRole, agentId: string): CapabilityGrant[] {
+    const baseGrant = (capability: string, effect: CapabilityGrant["effect"]): CapabilityGrant => ({
+      grantId: `grant-${++this.grantCounter}`,
+      principalId: agentId,
+      capability,
+      effect,
+      scope: {},
+      expiresAt: null,
+      issuedBy: "system",
+      state: "active",
+    });
+
+    switch (role) {
+      case "orchestrator":
+        return [
+          baseGrant("task:create", "allow"),
+          baseGrant("task:assign", "allow"),
+        ];
+      case "worker":
+        return [
+          baseGrant("tool:web.search", "allow"),
+          baseGrant("tool:code.read", "allow"),
+          baseGrant("tool:code.write", "require_approval"),
+          baseGrant("artifact:write", "allow"),
+        ];
+      case "reviewer":
+        return [
+          baseGrant("tool:artifact.read", "allow"),
+          baseGrant("artifact:review", "allow"),
+          baseGrant("approval:request", "allow"),
+        ];
+    }
+  }
+
+  private createEvent<P>(type: string, payload: P): DomainEvent<P> {
+    const now = new Date().toISOString();
+    return {
+      eventId: `evt-${++this.sequence}-${Date.now()}`,
+      runtimeId: RUNTIME_ID,
+      sequence: this.sequence,
+      schemaVersion: "1.0",
+      type,
+      occurredAt: now,
+      receivedAt: now,
+      correlationId: this.correlationId,
+      causationId: this.eventLog.length > 0
+        ? this.eventLog[this.eventLog.length - 1].eventId
+        : null,
+      traceId: this.traceId,
+      payload,
+    };
+  }
+
+  private emit(event: DomainEvent): void {
+    this.eventLog.push(event);
+    this.applyEventInternal(event);
+  }
+
+  private applyEventInternal(event: DomainEvent): void {
+    const currentSnapshot = this.buildInternalSnapshot();
+    const result = reduceEvent(currentSnapshot, event);
+    this.syncFromSnapshot(result.snapshot);
+  }
+
+  private buildInternalSnapshot(): RuntimeSnapshot {
+    return {
+      runtimeId: RUNTIME_ID,
+      snapshotId: `snap-${this.sequence}`,
+      sequence: this.sequence,
+      schemaVersion: "1.0",
+      createdAt: new Date().toISOString(),
+      lastEventId: this.eventLog.length > 0
+        ? this.eventLog[this.eventLog.length - 1].eventId
+        : "",
+      agents: Array.from(this.agents.values()),
+      tasks: Array.from(this.tasks.values()),
+      artifacts: Array.from(this.artifacts.values()),
+      approvals: Array.from(this.approvals.values()),
+      rooms: Array.from(this.rooms.values()),
+    };
+  }
+
+  private syncFromSnapshot(snap: RuntimeSnapshot): void {
+    this.agents = new Map(snap.agents.map((a) => [a.agentId, a]));
+    this.tasks = new Map(snap.tasks.map((t) => [t.taskId, t]));
+    this.artifacts = new Map(snap.artifacts.map((a) => [a.artifactId, a]));
+    this.approvals = new Map(snap.approvals.map((a) => [a.approvalId, a]));
+    this.rooms = new Map(snap.rooms.map((r) => [r.roomId, r]));
   }
 }

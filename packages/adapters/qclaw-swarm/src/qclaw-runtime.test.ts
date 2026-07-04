@@ -45,3 +45,48 @@ describe("QclawTestRuntime skeleton", () => {
     runtime = undefined as any;
   });
 });
+
+describe("QclawTestRuntime state machine", () => {
+  let runtime: QclawTestRuntime;
+
+  afterEach(async () => {
+    if (runtime) await runtime.stop();
+  });
+
+  it("initial snapshot has 4 agents (orchestrator + 2 workers + reviewer)", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`);
+    const snap = await res.json();
+    expect(snap.agents).toHaveLength(4);
+    expect(snap.agents.map((a: any) => a.role).sort()).toEqual([
+      "orchestrator",
+      "reviewer",
+      "worker",
+      "worker",
+    ]);
+  });
+
+  it("initial snapshot has 4 rooms (command, execution, review, delivery)", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`);
+    const snap = await res.json();
+    expect(snap.rooms).toHaveLength(4);
+    expect(snap.rooms.map((r: any) => r.type).sort()).toEqual([
+      "approval_delivery",
+      "command",
+      "execution",
+      "review",
+    ]);
+  });
+
+  it("all entities have runtimeId qclaw-swarm-runtime-001", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`);
+    const snap = await res.json();
+    for (const a of snap.agents) expect(a.runtimeId).toBe("qclaw-swarm-runtime-001");
+    for (const r of snap.rooms) expect(r.runtimeId).toBe("qclaw-swarm-runtime-001");
+  });
+});
