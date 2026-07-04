@@ -550,9 +550,9 @@ export interface RuntimeAdapter {
   disconnect(): Promise<void>;
   getSnapshot(): Promise<RuntimeSnapshot>;
   subscribe(
-    handler: DomainEventHandler,
+    observer: RuntimeStreamObserver,
     options?: SubscribeOptions
-  ): Unsubscribe;
+  ): RuntimeSubscription;
   execute(command: OfficeCommand): Promise<CommandResult>;
   getCapabilities(): AdapterCapabilities;
 }

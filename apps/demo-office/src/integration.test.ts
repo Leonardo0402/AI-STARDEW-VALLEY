@@ -32,11 +32,13 @@ describe("集成测试: 完整链路", () => {
     store.setSnapshot(snap);
     gateway.updateSnapshot(snap);
 
-    adapter.subscribe((event) => {
-      receivedEvents.push(event);
-      store.applyEvent(event);
-      // 关键：同步更新 gateway 持有的 snapshot，否则 policy 校验会用到旧 snapshot
-      gateway.updateSnapshot(store.getSnapshot());
+    adapter.subscribe({
+      onEvent: (event) => {
+        receivedEvents.push(event);
+        store.applyEvent(event);
+        // 关键：同步更新 gateway 持有的 snapshot，否则 policy 校验会用到旧 snapshot
+        gateway.updateSnapshot(store.getSnapshot());
+      },
     });
   });
 
@@ -252,8 +254,9 @@ describe("集成测试: 完整链路", () => {
 
   it("完整链路：UI 断开（取消订阅）不影响 Runtime 继续工作", async () => {
     // 取消订阅（模拟 UI 卸载）
-    const unsub = adapter.subscribe(() => {});
-    unsub();
+    const sub = adapter.subscribe({ onEvent: () => {} });
+    await sub.ready;
+    await Promise.resolve(sub.close());
 
     // Adapter 仍然可以执行命令
     const cmd: OfficeCommand = {

@@ -16,8 +16,9 @@ import type {
   OfficeCommand,
   CommandResult,
   AdapterCapabilities,
-  DomainEventHandler,
-  Unsubscribe,
+  RuntimeStreamObserver,
+  RuntimeSubscription,
+  RuntimeStreamError,
   SubscribeOptions,
   AgentSnapshot,
   TaskSnapshot,
@@ -133,7 +134,7 @@ export interface MockAdapterOptions {
 
 export class MockRuntimeAdapter implements RuntimeAdapter {
   private connected = false;
-  private subscribers = new Set<DomainEventHandler>();
+  private subscribers = new Set<RuntimeStreamObserver>();
   private sequence = 0;
   private eventLog: DomainEvent[] = [];
   private correlationId = "";
@@ -204,18 +205,62 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
    * 这保证 snapshot-first bootstrap 顺序下不丢失 snapshot 与订阅之间产生的事件。
    */
   subscribe(
-    handler: DomainEventHandler,
+    observer: RuntimeStreamObserver,
     options?: SubscribeOptions
-  ): Unsubscribe {
-    if (options?.afterSequence !== undefined) {
-      for (const event of this.eventLog) {
-        if (event.sequence > options.afterSequence) {
-          handler(event);
+  ): RuntimeSubscription {
+    let closed = false;
+    const cursor = options?.afterSequence;
+
+    // Replay MUST be deferred to a microtask so the caller can save the
+    // subscription reference before events arrive. If replay happened
+    // synchronously inside subscribe(), the session's handleEvent guard
+    // (if (!this.subscription) return;) would drop all replay events
+    // because this.subscription = adapter.subscribe(...) hasn't completed.
+    const ready = Promise.resolve().then(() => {
+      if (closed) {
+        throw {
+          code: "aborted",
+          message: "closed before ready",
+          recoverable: false,
+        } satisfies RuntimeStreamError;
+      }
+      observer.onState?.("opening");
+
+      if (cursor !== undefined) {
+        for (const event of this.eventLog) {
+          if (closed) {
+            throw {
+              code: "aborted",
+              message: "closed during replay",
+              recoverable: false,
+            } satisfies RuntimeStreamError;
+          }
+          if (event.sequence > cursor) {
+            observer.onEvent(event);
+          }
         }
       }
-    }
-    this.subscribers.add(handler);
-    return () => this.subscribers.delete(handler);
+
+      if (closed) {
+        throw {
+          code: "aborted",
+          message: "closed before ready",
+          recoverable: false,
+        } satisfies RuntimeStreamError;
+      }
+      this.subscribers.add(observer);
+      observer.onState?.("ready");
+    });
+
+    return {
+      ready,
+      close: () => {
+        if (closed) return;
+        closed = true;
+        this.subscribers.delete(observer);
+        observer.onState?.("closed");
+      },
+    };
   }
 
   async execute(command: OfficeCommand): Promise<CommandResult> {
@@ -982,13 +1027,13 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     const delay = this.options.eventDelayMs ?? 0;
     if (delay > 0) {
       setTimeout(() => {
-        for (const handler of this.subscribers) {
-          handler(event);
+        for (const observer of this.subscribers) {
+          observer.onEvent(event);
         }
       }, delay);
     } else {
-      for (const handler of this.subscribers) {
-        handler(event);
+      for (const observer of this.subscribers) {
+        observer.onEvent(event);
       }
     }
   }

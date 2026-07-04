@@ -835,7 +835,7 @@ describe("CommandGateway", () => {
         connect: vi.fn(async () => {}),
         disconnect: vi.fn(async () => {}),
         getSnapshot: vi.fn(async () => createEmptySnapshot(RUNTIME_ID)),
-        subscribe: vi.fn(() => () => {}),
+        subscribe: vi.fn(() => ({ ready: Promise.resolve(), close: () => {} })),
         execute,
         getCapabilities: vi.fn(() => ({
           supportedEvents: [],

@@ -17,8 +17,9 @@ import type {
   OfficeCommand,
   CommandResult,
   AdapterCapabilities,
-  DomainEventHandler,
-  Unsubscribe,
+  RuntimeStreamObserver,
+  RuntimeSubscription,
+  RuntimeStreamError,
   SubscribeOptions,
 } from "@agent-office/protocol";
 import { ALL_EVENT_TYPES, ALL_COMMAND_TYPES } from "@agent-office/protocol";
@@ -45,7 +46,7 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
   private connected = false;
   private snapshot: RuntimeSnapshot;
   private eventLog: DomainEvent[] = [];
-  private subscribers = new Set<DomainEventHandler>();
+  private subscribers = new Set<RuntimeStreamObserver>();
   public connectDelayMs: number;
   public connectError: Error | undefined;
 
@@ -59,6 +60,12 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
   public snapshotError: Error | null = null;
   /** getSnapshot 延迟 ms（可运行时修改以测试 resync 期间 disconnect 竞态） */
   public snapshotDelayMs: number;
+  /** subscribe ready 延迟 ms（用于测试 session 等待 ready） */
+  public subscribeReadyDelayMs = 0;
+  /** subscribe ready reject 的错误（用于测试 ready 失败） */
+  public subscribeReadyError: RuntimeStreamError | null = null;
+  /** close 延迟 ms（用于测试 async close） */
+  public closeDelayMs = 0;
 
   constructor(options: TestAdapterOptions = {}) {
     this.connectDelayMs = options.connectDelayMs ?? 0;
@@ -114,9 +121,9 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
   }
 
   subscribe(
-    handler: DomainEventHandler,
+    observer: RuntimeStreamObserver,
     options?: SubscribeOptions
-  ): Unsubscribe {
+  ): RuntimeSubscription {
     if (this.subscribeError) {
       throw this.subscribeError;
     }
@@ -126,18 +133,77 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
       timestamp: new Date().toISOString(),
     });
 
-    // cursor-aware replay
-    if (cursor !== undefined) {
-      for (const event of this.eventLog) {
-        if (event.sequence > cursor) {
-          handler(event);
+    let closed = false;
+    // Replay deferred to microtask — see MockRuntimeAdapter for rationale.
+    const ready = Promise.resolve().then(async () => {
+      if (closed) {
+        throw {
+          code: "aborted",
+          message: "closed before ready",
+          recoverable: false,
+        } satisfies RuntimeStreamError;
+      }
+      observer.onState?.("opening");
+
+      // Optional ready delay (for testing session awaits ready)
+      if (this.subscribeReadyDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, this.subscribeReadyDelayMs));
+      }
+
+      if (closed) {
+        throw {
+          code: "aborted",
+          message: "closed during ready delay",
+          recoverable: false,
+        } satisfies RuntimeStreamError;
+      }
+
+      // Optional ready error injection
+      if (this.subscribeReadyError) {
+        throw this.subscribeReadyError;
+      }
+
+      // cursor-aware replay
+      if (cursor !== undefined) {
+        for (const event of this.eventLog) {
+          if (closed) {
+            throw {
+              code: "aborted",
+              message: "closed during replay",
+              recoverable: false,
+            } satisfies RuntimeStreamError;
+          }
+          if (event.sequence > cursor) {
+            observer.onEvent(event);
+          }
         }
       }
-    }
-    this.subscribers.add(handler);
-    return () => {
-      this.subscribers.delete(handler);
+
+      if (closed) {
+        throw {
+          code: "aborted",
+          message: "closed before ready",
+          recoverable: false,
+        } satisfies RuntimeStreamError;
+      }
+      this.subscribers.add(observer);
+      observer.onState?.("ready");
+    });
+
+    const closeFn = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      this.subscribers.delete(observer);
       this.unsubscribeCount += 1;
+      if (this.closeDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, this.closeDelayMs));
+      }
+      observer.onState?.("closed");
+    };
+
+    return {
+      ready,
+      close: closeFn,
     };
   }
 
@@ -175,8 +241,8 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
       this.snapshot.sequence = event.sequence;
       this.snapshot.lastEventId = event.eventId;
     }
-    for (const handler of this.subscribers) {
-      handler(event);
+    for (const observer of this.subscribers) {
+      observer.onEvent(event);
     }
   }
 
@@ -211,5 +277,8 @@ export class TestRuntimeAdapter implements RuntimeAdapter {
     this.subscribeError = null;
     this.snapshotError = null;
     this.snapshotDelayMs = 0;
+    this.subscribeReadyDelayMs = 0;
+    this.subscribeReadyError = null;
+    this.closeDelayMs = 0;
   }
 }

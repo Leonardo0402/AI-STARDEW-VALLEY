@@ -28,9 +28,11 @@ describe("MockRuntimeAdapter", () => {
     await adapter.connect();
 
     // 订阅 adapter 事件，应用到 store
-    adapter.subscribe((event) => {
-      store.applyEvent(event);
-      gateway.updateSnapshot(store.getSnapshot());
+    adapter.subscribe({
+      onEvent: (event) => {
+        store.applyEvent(event);
+        gateway.updateSnapshot(store.getSnapshot());
+      },
     });
 
     // 初始 snapshot
@@ -259,7 +261,8 @@ describe("MockRuntimeAdapter", () => {
   it("should continue running after UI disconnects", async () => {
     // Simulate UI disconnect by unsubscribing
     const events: DomainEvent[] = [];
-    const unsub = adapter.subscribe((e) => events.push(e));
+    const sub = adapter.subscribe({ onEvent: (e) => events.push(e) });
+    await sub.ready; // wait for replay to complete
 
     // create a task
     const cmd = makeCommand(CommandType.TASK_CREATE, {
@@ -269,7 +272,7 @@ describe("MockRuntimeAdapter", () => {
     await gateway.execute(cmd);
 
     // unsubscribe (simulate UI disconnect)
-    unsub();
+    await Promise.resolve(sub.close());
 
     // create another task
     const cmd2 = makeCommand(CommandType.TASK_CREATE, {
