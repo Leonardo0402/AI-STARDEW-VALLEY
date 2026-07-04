@@ -398,6 +398,90 @@ export interface SubscribeOptions {
   afterSequence?: number;
 }
 
+// ─── Async Subscription Lifecycle (Issue #6) ───────────────
+
+/**
+ * 流订阅状态机。
+ *
+ * 注意：没有 "reconnecting" 状态 — RuntimeSession 拥有重连/resync 职责，
+ * adapter 只负责一次 Stream 建立和一次 Stream 生命周期。
+ * Session 通过 resynchronizing / degraded 状态表达重连。
+ *
+ * - opening: subscribe 已返回，流尚未 ready（正在建立连接 / 重放）
+ * - ready: 流已开放，重放完成，正在投递实时事件
+ * - reset_required: 重放历史已修剪，需要重新拉取 checkpoint
+ * - error: 流错误（可恢复或致命）
+ * - closed: 订阅已关闭（终态）
+ */
+export type RuntimeStreamState =
+  | "opening"
+  | "ready"
+  | "reset_required"
+  | "error"
+  | "closed";
+
+/**
+ * 远程传输错误分类（Issue #6 P1 错误模型）。
+ *
+ * - aborted: close 发生在 ready 之前（订阅被取消）
+ * - 其他 code: HTTP/SSE 传输层错误（Plan 2 使用）
+ */
+export type RuntimeErrorCode =
+  | "http_error"
+  | "authentication_failed"
+  | "snapshot_invalid"
+  | "capabilities_invalid"
+  | "stream_open_failed"
+  | "stream_protocol_error"
+  | "event_invalid"
+  | "event_log_trimmed"
+  | "command_rejected"
+  | "command_response_invalid"
+  | "aborted";
+
+/**
+ * 结构化流错误。
+ *
+ * recoverable=true 时 session 可尝试 resync；false 时为致命错误。
+ * status: HTTP status code（仅 HTTP/SSE adapter 使用）。
+ */
+export interface RuntimeStreamError {
+  code: RuntimeErrorCode;
+  message: string;
+  recoverable: boolean;
+  status?: number;
+}
+
+/**
+ * 流观察者。onEvent 必需；onState/onError 可选。
+ *
+ * 调用顺序契约见 docs/protocol/runtime-contract.md §4.1.1。
+ * 简要：
+ *   - ready 之前失败：只 reject ready，不调用 onError。
+ *   - ready 成功：replay → onState("ready") → ready.resolve()。
+ *   - ready 之后失败：onError(error) → onState("error" | "reset_required")。
+ *   - close 之前 ready 未 resolve：ready.reject({ code: "aborted" })。
+ */
+export interface RuntimeStreamObserver {
+  onEvent(event: DomainEvent): void;
+  onState?(state: RuntimeStreamState): void;
+  onError?(error: RuntimeStreamError): void;
+}
+
+/**
+ * 异步订阅句柄。
+ *
+ * ready: 流已开放且游标重放完成时 resolve；流建立失败或 close-before-ready 时 reject。
+ * close: 关闭流，幂等。同步 adapter 返回 void；HTTP/SSE adapter 返回 Promise<void>（abort fetch）。
+ *
+ * 协议：subscribe() 返回 RuntimeSubscription 之前不得同步调用 observer。
+ * Replay 必须至少延迟到一个 microtask 中执行，让调用方先保存 subscription 引用。
+ */
+export interface RuntimeSubscription {
+  ready: Promise<void>;
+  close(): Promise<void> | void;
+}
+
 // ─── EventApplyResult ───────────────────────────────────────
 
 /**
