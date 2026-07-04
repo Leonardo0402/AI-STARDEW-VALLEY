@@ -121,8 +121,6 @@ export function createSseParser(handlers: SseParserHandlers): SseParser {
 /** Find the index of the next \n or \r (line terminator). Returns -1 if none. */
 function findLineEnd(s: string): number {
   const ln = s.indexOf("\n");
-  const cr = s.indexOf("\r");
-  if (ln === -1) return cr;
-  if (cr === -1) return ln;
-  return Math.min(ln, cr);
+  if (ln !== -1) return ln; // \n found — handles \r\n and \n
+  return s.indexOf("\r"); // bare \r only
 }

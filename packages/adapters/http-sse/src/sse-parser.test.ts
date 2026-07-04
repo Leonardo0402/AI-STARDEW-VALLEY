@@ -51,6 +51,28 @@ describe("SSE parser", () => {
     expect(c.events).toHaveLength(1);
   });
 
+  it("joins multi-line data fields with CRLF line endings", () => {
+    const c = capture();
+    c.parser.feed("data: line1\r\ndata: line2\r\n\r\n");
+    expect(c.events).toHaveLength(1);
+    expect(c.events[0].data).toBe("line1\nline2");
+  });
+
+  it("dispatches event with type and data under CRLF", () => {
+    const c = capture();
+    c.parser.feed("event: foo\r\ndata: bar\r\n\r\n");
+    expect(c.events).toHaveLength(1);
+    expect(c.events[0].event).toBe("foo");
+    expect(c.events[0].data).toBe("bar");
+  });
+
+  it("drops incomplete final frame with CRLF on finish", () => {
+    const c = capture();
+    c.parser.feed("data: partial\r\n");
+    c.parser.finish();
+    expect(c.events).toEqual([]);
+  });
+
   it("joins multi-line data fields with \\n", () => {
     const c = capture();
     c.parser.feed("data: line1\ndata: line2\n\n");
