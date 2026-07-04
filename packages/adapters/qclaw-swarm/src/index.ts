@@ -5,4 +5,5 @@
  * with QClaw-style execution semantics. Connect via
  * `@agent-office/adapter-http-sse`.
  */
-export {};
+export { QclawTestRuntime } from "./qclaw-runtime.js";
+export type { QclawRuntimeOptions } from "./qclaw-runtime.js";
