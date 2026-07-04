@@ -47,6 +47,15 @@ export class HttpSseRuntimeAdapter implements RuntimeAdapter {
   private lifecycleAbort = new AbortController();
   /** Active subscription's stream abort (per-subscription). Aborted in close() or disconnect(). */
   private streamAbort: AbortController | null = null;
+  /**
+   * Resolved auth headers cached per connection cycle. Populated on first
+   * resolveHeaders() call within a cycle (typically connect()). Cleared in
+   * closeFn (called by removeSubscription during resync) and disconnect().
+   * This ensures all HTTP requests within a single connect/resync cycle
+   * (capabilities + snapshot + stream) use the same token, while each new
+   * cycle resolves a fresh token (Plan Review Fix: auth refresh on reconnect).
+   */
+  private cachedHeaders: Record<string, string> | null = null;
 
   constructor(opts: HttpSseAdapterOptions) {
     this.opts = opts;
@@ -87,6 +96,8 @@ export class HttpSseRuntimeAdapter implements RuntimeAdapter {
 
   async disconnect(): Promise<void> {
     this.connected = false;
+    // Clear cached headers so a new connection cycle resolves fresh.
+    this.cachedHeaders = null;
     // Per Architecture Decision I sequence:
     // 1. lifecycleAbort aborts ALL in-flight fetches (snapshot, capabilities, command, stream open).
     this.lifecycleAbort.abort();
@@ -304,6 +315,14 @@ export class HttpSseRuntimeAdapter implements RuntimeAdapter {
               });
               return;
             }
+            // Notify the session to trigger immediate resync (no backoff).
+            // The session's handleStreamState("reset_required") calls
+            // triggerResetRecovery(), which shares the reconnectPromise lock
+            // with the backoff path. The session's handleStreamError for
+            // event_log_trimmed (queued below) returns early — it relies on
+            // this onState call to trigger recovery. Without this, the session
+            // would never enter "resynchronizing" (session.ts line 587 comment).
+            observer.onState?.("reset_required");
             liveErrorQueue.push({
               code: "event_log_trimmed",
               message: "Server signaled reset-required",
@@ -489,6 +508,11 @@ export class HttpSseRuntimeAdapter implements RuntimeAdapter {
     const closeFn = async (): Promise<void> => {
       if (closed) return;
       closed = true;
+      // Clear cached auth headers so the next connection cycle (resync)
+      // resolves a fresh token. Must be synchronous — before any async ops —
+      // so removeSubscription() (which awaits close()) sees the cleared
+      // cache before calling getSnapshot().
+      this.cachedHeaders = null;
       // close-before-ready MUST reject pending ready (Plan Review Issue 3, v3).
       // Without this, `await subscription.ready` after `close()` would hang forever
       // — the Promise was neither resolved (replay didn't finish) nor rejected.
@@ -525,6 +549,8 @@ export class HttpSseRuntimeAdapter implements RuntimeAdapter {
   }
 
   private async resolveHeaders(): Promise<Record<string, string>> {
-    return resolveAuthHeaders(this.opts.headers);
+    if (this.cachedHeaders) return this.cachedHeaders;
+    this.cachedHeaders = await resolveAuthHeaders(this.opts.headers);
+    return this.cachedHeaders;
   }
 }
