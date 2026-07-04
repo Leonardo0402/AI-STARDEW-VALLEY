@@ -83,6 +83,19 @@ describe("postCommand", () => {
     expect(r.error?.code).toBe("TIMEOUT");
   }, 5000);
 
+  it("returns ABORTED on external signal abort", async () => {
+    const ac = new AbortController();
+    globalThis.fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    }) as unknown as typeof fetch;
+    setTimeout(() => ac.abort(), 5);
+    const r = await postCommand("https://example.com/cmd", makeCommand(), { signal: ac.signal, timeoutMs: 5000 });
+    expect(r.status).toBe("error");
+    expect(r.error?.code).toBe("ABORTED");
+  }, 5000);
+
   it("returns error CommandResult on malformed response body", async () => {
     globalThis.fetch = mockFetch(new Response("not json", { status: 200 })) as unknown as typeof fetch;
     const r = await postCommand("https://example.com/cmd", makeCommand(), {});
