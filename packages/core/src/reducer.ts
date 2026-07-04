@@ -27,6 +27,7 @@ import type {
   ApprovalResolvedPayload,
   ErrorRaisedPayload,
   AgentSpawnedPayload,
+  ReducerError,
 } from "@agent-office/protocol";
 import { EventType } from "@agent-office/protocol";
 import {
@@ -39,7 +40,7 @@ import {
 export interface ReducerResult {
   snapshot: RuntimeSnapshot;
   /** 非法转换等错误信息，不中断处理 */
-  errors: string[];
+  errors: ReducerError[];
 }
 
 export function createEmptySnapshot(runtimeId: string): RuntimeSnapshot {
@@ -62,7 +63,7 @@ export function reduceEvent(
   snapshot: RuntimeSnapshot,
   event: DomainEvent
 ): ReducerResult {
-  const errors: string[] = [];
+  const errors: ReducerError[] = [];
   // 深拷贝以保持不可变性
   let s: RuntimeSnapshot = structuredClone(snapshot);
 
@@ -71,7 +72,11 @@ export function reduceEvent(
       const p = event.payload as AgentSpawnedPayload;
       const existing = s.agents.find((a) => a.agentId === p.agentId);
       if (existing) {
-        errors.push(`Agent ${p.agentId} already exists`);
+        errors.push({
+          code: "constraint_violation",
+          message: `Agent ${p.agentId} already exists`,
+          entityPath: `agents:${p.agentId}`,
+        });
         break;
       }
       const agent: AgentSnapshot = {
@@ -94,13 +99,19 @@ export function reduceEvent(
       const p = event.payload as AgentStatusChangedPayload;
       const agent = s.agents.find((a) => a.agentId === p.agentId);
       if (!agent) {
-        errors.push(`Agent ${p.agentId} not found for status change`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Agent ${p.agentId} not found for status change`,
+          entityPath: `agents:${p.agentId}`,
+        });
         break;
       }
       if (!isValidAgentTransition(agent.status, p.newStatus)) {
-        errors.push(
-          `Invalid agent transition: ${agent.status} → ${p.newStatus} for ${p.agentId}`
-        );
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid agent transition: ${agent.status} → ${p.newStatus} for ${p.agentId}`,
+          entityPath: `agents:${p.agentId}`,
+        });
         break;
       }
       agent.status = p.newStatus;
@@ -141,11 +152,19 @@ export function reduceEvent(
       const p = event.payload as TaskAssignedPayload;
       const task = s.tasks.find((t) => t.taskId === p.taskId);
       if (!task) {
-        errors.push(`Task ${p.taskId} not found for assignment`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Task ${p.taskId} not found for assignment`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       if (!isValidTaskTransition(task.status, "assigned")) {
-        errors.push(`Invalid task transition: ${task.status} → assigned for ${p.taskId}`);
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid task transition: ${task.status} → assigned for ${p.taskId}`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       // 清理旧 assignee 的残留关系（Task 转交时旧 Worker 不再持有此 Task）
@@ -187,11 +206,19 @@ export function reduceEvent(
       const p = event.payload as TaskStartedPayload;
       const task = s.tasks.find((t) => t.taskId === p.taskId);
       if (!task) {
-        errors.push(`Task ${p.taskId} not found for start`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Task ${p.taskId} not found for start`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       if (!isValidTaskTransition(task.status, "running")) {
-        errors.push(`Invalid task transition: ${task.status} → running for ${p.taskId}`);
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid task transition: ${task.status} → running for ${p.taskId}`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       task.status = "running";
@@ -208,11 +235,19 @@ export function reduceEvent(
       const p = event.payload as TaskBlockedPayload;
       const task = s.tasks.find((t) => t.taskId === p.taskId);
       if (!task) {
-        errors.push(`Task ${p.taskId} not found for block`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Task ${p.taskId} not found for block`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       if (!isValidTaskTransition(task.status, "blocked")) {
-        errors.push(`Invalid task transition: ${task.status} → blocked for ${p.taskId}`);
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid task transition: ${task.status} → blocked for ${p.taskId}`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       task.status = "blocked";
@@ -224,21 +259,31 @@ export function reduceEvent(
       const p = event.payload as TaskCompletedPayload;
       const task = s.tasks.find((t) => t.taskId === p.taskId);
       if (!task) {
-        errors.push(`Task ${p.taskId} not found for completion`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Task ${p.taskId} not found for completion`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       // 审批未通过时不能完成
       if (task.approvalId) {
         const approval = s.approvals.find((a) => a.approvalId === task.approvalId);
         if (approval && approval.status !== "approved") {
-          errors.push(
-            `Task ${p.taskId} cannot complete: approval ${task.approvalId} is ${approval.status}`
-          );
+          errors.push({
+            code: "constraint_violation",
+            message: `Task ${p.taskId} cannot complete: approval ${task.approvalId} is ${approval.status}`,
+            entityPath: `tasks:${p.taskId}`,
+          });
           break;
         }
       }
       if (!isValidTaskTransition(task.status, "completed")) {
-        errors.push(`Invalid task transition: ${task.status} → completed for ${p.taskId}`);
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid task transition: ${task.status} → completed for ${p.taskId}`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       task.status = "completed";
@@ -258,11 +303,19 @@ export function reduceEvent(
       const p = event.payload as TaskFailedPayload;
       const task = s.tasks.find((t) => t.taskId === p.taskId);
       if (!task) {
-        errors.push(`Task ${p.taskId} not found for failure`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Task ${p.taskId} not found for failure`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       if (!isValidTaskTransition(task.status, "failed")) {
-        errors.push(`Invalid task transition: ${task.status} → failed for ${p.taskId}`);
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid task transition: ${task.status} → failed for ${p.taskId}`,
+          entityPath: `tasks:${p.taskId}`,
+        });
         break;
       }
       task.status = "failed";
@@ -298,7 +351,11 @@ export function reduceEvent(
       const p = event.payload as ArtifactReviewedPayload;
       const artifact = s.artifacts.find((a) => a.artifactId === p.artifactId);
       if (!artifact) {
-        errors.push(`Artifact ${p.artifactId} not found for review`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Artifact ${p.artifactId} not found for review`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
         break;
       }
       const newStatus =
@@ -308,9 +365,11 @@ export function reduceEvent(
             ? "revision_required"
             : "rejected";
       if (!isValidArtifactTransition(artifact.status, newStatus)) {
-        errors.push(
-          `Invalid artifact transition: ${artifact.status} → ${newStatus} for ${p.artifactId}`
-        );
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid artifact transition: ${artifact.status} → ${newStatus} for ${p.artifactId}`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
         break;
       }
       artifact.status = newStatus;
@@ -327,9 +386,11 @@ export function reduceEvent(
           if (isValidTaskTransition(task.status, "revision_required")) {
             task.status = "revision_required";
           } else {
-            errors.push(
-              `Invalid task transition: ${task.status} → revision_required for ${task.taskId} (artifact ${p.artifactId} reviewed but task state unchanged)`
-            );
+            errors.push({
+              code: "invalid_transition",
+              message: `Invalid task transition: ${task.status} → revision_required for ${task.taskId} (artifact ${p.artifactId} reviewed but task state unchanged)`,
+              entityPath: `tasks:${task.taskId}`,
+            });
           }
         }
       }
@@ -360,9 +421,11 @@ export function reduceEvent(
         if (isValidTaskTransition(task.status, "waiting_approval")) {
           task.status = "waiting_approval";
         } else {
-          errors.push(
-            `Invalid task transition: ${task.status} → waiting_approval for ${p.taskId} (approval ${p.approvalId} created but task state unchanged)`
-          );
+          errors.push({
+            code: "invalid_transition",
+            message: `Invalid task transition: ${task.status} → waiting_approval for ${p.taskId} (approval ${p.approvalId} created but task state unchanged)`,
+            entityPath: `tasks:${p.taskId}`,
+          });
         }
       }
       break;
@@ -372,13 +435,19 @@ export function reduceEvent(
       const p = event.payload as ApprovalResolvedPayload;
       const approval = s.approvals.find((a) => a.approvalId === p.approvalId);
       if (!approval) {
-        errors.push(`Approval ${p.approvalId} not found for resolution`);
+        errors.push({
+          code: "entity_not_found",
+          message: `Approval ${p.approvalId} not found for resolution`,
+          entityPath: `approvals:${p.approvalId}`,
+        });
         break;
       }
       if (!isValidApprovalTransition(approval.status, p.status)) {
-        errors.push(
-          `Invalid approval transition: ${approval.status} → ${p.status} for ${p.approvalId}`
-        );
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid approval transition: ${approval.status} → ${p.status} for ${p.approvalId}`,
+          entityPath: `approvals:${p.approvalId}`,
+        });
         break;
       }
       approval.status = p.status;
@@ -392,9 +461,11 @@ export function reduceEvent(
           if (isValidTaskTransition(task.status, "revision_required")) {
             task.status = "revision_required";
           } else {
-            errors.push(
-              `Invalid task transition: ${task.status} → revision_required for ${task.taskId} (approval ${p.approvalId} rejected but task state unchanged)`
-            );
+            errors.push({
+              code: "invalid_transition",
+              message: `Invalid task transition: ${task.status} → revision_required for ${task.taskId} (approval ${p.approvalId} rejected but task state unchanged)`,
+              entityPath: `tasks:${task.taskId}`,
+            });
           }
         }
       }
@@ -415,7 +486,10 @@ export function reduceEvent(
     }
 
     default:
-      errors.push(`Unknown event type: ${event.type}`);
+      errors.push({
+        code: "validation_error",
+        message: `Unknown event type: ${event.type}`,
+      });
   }
 
   s.lastEventId = event.eventId;
@@ -432,7 +506,7 @@ export function replayEvents(
   runtimeId: string
 ): ReducerResult {
   let snapshot = createEmptySnapshot(runtimeId);
-  const allErrors: string[] = [];
+  const allErrors: ReducerError[] = [];
 
   for (const event of events) {
     const result = reduceEvent(snapshot, event);

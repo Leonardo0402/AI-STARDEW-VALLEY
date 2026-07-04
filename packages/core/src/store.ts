@@ -17,6 +17,7 @@ import type {
   RuntimeSnapshot,
   DomainEvent,
   EventApplyResult,
+  ReducerError,
 } from "@agent-office/protocol";
 import { reduceEvent } from "./reducer.js";
 import { EventDeduplicator } from "./dedup.js";
@@ -55,7 +56,7 @@ export class SnapshotStore {
   private dedup: EventDeduplicator;
   private eventLog: DomainEvent[] = [];
   private lastSequence = 0;
-  private reducerErrors: string[] = [];
+  private reducerErrors: ReducerError[] = [];
 
   constructor(runtimeId: string) {
     this.baseSnapshot = createEmptySnapshot(runtimeId, "snap-init-base");
@@ -71,8 +72,14 @@ export class SnapshotStore {
    * 不会写入 dedup、event log，也不推进 lastSequence。
    *
    * reducer_rejected：事件通过 transport 校验，但 reducer 拒绝状态转换。
-   * 此时 sequence 仍推进、事件仍入 log、dedup 仍标记（保持与 Runtime 单调一致），
-   * 但 applied=false 表示 snapshot 状态未变，listeners 仍被通知以便 UI 展示错误。
+   * 此时 sequence 仍推进、事件仍入 log、dedup 仍标记（保持与 Runtime 单调一致）；
+   * 但 **snapshot 状态保持不变**（事务性提交：errors 非空时不采用 reducer 的候选 snapshot），
+   * listeners 仍被通知以便 UI 展示错误。
+   *
+   * 事务性语义：transport 接受 vs domain 提交分离。
+   * - transport 接受：sequence 推进 + 入 log + 标记 dedup（与 Runtime 单调一致）
+   * - domain 提交：仅当 reducer errors 为空时才采用 result.snapshot
+   * replay 时同样逻辑，保证幂等一致。
    */
   applyEvent(event: DomainEvent): EventApplyResult {
     // runtimeId 校验：事件必须属于当前 Runtime
@@ -109,23 +116,31 @@ export class SnapshotStore {
       };
     }
 
-    // transport 校验全部通过：应用事件。
-    // 无论 reducer 是否拒绝，sequence 都推进、事件都入 log、dedup 都标记。
+    // transport 校验全部通过：
+    // - sequence 推进、事件入 log、dedup 标记（无论 reducer 是否拒绝）
+    // - domain 提交：仅当 reducer errors 为空时才采用 result.snapshot
     const result = reduceEvent(this.snapshot, event);
-    this.snapshot = result.snapshot;
     this.lastSequence = event.sequence;
     this.dedup.markSeen(event.eventId);
     this.eventLog.push(event);
+
     if (result.errors.length > 0) {
+      // 事务性：不采用 reducer 的候选 snapshot，domain entities 保持不变
+      // 但推进 snapshot 的 transport cursor 字段（sequence / lastEventId），
+      // 使 snapshot.sequence 与 lastSequence 单调一致（修复 cursor 元数据分歧）。
+      this.commitTransportMetadata(event);
       this.reducerErrors.push(...result.errors);
       this.notifyListeners();
       return {
         applied: false,
         code: "reducer_rejected",
-        reason: result.errors[0],
+        reason: result.errors[0].message,
+        reducerErrors: [...result.errors],
       };
     }
 
+    // domain 提交：reducer 无错误，采用新 snapshot
+    this.snapshot = result.snapshot;
     this.notifyListeners();
     return { applied: true, code: "applied" };
   }
@@ -184,7 +199,7 @@ export class SnapshotStore {
   }
 
   /** 获取 reducer 产生的错误（非法转换等） */
-  getErrors(): string[] {
+  getErrors(): ReducerError[] {
     return [...this.reducerErrors];
   }
 
@@ -226,18 +241,42 @@ export class SnapshotStore {
     this.reducerErrors = [];
 
     // 重放：重建 snapshot + dedup + event log + lastSequence
+    // 事务性：reducer errors 非空时不采用候选 snapshot（与 applyEvent 一致）
     for (const event of events) {
       const result = reduceEvent(this.snapshot, event);
-      this.snapshot = result.snapshot;
       this.lastSequence = event.sequence;
       this.dedup.markSeen(event.eventId);
       this.eventLog.push(event);
       if (result.errors.length > 0) {
         this.reducerErrors.push(...result.errors);
+        // 不采用 result.snapshot，domain entities 保持原状态
+        // 但推进 transport cursor 字段（与 applyEvent 一致）
+        this.commitTransportMetadata(event);
+      } else {
+        this.snapshot = result.snapshot;
       }
     }
 
     this.notifyListeners();
+  }
+
+  /**
+   * 提交 transport cursor 元数据到当前 snapshot（reducer_rejected 时使用）。
+   *
+   * 保留所有 domain entities（agents / tasks / artifacts / approvals / rooms）
+   * 的引用（浅拷贝），仅推进 transport cursor 字段 `sequence` 与 `lastEventId`，
+   * 其他元数据（runtimeId / snapshotId / schemaVersion / createdAt）保持不变。
+   *
+   * 这保证 `getSnapshot().sequence === getLastSequence()`，使 Snapshot 可作为
+   * 接受流位置的可信 cursor（修复 cursor 元数据分歧），不破坏事务性提交原则
+   * （domain entities 仍与原引用一致）。
+   */
+  private commitTransportMetadata(event: DomainEvent): void {
+    this.snapshot = {
+      ...this.snapshot,
+      sequence: event.sequence,
+      lastEventId: event.eventId,
+    };
   }
 
   private notifyListeners(): void {

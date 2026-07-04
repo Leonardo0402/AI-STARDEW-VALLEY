@@ -6,6 +6,7 @@
  */
 export { reduceEvent, replayEvents, createEmptySnapshot } from "./reducer.js";
 export type { ReducerResult } from "./reducer.js";
+export type { ReducerError, ReducerErrorCode } from "@agent-office/protocol";
 export {
   isValidAgentTransition,
   isValidTaskTransition,
@@ -23,6 +24,8 @@ export type {
   GapDiagnostic,
   RuntimeSessionOptions,
   AcceptedEventListener,
+  SessionErrorCode,
+  SessionError,
 } from "./session.js";
 export { CommandGateway } from "./gateway.js";
 export { evaluateCommand, hasCapability, rejectedResult } from "./policy.js";

@@ -476,25 +476,55 @@ type EventApplyCode =
   | "sequence_gap"       // event.sequence > store.lastSequence + 1
   | "reducer_rejected";  // 通过 transport 校验但 reducer 拒绝（非法状态转换等）
 
+/**
+ * Reducer 错误分类（Issue #4 结构化 diagnostics）。
+ *
+ * 调用方依据 code 判断错误类别，message 仅用于展示。
+ */
+type ReducerErrorCode =
+  | "entity_not_found"      // entity 不存在（agent/task/artifact/approval not found）
+  | "invalid_transition"    // 状态机转换不允许（含 cascade failures）
+  | "constraint_violation"  // 业务规则违反（已存在、审批未通过等）
+  | "validation_error";     // 未知事件类型或校验失败
+
+interface ReducerError {
+  code: ReducerErrorCode;
+  message: string;
+  /** Entity path，格式 "entityType:entityId"，例如 "tasks:t-1" */
+  entityPath?: string;
+}
+
 interface EventApplyResult {
   applied: boolean;       // 是否真正修改了 snapshot
   code: EventApplyCode;   // 类型化结果码
-  reason?: string;        // 仅用于诊断日志，不参与控制流
+  reason?: string;        // 仅用于诊断日志（首个 reducer error 的 message），不参与控制流
   expectedSequence?: number;
   receivedSequence?: number;
+  /**
+   * reducer_rejected 时的结构化诊断（所有 reducer errors）。
+   * 仅在 code === "reducer_rejected" 时存在。
+   * Issue #4 引入：让上层（session / UI）能展示完整的 reducer 拒绝原因列表，
+   * 并通过 onAcceptedEvent 透传给 UI。
+   */
+  reducerErrors?: ReducerError[];
 }
 ```
 
-**关键决策：reducer_rejected 仍然推进 sequence**
+**关键决策：事务性 reducer 提交（Issue #4 硬化）**
 
-| Code              | applied | 推进 lastSequence | 进入 eventLog | 标记 dedup |
-| ----------------- | ------- | ----------------- | ------------- | ---------- |
-| `applied`         | true    | yes               | yes           | yes        |
-| `reducer_rejected`| false   | **yes**           | **yes**       | **yes**    |
-| `duplicate`       | false   | no                | no            | no         |
-| `stale_sequence`  | false   | no                | no            | no         |
-| `runtime_mismatch`| false   | no                | no            | no         |
-| `sequence_gap`    | false   | no                | no            | no         |
+`applyEvent` 把 **transport 接受** 与 **domain 提交** 分离：
+
+- **transport 接受**：sequence 推进 + 入 log + 标记 dedup（与 Runtime 单调一致）
+- **domain 提交**：仅当 reducer errors 为空时才采用 `result.snapshot`；errors 非空时 **snapshot 保持原状态不变**
+
+| Code              | applied | 推进 lastSequence | 进入 eventLog | 标记 dedup | snapshot 替换 |
+| ----------------- | ------- | ----------------- | ------------- | ---------- | ------------- |
+| `applied`         | true    | yes               | yes           | yes        | **yes**       |
+| `reducer_rejected`| false   | **yes**           | **yes**       | **yes**    | **no（事务性）** |
+| `duplicate`       | false   | no                | no            | no         | no            |
+| `stale_sequence`  | false   | no                | no            | no         | no            |
+| `runtime_mismatch`| false   | no                | no            | no         | no            |
+| `sequence_gap`    | false   | no                | no            | no         | no            |
 
 **为什么 reducer_rejected 仍推进 sequence？**
 
@@ -503,6 +533,14 @@ Runtime 已经把该事件计入了自己的 sequence 序列。如果 Office 跳
 因此 Office 必须把 reducer_rejected 事件作为"已发生但未改变业务状态"的事实接受下来，
 维持与 Runtime 的单调一致性。`applied=false` 仅表示 snapshot 状态未变，
 **不代表**事件被丢弃。
+
+**为什么 reducer 出错时不采用候选 snapshot（事务性）？**
+
+reducer 在非法转换时仍会返回一个"best-effort"的候选 snapshot（可能仅部分字段被修改）。
+若采用这种部分修改的 snapshot，会导致状态不一致：transport 层面已接受事件，
+但 domain 层面状态可能损坏。事务性提交保证 **要么全部应用，要么完全不动**，
+reducer errors 通过 `reducerErrors` 字段透传给 UI 展示。`rebuildFromLog` 也遵循同一逻辑，
+保证重放幂等一致。
 
 ### 5.4 增量更新
 
@@ -521,20 +559,25 @@ Current State = baseSnapshot + replay(eventLog)
 
 ```text
 1. session 进入 "resynchronizing" 状态
-2. 取消当前订阅（unsubscribe）
+2. 立即 removeSubscription（拆除当前订阅 + 清空 activeSubscriptionCursor）
 3. snapshot' = await adapter.getSnapshot()              // 拉取最新 checkpoint
 4. store.setSnapshot(snapshot')                          // 原子重置
-5. session.subscribe(handler, {
-     afterSequence: snapshot'.sequence
-   })                                                    // 重新游标订阅
+5. session.installSubscription(snapshot'.sequence)       // 重新游标订阅
 6. session 进入 "connected" 状态
 ```
 
-**约束**：
+**Issue #4 硬化约束**：
 
-- 恢复过程**串行化**：通过 `resyncing` 标志保证同一时刻只有一个恢复流程在跑
-- 恢复期间收到的 transport 事件必须等到恢复完成后才会被处理（避免乱序）
-- 恢复失败：session 进入 `degraded` 状态，调用方可重试或断开
+- **共享 in-flight Promise**：并发的 `resynchronize()` 调用复用同一个 `resyncPromise`，真正单飞。
+  旧版用 `resyncing` boolean 标志只能阻止并发，无法让调用方 await 同一个 Promise。
+- **先拆旧订阅**：进入 resynchronizing 后**立即** removeSubscription，
+  避免在等待 snapshot 期间旧订阅继续推送事件造成混乱。
+- **epoch race safety**：doResynchronize 在每个 `await` 后校验 `this.epoch`；
+  若期间发生了 disconnect（epoch 递增），resync 立即 bail out，
+  不安装 snapshot、不重建订阅。
+- **resync 失败不留活跃订阅**：resync 失败时状态转 `failed`，
+  `lastError.code = "resync_failed"`，`hasActiveSubscription = false`。
+- 恢复期间收到的 transport 事件被 `handleEvent` 守卫丢弃（`state === "resynchronizing"` 时直接 return）
 - 调用方也可主动调用 `session.resynchronize()` 强制恢复
 
 ### 5.6 Snapshot 替换语义
@@ -697,15 +740,48 @@ type SessionState =
   | "degraded"
   | "failed";
 
+/**
+ * 结构化会话错误分类（Issue #4）。
+ * 取代旧版的 runtimeMismatchError: string | null。
+ */
+type SessionErrorCode =
+  | "runtime_mismatch"     // event.runtimeId 与 store 不匹配（不可恢复）
+  | "connect_failed"       // adapter.connect() 抛错
+  | "snapshot_failed"      // adapter.getSnapshot() 抛错或 checkpoint 安装被拒
+  | "subscribe_failed"     // adapter.subscribe() 抛错
+  | "resync_failed"        // resync 阶段 getSnapshot / setSnapshot 失败
+  | "disconnect_failed";   // adapter.disconnect() 抛错（状态仍转 disconnected）
+
+interface SessionError {
+  code: SessionErrorCode;
+  message: string;
+  at: string;  // ISO 8601
+}
+
+interface SessionDiagnostics {
+  state: SessionState;
+  lastSequence: number;
+  /** 结构化错误：按错误类型分类，null 表示无错误 */
+  lastError: SessionError | null;
+  /** 最近一次 gap 诊断 */
+  lastGap: GapDiagnostic | null;
+  /** 已发起的 resync 次数 */
+  resyncCount: number;
+  /** 当前是否持有活跃订阅 */
+  hasActiveSubscription: boolean;
+  /** 当前活跃订阅的 afterSequence 游标；无订阅时为 null */
+  activeSubscriptionCursor: number | null;
+}
+
 class RuntimeSession {
   constructor(adapter, store, gateway, options?);
   connect(): Promise<void>;           // disconnected → connecting → synchronizing → connected
-  disconnect(): Promise<void>;        // any → disconnected
-  resynchronize(): Promise<void>;     // 主动触发 gap 恢复流程
+  disconnect(): Promise<void>;        // any → disconnected（递增 epoch）
+  resynchronize(): Promise<void>;     // 主动触发 gap 恢复流程（共享 in-flight Promise）
   onStateChange(listener): Unsubscribe;
   onAcceptedEvent(listener): Unsubscribe;  // 仅 applied / reducer_rejected 事件
   getState(): SessionState;
-  getDiagnostics(): SessionDiagnostics;     // 当前状态、最近错误、gap 计数等
+  getDiagnostics(): SessionDiagnostics;     // 状态、lastError、gap 计数、订阅状态等
 }
 ```
 
@@ -719,8 +795,11 @@ class RuntimeSession {
 | `reducer_rejected`| gateway 接受事件（标记 reducer error）→ 通知 onAcceptedEvent listener |
 | `duplicate`       | 静默丢弃（已处理过）                                                |
 | `stale_sequence`  | 静默丢弃（旧序号）                                                  |
-| `runtime_mismatch`| session 进入 `degraded`，暴露 error                                |
-| `sequence_gap`    | 触发 `resynchronize()`                                              |
+| `runtime_mismatch`| session 进入 `degraded`，`lastError.code = "runtime_mismatch"`     |
+| `sequence_gap`    | 触发 `resynchronize()`（共享 in-flight Promise）                    |
+
+**resynchronizing 守卫**：当 `session.state === "resynchronizing"` 时，`handleEvent` 直接 return，
+避免旧订阅在拆旧订阅与安装新 checkpoint 之间混入事件。
 
 ### 8.5 React 集成约定
 
@@ -730,10 +809,15 @@ class RuntimeSession {
 - transport 拒绝事件不进入 UI 历史
 - **StrictMode 安全**：session 应在模块作用域创建（如 `main.tsx` 顶层），避免 React StrictMode 双重挂载导致重复订阅
 
-### 8.6 幂等 connect
+### 8.6 幂等 connect 与共享 in-flight Promise（Issue #4 硬化）
 
-- `connect()` 在非 `detached` 状态调用是 no-op，直接 resolve
-- 并发 `connect()` 调用：第二次调用 await 同一个 in-flight Promise
+- `connect()` 在非 `disconnected` / `failed` 状态调用是 no-op，直接 resolve
+- **共享 in-flight Promise**：并发的 `connect()` 调用复用同一个 `connectPromise`，真正单飞。
+  两个调用方 await 同一个 Promise；Promise 落定后 `connectPromise` 被清空。
+- `resynchronize()` 同样使用共享 `resyncPromise` 实现单飞。
+- **epoch race safety**：`disconnect()` 递增 `epoch` token；延迟的 `doConnect` / `doResynchronize`
+  在每个 `await` 后校验自己的 epoch 是否仍为当前值，不一致即静默 bail out（不抛错、不写 lastError），
+  避免在 disconnect 之后安装 snapshot 或重建订阅。
 
 ---
 
