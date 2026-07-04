@@ -482,6 +482,32 @@ export interface RuntimeSubscription {
   close(): Promise<void> | void;
 }
 
+// ─── Reconnect Policy (Issue #6 Plan 2) ─────────────────────
+
+/**
+ * Reconnect 退避策略。RuntimeSession 在 post-ready recoverable 错误时使用。
+ *
+ * - initialDelayMs: 首次重连等待时间（默认 500ms）
+ * - maxDelayMs: 单次重连最大等待时间（默认 30000ms）
+ * - maxAttempts: 最大重连次数（默认 10）；超过后转 failed
+ * - jitterRatio: 抖动比例（默认 0.2，即 ±20%）
+ *
+ * 退避公式：delay = min(maxDelayMs, initialDelayMs * 2^attempt) * (1 ± jitterRatio)
+ */
+export interface ReconnectPolicy {
+  initialDelayMs: number;
+  maxDelayMs: number;
+  maxAttempts: number;
+  jitterRatio: number;
+}
+
+export const defaultReconnectPolicy: ReconnectPolicy = {
+  initialDelayMs: 500,
+  maxDelayMs: 30000,
+  maxAttempts: 10,
+  jitterRatio: 0.2,
+};
+
 // ─── EventApplyResult ───────────────────────────────────────
 
 /**
