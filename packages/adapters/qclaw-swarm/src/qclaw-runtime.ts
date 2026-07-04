@@ -12,8 +12,12 @@ import type {
   RoomBinding,
   CapabilityGrant,
   AgentRole,
+  OfficeCommand,
+  CommandResult,
+  Priority,
+  Id,
 } from "@agent-office/protocol";
-import { CommandType, ALL_EVENT_TYPES } from "@agent-office/protocol";
+import { CommandType, EventType, ALL_EVENT_TYPES } from "@agent-office/protocol";
 import { reduceEvent } from "@agent-office/core";
 
 const RUNTIME_ID = "qclaw-swarm-runtime-001";
@@ -208,13 +212,333 @@ export class QclawTestRuntime {
     }
 
     if (req.method === "POST" && url.endsWith("/runtime/commands")) {
-      res.writeHead(501);
-      res.end('{"error":"not implemented yet"}');
+      const body = await this.readRequestBody(req);
+      let cmd: OfficeCommand;
+      try {
+        cmd = JSON.parse(body) as OfficeCommand;
+      } catch {
+        res.writeHead(400);
+        res.end(JSON.stringify({
+          commandId: "unknown",
+          status: "error",
+          error: { code: "INVALID_JSON", message: "Request body is not valid JSON" },
+          affectedEventIds: [],
+        }));
+        return;
+      }
+      const result = this.executeCommand(cmd);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(result));
       return;
     }
 
     res.writeHead(404);
     res.end("not found");
+  }
+
+  private readRequestBody(req: http.IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => resolve(body));
+      req.on("error", reject);
+    });
+  }
+
+  // ─── 命令分发 ──────────────────────────────────────────────
+
+  private executeCommand(cmd: OfficeCommand): CommandResult {
+    switch (cmd.commandType) {
+      case CommandType.TASK_CREATE:
+        return this.handleTaskCreate(cmd);
+      case CommandType.TASK_ASSIGN:
+        return this.handleTaskAssign(cmd);
+      case CommandType.AGENT_PAUSE:
+        return this.handleAgentPause(cmd);
+      case CommandType.AGENT_RESUME:
+        return this.handleAgentResume(cmd);
+      case CommandType.APPROVAL_ACCEPT:
+        return this.handleApprovalAccept(cmd);
+      case CommandType.APPROVAL_REJECT:
+        return this.handleApprovalReject(cmd);
+      case CommandType.ARTIFACT_OPEN:
+        return { commandId: cmd.commandId, status: "accepted" as const, affectedEventIds: [] };
+      default:
+        return {
+          commandId: cmd.commandId,
+          status: "rejected" as const,
+          error: { code: "UNSUPPORTED_COMMAND", message: `Command ${cmd.commandType} not supported` },
+          affectedEventIds: [],
+        };
+    }
+  }
+
+  // ─── 命令处理 (QClaw 语义) ─────────────────────────────────
+
+  private handleTaskCreate(cmd: OfficeCommand): CommandResult {
+    const p = cmd.payload as {
+      title: string;
+      description: string;
+      priority?: Priority;
+      parentTaskId?: Id | null;
+    };
+    const worker = this.findAvailableWorker();
+    if (!worker) {
+      return this.rejectCommand(cmd, "No available worker to dispatch task");
+    }
+    const taskId = `qclaw-task-${++this.taskCounter}`;
+
+    const created = this.createEvent(EventType.TASK_CREATED, {
+      taskId,
+      title: p.title,
+      description: p.description,
+      priority: p.priority ?? "normal",
+      parentTaskId: p.parentTaskId ?? null,
+    });
+    this.emit(created);
+
+    const assigned = this.createEvent(EventType.TASK_ASSIGNED, {
+      taskId,
+      agentId: worker.agentId,
+      roomId: QCLAW_ROOM_EXECUTION,
+    });
+    this.emit(assigned);
+
+    const started = this.createEvent(EventType.TASK_STARTED, {
+      taskId,
+      agentId: worker.agentId,
+    });
+    this.emit(started);
+
+    return {
+      commandId: cmd.commandId,
+      status: "accepted" as const,
+      affectedEventIds: [created.eventId, assigned.eventId, started.eventId],
+    };
+  }
+
+  private handleTaskAssign(cmd: OfficeCommand): CommandResult {
+    const p = cmd.payload as { taskId: Id; agentId: Id };
+    const agent = this.agents.get(p.agentId);
+    if (!agent) {
+      return this.rejectCommand(cmd, `Agent ${p.agentId} not found`);
+    }
+    const assigned = this.createEvent(EventType.TASK_ASSIGNED, {
+      taskId: p.taskId,
+      agentId: p.agentId,
+      roomId: QCLAW_ROOM_EXECUTION,
+    });
+    this.emit(assigned);
+
+    const started = this.createEvent(EventType.TASK_STARTED, {
+      taskId: p.taskId,
+      agentId: p.agentId,
+    });
+    this.emit(started);
+
+    return {
+      commandId: cmd.commandId,
+      status: "accepted" as const,
+      affectedEventIds: [assigned.eventId, started.eventId],
+    };
+  }
+
+  private handleAgentPause(cmd: OfficeCommand): CommandResult {
+    const p = cmd.payload as { agentId: Id };
+    const agent = this.agents.get(p.agentId);
+    if (!agent) {
+      return this.rejectCommand(cmd, `Agent ${p.agentId} not found`);
+    }
+    const oldStatus = agent.status;
+    const event = this.createEvent(EventType.AGENT_STATUS_CHANGED, {
+      agentId: p.agentId,
+      oldStatus,
+      newStatus: "paused",
+    });
+    this.emit(event);
+    return {
+      commandId: cmd.commandId,
+      status: "accepted" as const,
+      affectedEventIds: [event.eventId],
+    };
+  }
+
+  private handleAgentResume(cmd: OfficeCommand): CommandResult {
+    const p = cmd.payload as { agentId: Id };
+    const agent = this.agents.get(p.agentId);
+    if (!agent) {
+      return this.rejectCommand(cmd, `Agent ${p.agentId} not found`);
+    }
+    const oldStatus = agent.status;
+    const newStatus = agent.currentTaskId ? "working" : "idle";
+    const event = this.createEvent(EventType.AGENT_STATUS_CHANGED, {
+      agentId: p.agentId,
+      oldStatus,
+      newStatus,
+    });
+    this.emit(event);
+    return {
+      commandId: cmd.commandId,
+      status: "accepted" as const,
+      affectedEventIds: [event.eventId],
+    };
+  }
+
+  private handleApprovalAccept(cmd: OfficeCommand): CommandResult {
+    const p = cmd.payload as { approvalId: Id };
+    const approval = this.approvals.get(p.approvalId);
+    if (!approval) {
+      return this.rejectCommand(cmd, `Approval ${p.approvalId} not found`);
+    }
+    if (approval.status !== "requested") {
+      return this.rejectCommand(cmd, `Approval ${p.approvalId} already ${approval.status}`);
+    }
+    const resolveEvent = this.createEvent(EventType.APPROVAL_RESOLVED, {
+      approvalId: p.approvalId,
+      status: "approved" as const,
+      resolvedBy: cmd.actorId,
+    });
+    this.emit(resolveEvent);
+
+    const task = this.findTaskByApproval(p.approvalId);
+    if (task) {
+      const completeEvent = this.createEvent(EventType.TASK_COMPLETED, {
+        taskId: task.taskId,
+      });
+      this.emit(completeEvent);
+      return {
+        commandId: cmd.commandId,
+        status: "accepted" as const,
+        affectedEventIds: [resolveEvent.eventId, completeEvent.eventId],
+      };
+    }
+
+    return {
+      commandId: cmd.commandId,
+      status: "accepted" as const,
+      affectedEventIds: [resolveEvent.eventId],
+    };
+  }
+
+  private handleApprovalReject(cmd: OfficeCommand): CommandResult {
+    const p = cmd.payload as { approvalId: Id; reason: string };
+    const approval = this.approvals.get(p.approvalId);
+    if (!approval) {
+      return this.rejectCommand(cmd, `Approval ${p.approvalId} not found`);
+    }
+    if (approval.status !== "requested") {
+      return this.rejectCommand(cmd, `Approval ${p.approvalId} already ${approval.status}`);
+    }
+    const resolveEvent = this.createEvent(EventType.APPROVAL_RESOLVED, {
+      approvalId: p.approvalId,
+      status: "rejected" as const,
+      resolvedBy: cmd.actorId,
+    });
+    this.emit(resolveEvent);
+
+    const task = this.findTaskByApproval(p.approvalId);
+    if (task) {
+      const blockEvent = this.createEvent(EventType.TASK_BLOCKED, {
+        taskId: task.taskId,
+        reason: p.reason,
+      });
+      this.emit(blockEvent);
+      return {
+        commandId: cmd.commandId,
+        status: "accepted" as const,
+        affectedEventIds: [resolveEvent.eventId, blockEvent.eventId],
+      };
+    }
+
+    return {
+      commandId: cmd.commandId,
+      status: "accepted" as const,
+      affectedEventIds: [resolveEvent.eventId],
+    };
+  }
+
+  // ─── 辅助方法 ──────────────────────────────────────────────
+
+  private findAvailableWorker(): AgentSnapshot | undefined {
+    for (const agent of this.agents.values()) {
+      if (agent.role === "worker" && agent.status === "idle") return agent;
+    }
+    return undefined;
+  }
+
+  private findTaskByApproval(approvalId: string): TaskSnapshot | undefined {
+    for (const task of this.tasks.values()) {
+      if (task.approvalId === approvalId) return task;
+    }
+    return undefined;
+  }
+
+  private rejectCommand(cmd: OfficeCommand, message: string): CommandResult {
+    return {
+      commandId: cmd.commandId,
+      status: "rejected" as const,
+      error: { code: "QCLAW_ERROR", message },
+      affectedEventIds: [],
+    };
+  }
+
+  // TEST-ONLY: 直接发射事件以驱动 runtime 进入 approval.requested 等待状态，
+  // 用于测试 approval.accept / approval.reject 的自动完成/自动阻塞语义。
+  public driveToApprovalRequestedForTest(): void {
+    const worker = QCLAW_AGENT_WORKER_1;
+    const taskId = `qclaw-task-${++this.taskCounter}`;
+
+    const created = this.createEvent(EventType.TASK_CREATED, {
+      taskId,
+      title: "Test task awaiting approval",
+      description: "Driven by driveToApprovalRequestedForTest",
+      priority: "normal",
+      parentTaskId: null,
+    });
+    this.emit(created);
+
+    const assigned = this.createEvent(EventType.TASK_ASSIGNED, {
+      taskId,
+      agentId: worker,
+      roomId: QCLAW_ROOM_EXECUTION,
+    });
+    this.emit(assigned);
+
+    const started = this.createEvent(EventType.TASK_STARTED, {
+      taskId,
+      agentId: worker,
+    });
+    this.emit(started);
+
+    const artifactId = `qclaw-artifact-${++this.artifactCounter}`;
+    const artifactCreated = this.createEvent(EventType.ARTIFACT_CREATED, {
+      artifactId,
+      taskId,
+      producerAgentId: worker,
+      type: "report",
+      title: "Demo artifact",
+      uri: null,
+      version: 1,
+    });
+    this.emit(artifactCreated);
+
+    const artifactReviewed = this.createEvent(EventType.ARTIFACT_REVIEWED, {
+      artifactId,
+      reviewerId: QCLAW_AGENT_REVIEWER,
+      verdict: "approved",
+      comment: "Approved",
+    });
+    this.emit(artifactReviewed);
+
+    const approvalId = `qclaw-approval-${++this.approvalCounter}`;
+    const approvalRequested = this.createEvent(EventType.APPROVAL_REQUESTED, {
+      approvalId,
+      taskId,
+      kind: "artifact_delivery",
+      requestedBy: QCLAW_AGENT_REVIEWER,
+      reason: "Artifact approved, request delivery approval",
+    });
+    this.emit(approvalRequested);
   }
 
   // ─── 内部方法 ──────────────────────────────────────────────

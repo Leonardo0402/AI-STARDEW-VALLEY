@@ -90,3 +90,107 @@ describe("QclawTestRuntime state machine", () => {
     for (const r of snap.rooms) expect(r.runtimeId).toBe("qclaw-swarm-runtime-001");
   });
 });
+
+describe("QclawTestRuntime command handling", () => {
+  let runtime: QclawTestRuntime;
+
+  afterEach(async () => {
+    if (runtime) await runtime.stop();
+  });
+
+  async function postCommand(cmd: any): Promise<any> {
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": cmd.commandId },
+      body: JSON.stringify(cmd),
+    });
+    return res.json();
+  }
+
+  function makeCommand(type: string, payload: any, commandId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`): any {
+    return {
+      commandId,
+      commandType: type,
+      timestamp: new Date().toISOString(),
+      source: "user",
+      actorId: "qclaw-agent-orchestrator",
+      runtimeId: "qclaw-swarm-runtime-001",
+      targetId: null,
+      payload,
+    };
+  }
+
+  it("task.create emits task.created + task.assigned + task.started (auto-dispatch)", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    const result = await postCommand(makeCommand("task.create", {
+      title: "Test task",
+      description: "Test",
+      priority: "normal",
+      parentTaskId: null,
+    }));
+    expect(result.status).toBe("accepted");
+    expect(result.affectedEventIds.length).toBe(3);
+
+    const snap = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    expect(snap.tasks).toHaveLength(1);
+    expect(snap.tasks[0].status).toBe("running");
+    expect(snap.tasks[0].assigneeId).toMatch(/qclaw-agent-worker-\d/);
+  });
+
+  it("agent.pause emits agent.status_changed(paused)", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    const result = await postCommand(makeCommand("agent.pause", { agentId: "qclaw-agent-worker-1" }));
+    expect(result.status).toBe("accepted");
+    expect(result.affectedEventIds.length).toBe(1);
+
+    const snap = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    const agent = snap.agents.find((a: any) => a.agentId === "qclaw-agent-worker-1");
+    expect(agent.status).toBe("paused");
+  });
+
+  it("approval.accept emits approval.resolved + task.completed (auto-complete)", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    // Drive to approval.requested state via test helper
+    runtime.driveToApprovalRequestedForTest();
+    const snapBefore = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    const approvalId = snapBefore.approvals[0].approvalId;
+
+    const result = await postCommand(makeCommand("approval.accept", { approvalId }));
+    expect(result.status).toBe("accepted");
+    expect(result.affectedEventIds.length).toBe(2);
+
+    const snapAfter = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    expect(snapAfter.approvals[0].status).toBe("approved");
+    expect(snapAfter.tasks[0].status).toBe("completed");
+  });
+
+  it("approval.reject emits approval.resolved + task.blocked (auto-block)", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    runtime.driveToApprovalRequestedForTest();
+    const snapBefore = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    const approvalId = snapBefore.approvals[0].approvalId;
+
+    const result = await postCommand(makeCommand("approval.reject", {
+      approvalId,
+      reason: "rejected by user",
+    }));
+    expect(result.status).toBe("accepted");
+    expect(result.affectedEventIds.length).toBe(2);
+
+    const snapAfter = await (await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`)).json();
+    expect(snapAfter.approvals[0].status).toBe("rejected");
+    expect(snapAfter.tasks[0].status).toBe("blocked");
+  });
+
+  it("unknown command returns rejected", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+    const result = await postCommand(makeCommand("unknown.command", {}));
+    expect(result.status).toBe("rejected");
+    expect(result.error.code).toBe("UNSUPPORTED_COMMAND");
+  });
+});
