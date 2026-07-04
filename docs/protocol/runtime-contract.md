@@ -346,7 +346,7 @@ interface RuntimeAdapter {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getSnapshot(): Promise<RuntimeSnapshot>;
-  subscribe(handler: DomainEventHandler, options?: SubscribeOptions): Unsubscribe;
+  subscribe(observer: RuntimeStreamObserver, options?: SubscribeOptions): RuntimeSubscription;
   execute(command: OfficeCommand): Promise<CommandResult>;
   getCapabilities(): AdapterCapabilities;
 }
@@ -363,23 +363,51 @@ interface SubscribeOptions {
 }
 ```
 
-#### 4.1.1 游标订阅契约（Cursor-aware Subscription）
+#### 4.1.1 Async Subscription Lifecycle
 
-Adapter 必须保证 `subscribe(handler, { afterSequence: N })` 的语义：
+The `subscribe` method returns a `RuntimeSubscription` instead of a synchronous `Unsubscribe`:
 
-1. **同步重放阶段**：在返回 `Unsubscribe` 之前，adapter 必须以调用线程同步方式，
-   把内部 Event Log 中所有 `sequence > N` 的事件依次投递给 `handler`。
-   重放顺序按 `sequence` 升序。
-2. **实时推送阶段**：重放完成后，新产生的事件按到达顺序投递给 `handler`。
-3. **重放失败不静默**：如果 adapter 内部 Event Log 已裁剪导致无法满足 `afterSequence`，
-   adapter 应在 subscribe 调用阶段抛出 `EventLogTrimmedError`，
-   由调用方决定是否拉取新 Snapshot 重启。
-   （MockRuntimeAdapter 因为不裁剪，永远不会触发此错误。）
-4. **重放期间不再二次投递**：重放阶段已投递的事件，进入实时阶段后不会被重复投递。
+```ts
+interface RuntimeStreamObserver {
+  onEvent(event: DomainEvent): void;
+  onState?(state: RuntimeStreamState): void;
+  onError?(error: RuntimeStreamError): void;
+}
 
-> 注意：调用方应当先调用 `getSnapshot()` 拿到 checkpoint，再以
-> `snapshot.sequence` 作为 `afterSequence` 调用 `subscribe`。
-> 顺序错误（先 subscribe 后 getSnapshot）会导致 gap 或重复。
+interface RuntimeSubscription {
+  ready: Promise<void>;
+  close(): Promise<void> | void;
+}
+
+type RuntimeStreamState =
+  | "opening"
+  | "ready"
+  | "reset_required"
+  | "error"
+  | "closed";
+```
+
+**No `reconnecting` state:** `RuntimeSession` owns reconnect/resync (via `resynchronizing` / `degraded` session states). The adapter only owns one stream lifecycle. This prevents responsibility overlap.
+
+**Protocol: `subscribe()` must NOT synchronously call `observer` before returning.** Replay must be deferred to at least one microtask. This lets the caller save the `RuntimeSubscription` reference before events arrive — required for the session's `handleEvent` guard (`if (!this.subscription) return;`) to work.
+
+**Lifecycle ordering rules:**
+
+1. **Ready success:** `[replay via onEvent] → onState("ready") → ready.resolve()`
+2. **Ready failure (stream open failed):** `ready.reject(RuntimeStreamError)` — ONLY this. No `onError`, no `onState` before rejection. The session treats rejection as `subscribe_failed`.
+3. **Close before ready:** `ready.reject({ code: "aborted", recoverable: false })` — no dangling Promise.
+4. **Ready succeeded, then stream error:** `onError(error) → onState("error" | "reset_required")`
+5. **Close after ready (normal shutdown):** `onState("closed")`
+
+**Session contract:**
+- `RuntimeSession` calls `installSubscription()` which saves the subscription, then `await subscription.ready` before transitioning to `connected`.
+- After `await ready`, the session checks: epoch unchanged, subscription identity unchanged, state not degraded/resynchronizing/failed.
+- `handleEvent` has a `if (!this.subscription) return;` guard — stale events from an async-closed stream are discarded.
+- `removeSubscription()` is async and `await`s `subscription.close()` to guarantee "no old stream may remain active after resync" (Issue #6).
+
+**Mock/TestAdapter behavior:** replay is microtask-deferred (`Promise.resolve().then(...)`). `ready` resolves immediately after replay. `close()` is async (TestAdapter supports `closeDelayMs` for testing). TestAdapter also supports `subscribeReadyDelayMs` and `subscribeReadyError` for edge-case testing.
+
+**Replay validation (Plan 2):** For remote transports, `ready` rejects on non-contiguous replay or trimmed history. The session treats `ready` rejection as a `subscribe_failed` error and triggers checkpoint resynchronization.
 
 ### 4.2 AdapterCapabilities
 

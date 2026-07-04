@@ -224,7 +224,8 @@ describe("RuntimeSession: cursor-aware subscribe (afterSequence)", () => {
     // 用 afterSequence = checkpointSeq 订阅，应重放 sequence > checkpointSeq 的事件
     // 由于 playNormalFlow 已完成，无新事件，重放应为空
     const replayed: DomainEvent[] = [];
-    adapter.subscribe((e) => replayed.push(e), { afterSequence: checkpointSeq });
+    const sub = adapter.subscribe({ onEvent: (e) => replayed.push(e) }, { afterSequence: checkpointSeq });
+    await sub.ready;
     // 此时不应有重放（所有事件 sequence <= checkpointSeq）
     expect(replayed).toHaveLength(0);
   });
@@ -237,7 +238,8 @@ describe("RuntimeSession: cursor-aware subscribe (afterSequence)", () => {
     await new Promise((r) => setTimeout(r, 300));
 
     const replayed: DomainEvent[] = [];
-    adapter.subscribe((e) => replayed.push(e), { afterSequence: 0 });
+    const sub2 = adapter.subscribe({ onEvent: (e) => replayed.push(e) }, { afterSequence: 0 });
+    await sub2.ready;
     // 重放所有 sequence > 0 的事件
     expect(replayed.length).toBeGreaterThan(0);
   });

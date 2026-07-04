@@ -38,6 +38,8 @@ import type {
   RuntimeAdapter,
   DomainEvent,
   EventApplyResult,
+  RuntimeStreamObserver,
+  RuntimeSubscription,
 } from "@agent-office/protocol";
 import type { SnapshotStore } from "./store.js";
 import type { CommandGateway } from "./gateway.js";
@@ -118,7 +120,7 @@ export class RuntimeSession {
   private stateListeners = new Set<SessionStateListener>();
   private acceptedEventListeners = new Set<AcceptedEventListener>();
 
-  private unsubscribeAdapter: (() => void) | null = null;
+  private subscription: RuntimeSubscription | null = null;
   /**
    * Epoch token：每次 disconnect 递增。
    * 延迟操作（connect / resync）在每个 await 后校验自己的 epoch 是否仍为当前值，
@@ -247,8 +249,9 @@ export class RuntimeSession {
       this.diagnostics.lastSequence = snapshot.sequence;
 
       // 2. 订阅增量事件，从 checkpoint.sequence 之后开始
+      let subscription: RuntimeSubscription;
       try {
-        this.installSubscription(snapshot.sequence);
+        subscription = this.installSubscription(snapshot.sequence);
       } catch (err) {
         throw this.makeSessionError(
           "subscribe_failed",
@@ -256,11 +259,41 @@ export class RuntimeSession {
         );
       }
 
+      // 等待流就绪（replay 完成）后才进入 connected
+      try {
+        await subscription.ready;
+      } catch (err) {
+        // close the failed subscription before throwing
+        await this.removeSubscription();
+        throw this.makeSessionError(
+          "subscribe_failed",
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+
+      // epoch check: disconnect may have happened during await ready
+      if (this.epoch !== myEpoch) {
+        await this.removeSubscription();
+        return;
+      }
+      // subscription may have been replaced by a concurrent resync
+      if (this.subscription !== subscription) {
+        return;
+      }
+      // state may have changed (e.g. resync triggered by replay gap)
+      if (
+        this.state === "degraded" ||
+        this.state === "resynchronizing" ||
+        this.state === "failed"
+      ) {
+        return;
+      }
       this.setState("connected");
     } catch (err) {
       // 若是 disconnect 引发的 epoch 变化，不再写入错误
       if (this.epoch !== myEpoch) return;
       // bootstrap 失败（snapshot / subscribe）且 adapter 已连接 — best-effort 清理
+      await this.removeSubscription();
       if (adapterConnected) {
         try {
           await this.adapter.disconnect();
@@ -276,6 +309,10 @@ export class RuntimeSession {
 
   /** 处理来自 adapter 的增量事件 */
   private handleEvent(event: DomainEvent): void {
+    // 订阅已拆除 — 丢弃延迟到达的事件（async close 窗口）
+    if (!this.subscription) {
+      return;
+    }
     // resync 期间忽略增量事件：避免在旧订阅尚未拆除时混入与 checkpoint 不一致的事件。
     if (this.state === "resynchronizing") {
       return;
@@ -310,7 +347,7 @@ export class RuntimeSession {
       case "sequence_gap":
         // 触发重同步
         this.recordGap(event, result.expectedSequence ?? 0);
-        void this.resynchronize();
+        this.triggerResync();
         break;
     }
   }
@@ -353,7 +390,7 @@ export class RuntimeSession {
     const myEpoch = this.epoch;
     // 立即转 resynchronizing + 拆旧订阅，避免旧订阅在等待 snapshot 期间继续推送
     this.setState("resynchronizing");
-    this.removeSubscription();
+    await this.removeSubscription();
 
     try {
       const snapshot = await this.adapter.getSnapshot();
@@ -376,13 +413,39 @@ export class RuntimeSession {
       if (this.options.autoResume) {
         // 重新建立订阅，从新 checkpoint 之后开始
         if (this.epoch !== myEpoch) return; // disconnect 已发生
+        let subscription: RuntimeSubscription;
         try {
-          this.installSubscription(snapshot.sequence);
+          subscription = this.installSubscription(snapshot.sequence);
         } catch (err) {
           throw this.makeSessionError(
             "subscribe_failed",
             err instanceof Error ? err.message : String(err)
           );
+        }
+
+        // 等待流就绪（replay 完成）后才进入 connected
+        try {
+          await subscription.ready;
+        } catch (err) {
+          await this.removeSubscription();
+          throw this.makeSessionError(
+            "subscribe_failed",
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+
+        if (this.epoch !== myEpoch) {
+          await this.removeSubscription();
+          return;
+        }
+        if (this.subscription !== subscription) {
+          return;
+        }
+        if (
+          this.state === "degraded" ||
+          this.state === "failed"
+        ) {
+          return;
         }
       }
 
@@ -390,7 +453,7 @@ export class RuntimeSession {
     } catch (err) {
       if (this.epoch !== myEpoch) return;
       // resync 失败：不留活跃订阅，避免错误状态下继续消费
-      this.removeSubscription();
+      await this.removeSubscription();
       this.recordError(
         this.isSessionError(err)
           ? err
@@ -404,6 +467,26 @@ export class RuntimeSession {
   }
 
   /**
+   * 内部触发重同步：从 handleEvent（replay-time gap）调用。
+   *
+   * 与 resynchronize() 的区别：跳过 connectPromise 守卫。handleEvent 可能在
+   * doConnect 的 replay 期间被调用（subscription.ready 微任务内），此时
+   * connectPromise 仍非空，但 replay-time gap 必须立即触发 resync —— 否则
+   * 永远不会进入 resync（resyncCount 卡在 0）。
+   *
+   * 仍保留 resyncPromise 单飞：若已有 resync 进行中，直接返回。
+   * 外部调用方仍应使用 resynchronize()（保留 connectPromise 守卫防止
+   * in-flight connect 期间外部 resync 造成订阅泄漏）。
+   */
+  private triggerResync(): void {
+    if (this.resyncPromise) return;
+    this.resyncPromise = this.doResynchronize();
+    void this.resyncPromise.finally(() => {
+      this.resyncPromise = null;
+    });
+  }
+
+  /**
    * 干净断开：取消订阅 + 断开 adapter。
    *
    * 硬化语义（Issue #4）：
@@ -414,7 +497,7 @@ export class RuntimeSession {
    */
   async disconnect(): Promise<void> {
     this.epoch += 1;
-    this.removeSubscription();
+    await this.removeSubscription();
     try {
       await this.adapter.disconnect();
     } catch (err) {
@@ -431,28 +514,34 @@ export class RuntimeSession {
   }
 
   /** 安装新订阅并刷新 activeSubscriptionCursor / diagnostics */
-  private installSubscription(afterSequence: number): void {
-    this.unsubscribeAdapter = this.adapter.subscribe(
-      (event) => this.handleEvent(event),
-      { afterSequence }
-    );
+  private installSubscription(afterSequence: number): RuntimeSubscription {
+    const observer: RuntimeStreamObserver = {
+      onEvent: (event) => this.handleEvent(event),
+    };
+    const subscription = this.adapter.subscribe(observer, { afterSequence });
+    this.subscription = subscription;
     this.activeSubscriptionCursor = afterSequence;
     this.diagnostics.hasActiveSubscription = true;
     this.diagnostics.activeSubscriptionCursor = afterSequence;
+    return subscription;
   }
 
   /**
    * 拆除当前订阅（如有），并清空订阅相关的 diagnostics。
    * 集中化以便 disconnect / resync 失败 / resync 开始前复用。
    */
-  private removeSubscription(): void {
-    if (this.unsubscribeAdapter) {
-      this.unsubscribeAdapter();
-      this.unsubscribeAdapter = null;
-    }
+  private async removeSubscription(): Promise<void> {
+    const subscription = this.subscription;
+    this.subscription = null;
     this.activeSubscriptionCursor = null;
     this.diagnostics.hasActiveSubscription = false;
     this.diagnostics.activeSubscriptionCursor = null;
+    if (!subscription) return;
+    try {
+      await Promise.resolve(subscription.close());
+    } catch {
+      /* best-effort close — error handled by caller context */
+    }
   }
 
   /** 构造结构化 SessionError */
