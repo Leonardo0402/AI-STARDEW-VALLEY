@@ -44,10 +44,21 @@ describe("Remote golden-flow smoke test (http-sse mode)", () => {
 
     // Drive golden flow via HTTP (same as playGoldenFlow)
     await playGoldenFlow(runtime.getBaseUrl());
-    await new Promise((r) => setTimeout(r, 500));
+
+    // Deterministically wait for the golden flow to fully propagate through
+    // the SSE stream into the SnapshotStore. Poll until the task reaches
+    // "completed" (terminal state) or timeout — no fixed sleep.
+    const deadline = Date.now() + 5000;
+    let finalSnap = comp.store.getSnapshot();
+    while (
+      Date.now() < deadline &&
+      (finalSnap.tasks.length === 0 || finalSnap.tasks[0].status !== "completed")
+    ) {
+      await new Promise((r) => setTimeout(r, 50));
+      finalSnap = comp.store.getSnapshot();
+    }
 
     // Final snapshot: task completed, artifact approved, approval approved
-    const finalSnap = comp.store.getSnapshot();
     expect(finalSnap.tasks.length).toBeGreaterThan(0);
     expect(finalSnap.tasks[0].status).toBe("completed");
     expect(finalSnap.artifacts[0].status).toBe("approved");

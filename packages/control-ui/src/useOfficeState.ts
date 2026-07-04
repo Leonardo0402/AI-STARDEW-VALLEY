@@ -117,10 +117,11 @@ export function useOfficeState(
       };
       const result = await gateway.execute(command);
       if (result.status !== "accepted" && result.error) {
-        setErrors((prev) => [
-          ...prev.slice(-9),
-          `[${commandType}] ${result.error!.message}`,
-        ]);
+        const msg = `[${commandType}] ${result.error!.message}`;
+        setErrors((prev) => [...prev.slice(-9), msg]);
+        // Throw so callers (e.g. ControlPanel action buttons) can show inline
+        // action-level feedback in addition to the global error list.
+        throw new Error(msg);
       }
     },
     [gateway, runtimeId]

@@ -2,20 +2,34 @@
  * StatusStrip — functional instrumentation for runtime connection state.
  *
  * Displays: mode, runtimeId, session state, last sequence, resync/reconnect
- * counts, last error, and a reconnect button when recovery is allowed.
+ * counts, last error, and a recovery action when allowed.
+ *
+ * Recovery policy (P0-3 fix):
+ *   - degraded        → "Resync" button → onResync (session.resynchronize)
+ *     Adapter is still connected; only the in-memory snapshot is stale.
+ *   - failed          → "Reload" button → onReload (window.location.reload)
+ *     HttpSseRuntimeAdapter is one-time (Architecture Decision I); the
+ *     adapter cannot be re-connected after a fatal error. A fresh page
+ *     load rebuilds the composition with a new adapter.
+ *   - disconnected    → "Reload" button → onReload
+ *     Same one-time-adapter constraint; reload rebuilds composition.
  *
  * This is NOT visual polish — it's a diagnostic surface. Minimal inline styles.
  */
 import type { FC } from "react";
 import type { SessionState, SessionDiagnostics } from "@agent-office/core";
+import type { DemoRuntimeMode } from "./runtime/types.js";
 
 interface StatusStripProps {
-  mode: string;
+  mode: DemoRuntimeMode;
   runtimeId: string;
   sessionState: SessionState;
   diagnostics: SessionDiagnostics;
   lastError: string | null;
-  onReconnect: () => void;
+  /** Resync the session without re-connecting the adapter (degraded only). */
+  onResync: () => void;
+  /** Full page reload to rebuild composition (failed/disconnected only). */
+  onReload: () => void;
 }
 
 const STATE_COLORS: Record<SessionState, string> = {
@@ -34,11 +48,12 @@ export const StatusStrip: FC<StatusStripProps> = ({
   sessionState,
   diagnostics,
   lastError,
-  onReconnect,
+  onResync,
+  onReload,
 }) => {
   const color = STATE_COLORS[sessionState] ?? "#666";
-  const canReconnect =
-    sessionState === "failed" || sessionState === "disconnected" || sessionState === "degraded";
+  const showResync = sessionState === "degraded";
+  const showReload = sessionState === "failed" || sessionState === "disconnected";
 
   return (
     <div style={styles.strip}>
@@ -51,10 +66,20 @@ export const StatusStrip: FC<StatusStripProps> = ({
       {lastError && (
         <span style={styles.error} title={lastError}>err: {lastError.slice(0, 40)}</span>
       )}
-      {canReconnect && (
-        <button style={styles.button} onClick={onReconnect}>
-          Reconnect
+      {showResync && (
+        <button style={styles.button} onClick={onResync}>
+          Resync
         </button>
+      )}
+      {showReload && (
+        <>
+          <span style={styles.hint}>
+            Adapter is one-time — reload to rebuild composition.
+          </span>
+          <button style={styles.button} onClick={onReload}>
+            Reload
+          </button>
+        </>
       )}
     </div>
   );
@@ -84,6 +109,7 @@ const styles: Record<string, any> = {
   }),
   label: { whiteSpace: "nowrap" as const },
   error: { color: "#ff6666", fontStyle: "italic" },
+  hint: { color: "#ffaa66", fontStyle: "italic" },
   button: {
     padding: "2px 8px",
     backgroundColor: "#333355",

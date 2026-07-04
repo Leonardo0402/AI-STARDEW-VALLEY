@@ -15,6 +15,7 @@
  */
 import { useState, useEffect, useRef, type FC, type ReactNode } from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
+import type { AdapterCapabilities } from "@agent-office/protocol";
 import {
   ControlPanel,
   useOfficeState,
@@ -23,13 +24,16 @@ import {
 import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
 import { StatusStrip } from "./StatusStrip.js";
+import type { DemoRuntimeMode } from "./runtime/types.js";
 
 interface AppProps {
   session: RuntimeSession;
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
-  mode: string;
+  mode: DemoRuntimeMode;
+  /** Adapter capabilities — used to disable unsupported command buttons. */
+  capabilities?: AdapterCapabilities;
   /** 演示层专用控件（如 DemoControls），由装配层 main.tsx 注入。
    *  App 本身不依赖任何 Mock 专用类型。 */
   demoControls?: ReactNode;
@@ -37,7 +41,15 @@ interface AppProps {
 
 type ViewMode = "pixel" | "list";
 
-export const App: FC<AppProps> = ({ session, store, gateway, runtimeId, mode, demoControls }) => {
+export const App: FC<AppProps> = ({
+  session,
+  store,
+  gateway,
+  runtimeId,
+  mode,
+  capabilities,
+  demoControls,
+}) => {
   const { projection, eventLog, errors, sessionState, diagnostics, sendCommand } = useOfficeState(
     session,
     store,
@@ -84,10 +96,13 @@ export const App: FC<AppProps> = ({ session, store, gateway, runtimeId, mode, de
         sessionState={sessionState}
         diagnostics={diagnostics}
         lastError={errors.length > 0 ? errors[errors.length - 1] : null}
-        onReconnect={() => {
+        onResync={() => {
           session.resynchronize().catch((err) =>
-            console.error("[App] reconnect failed:", err)
+            console.error("[App] resync failed:", err)
           );
+        }}
+        onReload={() => {
+          window.location.reload();
         }}
       />
       {/* 顶部工具栏 */}
@@ -147,6 +162,7 @@ export const App: FC<AppProps> = ({ session, store, gateway, runtimeId, mode, de
             mode={experienceMode}
             onModeChange={setExperienceMode}
             onSendCommand={sendCommand}
+            capabilities={capabilities}
           />
         </div>
       </div>

@@ -89,6 +89,35 @@ describe("QclawTestRuntime state machine", () => {
     for (const a of snap.agents) expect(a.runtimeId).toBe("qclaw-swarm-runtime-001");
     for (const r of snap.rooms) expect(r.runtimeId).toBe("qclaw-swarm-runtime-001");
   });
+
+  it("custom runtimeId propagates to snapshot, entities, and events", async () => {
+    runtime = new QclawTestRuntime({ port: 0, runtimeId: "custom-runtime-42" });
+    await runtime.start();
+    const snapRes = await fetch(`${runtime.getBaseUrl()}/runtime/snapshot`);
+    const snap = await snapRes.json();
+    expect(snap.runtimeId).toBe("custom-runtime-42");
+    for (const a of snap.agents) expect(a.runtimeId).toBe("custom-runtime-42");
+    for (const r of snap.rooms) expect(r.runtimeId).toBe("custom-runtime-42");
+
+    // Drive an event and verify runtimeId in the event stream
+    await fetch(`${runtime.getBaseUrl()}/runtime/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "cmd-custom-rt" },
+      body: JSON.stringify({
+        commandId: "cmd-custom-rt",
+        commandType: "agent.pause",
+        timestamp: new Date().toISOString(),
+        source: "user",
+        actorId: "qclaw-agent-orchestrator",
+        runtimeId: "custom-runtime-42",
+        targetId: null,
+        payload: { agentId: "qclaw-agent-worker-1" },
+      }),
+    });
+    const eventsRes = await fetch(`${runtime.getBaseUrl()}/runtime/demo/event-log`);
+    const events = await eventsRes.json();
+    for (const ev of events) expect(ev.runtimeId).toBe("custom-runtime-42");
+  });
 });
 
 describe("QclawTestRuntime command handling", () => {

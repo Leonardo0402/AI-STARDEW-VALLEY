@@ -18,18 +18,20 @@ export class ConfigError extends Error {
  * catches and renders a startup error screen.
  */
 export function readConfigFromEnv(env: Record<string, string | undefined>): DemoRuntimeConfig {
-  const rawMode = env.VITE_RUNTIME_MODE ?? "mock";
-  const runtimeId = env.VITE_RUNTIME_ID;
+  const rawMode = env.VITE_RUNTIME_MODE;
+  const explicitRuntimeId = env.VITE_RUNTIME_ID;
   const baseUrl = env.VITE_RUNTIME_BASE_URL;
 
-  if (!runtimeId) {
-    throw new ConfigError(
-      "VITE_RUNTIME_ID is required. Set it in .env or Vite environment."
-    );
-  }
-
+  // Determine mode — default to "mock" when not set
   let mode: DemoRuntimeMode;
-  if (rawMode === "mock" || rawMode === "http-sse") {
+  if (rawMode === undefined) {
+    mode = "mock";
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[demo-office] VITE_RUNTIME_MODE not set, defaulting to \"mock\". " +
+        "Set VITE_RUNTIME_MODE=http-sse for remote runtime."
+    );
+  } else if (rawMode === "mock" || rawMode === "http-sse") {
     mode = rawMode;
   } else {
     throw new ConfigError(
@@ -37,18 +39,19 @@ export function readConfigFromEnv(env: Record<string, string | undefined>): Demo
     );
   }
 
+  // runtimeId: required for http-sse; default for mock so `npm run dev` works out-of-box
+  const runtimeId = explicitRuntimeId ?? (mode === "mock" ? "mock-runtime-001" : undefined);
+  if (!runtimeId) {
+    throw new ConfigError(
+      "VITE_RUNTIME_ID is required when VITE_RUNTIME_MODE=http-sse. " +
+        "Set it in .env or Vite environment."
+    );
+  }
+
   if (mode === "http-sse" && !baseUrl) {
     throw new ConfigError(
       "VITE_RUNTIME_BASE_URL is required when VITE_RUNTIME_MODE=http-sse. " +
         'Example: VITE_RUNTIME_BASE_URL=http://localhost:3456'
-    );
-  }
-
-  if (mode === "mock" && rawMode === undefined) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[demo-office] VITE_RUNTIME_MODE not set, defaulting to \"mock\". " +
-        "Set VITE_RUNTIME_MODE=http-sse for remote runtime."
     );
   }
 

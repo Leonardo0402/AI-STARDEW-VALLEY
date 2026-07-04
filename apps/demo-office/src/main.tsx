@@ -14,26 +14,11 @@ import { createRoot } from "react-dom/client";
 import { readConfigFromEnv, ConfigError } from "./runtime/config.js";
 import { createRuntime } from "./runtime/create-runtime.js";
 import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
-import type { RuntimeComposition } from "./runtime/types.js";
+import type { RuntimeComposition, DemoRuntimeConfig } from "./runtime/types.js";
 import { App } from "./App.js";
 import { DemoControls } from "./DemoControls.js";
 
-// ─── Runtime composition (module-level singleton) ─────────────
-let composition: RuntimeComposition;
-let configMode: string;
-let configRuntimeId: string;
-
-try {
-  const config = readConfigFromEnv(import.meta.env as unknown as Record<string, string>);
-  configMode = config.mode;
-  configRuntimeId = config.runtimeId;
-  composition = createRuntime(config);
-
-  // Bootstrap the session (connect → snapshot → subscribe)
-  composition.session.connect().catch((err) => {
-    console.error("[demo-office] RuntimeSession bootstrap failed:", err);
-  });
-} catch (err) {
+function renderStartupError(err: unknown): void {
   if (err instanceof ConfigError) {
     console.error("[demo-office] Configuration error:", err.message);
   } else {
@@ -53,33 +38,62 @@ try {
       </div>
     </React.StrictMode>
   );
-  throw err;
 }
 
-// ─── HMR disposal ─────────────────────────────────────────────
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => {
-    composition.dispose();
-  });
+// ─── Runtime composition (module-level singleton) ─────────────
+// Read config first; if it throws, render error screen and stop.
+let config: DemoRuntimeConfig;
+try {
+  config = readConfigFromEnv(import.meta.env as unknown as Record<string, string>);
+} catch (err) {
+  renderStartupError(err);
+  config = undefined as any; // unreachable — satisfies TS control flow
 }
 
-// ─── Render ───────────────────────────────────────────────────
-const { session, store, gateway } = composition;
-const mockAdapter = configMode === "mock" ? (composition.adapter as MockRuntimeAdapter) : null;
-const root = createRoot(document.getElementById("root")!);
-root.render(
-  <React.StrictMode>
-    <App
-      session={session}
-      store={store}
-      gateway={gateway}
-      runtimeId={configRuntimeId}
-      mode={configMode}
-      demoControls={
-        mockAdapter ? (
-          <DemoControls adapter={mockAdapter} store={store} session={session} />
-        ) : null
-      }
-    />
-  </React.StrictMode>
-);
+let composition: RuntimeComposition | undefined;
+if (config) {
+  try {
+    composition = createRuntime(config);
+    // Bootstrap the session (connect → snapshot → subscribe)
+    composition.session.connect().catch((err) => {
+      console.error("[demo-office] RuntimeSession bootstrap failed:", err);
+    });
+  } catch (err) {
+    renderStartupError(err);
+  }
+}
+
+// ─── Render (only when composition succeeded) ────────────────
+if (composition && config) {
+  const { mode, runtimeId } = config;
+  const session = composition.session;
+  const store = composition.store;
+  const gateway = composition.gateway;
+  const mockAdapter = mode === "mock" ? (composition.adapter as MockRuntimeAdapter) : null;
+  const adapterCapabilities = composition.adapter.getCapabilities();
+  const root = createRoot(document.getElementById("root")!);
+  root.render(
+    <React.StrictMode>
+      <App
+        session={session}
+        store={store}
+        gateway={gateway}
+        runtimeId={runtimeId}
+        mode={mode}
+        capabilities={adapterCapabilities}
+        demoControls={
+          mockAdapter ? (
+            <DemoControls adapter={mockAdapter} store={store} session={session} />
+          ) : null
+        }
+      />
+    </React.StrictMode>
+  );
+
+  // ─── HMR disposal ─────────────────────────────────────────
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      composition?.dispose();
+    });
+  }
+}

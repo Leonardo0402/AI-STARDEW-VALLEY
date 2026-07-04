@@ -20,8 +20,7 @@ import type {
 import { CommandType, EventType, ALL_EVENT_TYPES } from "@agent-office/protocol";
 import { reduceEvent } from "@agent-office/core";
 
-const RUNTIME_ID = "qclaw-swarm-runtime-001";
-
+const DEFAULT_RUNTIME_ID = "qclaw-swarm-runtime-001";
 const DEFAULT_ALLOWED_ORIGINS = ["http://localhost:5173"];
 
 // ─── 房间 ID ────────────────────────────────────────────────
@@ -114,6 +113,8 @@ const BINDINGS: RoomBinding[] = [
 
 export interface QclawRuntimeOptions {
   port?: number;
+  /** Runtime identifier. Defaults to "qclaw-swarm-runtime-001". */
+  runtimeId?: string;
   /** Allowed CORS origins for dev server. Defaults to ["http://localhost:5173"]. */
   allowedOrigins?: string[];
 }
@@ -131,6 +132,7 @@ export interface QclawRuntimeOptions {
 export class QclawTestRuntime {
   private server: http.Server;
   private port: number;
+  private runtimeId: string;
   private allowedOrigins: string[];
   private capabilities: AdapterCapabilities;
 
@@ -154,6 +156,7 @@ export class QclawTestRuntime {
 
   constructor(opts: QclawRuntimeOptions = {}) {
     this.port = opts.port ?? 0;
+    this.runtimeId = opts.runtimeId ?? DEFAULT_RUNTIME_ID;
     this.allowedOrigins = opts.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
     this.correlationId = "corr-qclaw-init";
     this.traceId = "trace-qclaw-init";
@@ -672,7 +675,7 @@ export class QclawTestRuntime {
     for (const [roomId, name, type] of rooms) {
       this.rooms.set(roomId, {
         roomId,
-        runtimeId: RUNTIME_ID,
+        runtimeId: this.runtimeId,
         name,
         type: type as RoomSnapshot["type"],
         bounds: this.getRoomBounds(type as RoomSnapshot["type"]),
@@ -704,7 +707,7 @@ export class QclawTestRuntime {
       const grants: CapabilityGrant[] = this.getGrantsForRole(role, agentId);
       this.agents.set(agentId, {
         agentId,
-        runtimeId: RUNTIME_ID,
+        runtimeId: this.runtimeId,
         name,
         role,
         status: "idle",
@@ -755,7 +758,7 @@ export class QclawTestRuntime {
     const now = new Date().toISOString();
     return {
       eventId: `evt-${++this.sequence}-${Date.now()}`,
-      runtimeId: RUNTIME_ID,
+      runtimeId: this.runtimeId,
       sequence: this.sequence,
       schemaVersion: "1.0",
       type,
@@ -796,7 +799,7 @@ export class QclawTestRuntime {
 
   private buildInternalSnapshot(): RuntimeSnapshot {
     return {
-      runtimeId: RUNTIME_ID,
+      runtimeId: this.runtimeId,
       snapshotId: `snap-${this.sequence}`,
       sequence: this.sequence,
       schemaVersion: "1.0",

@@ -28,10 +28,11 @@ function parseArgs(argv: string[]): {
 }
 
 async function main(): Promise<void> {
-  const { port, allowedOrigins } = parseArgs(process.argv.slice(2));
-  const runtime = new QclawTestRuntime({ port, allowedOrigins });
+  const { port, runtimeId, allowedOrigins } = parseArgs(process.argv.slice(2));
+  const runtime = new QclawTestRuntime({ port, runtimeId, allowedOrigins });
   await runtime.start();
   console.log(`[qclaw-dev-server] QClaw test runtime ready at ${runtime.getBaseUrl()}`);
+  console.log(`[qclaw-dev-server] Runtime ID: ${runtimeId}`);
   console.log(`[qclaw-dev-server] Allowed CORS origins: ${allowedOrigins.join(", ")}`);
   console.log(`[qclaw-dev-server] Health check: GET ${runtime.getBaseUrl()}/runtime/snapshot`);
 
