@@ -1,0 +1,19 @@
+{
+  "eventId": "qclaw-evt-0001",
+  "runtimeId": "qclaw-swarm-runtime-001",
+  "sequence": 1,
+  "schemaVersion": "1.0",
+  "type": "task.created",
+  "occurredAt": "2026-07-04T09:01:00.000Z",
+  "receivedAt": "2026-07-04T09:01:00.000Z",
+  "correlationId": "qclaw-corr-0001",
+  "causationId": null,
+  "traceId": "qclaw-trace-0001",
+  "payload": {
+    "taskId": "qclaw-task-001",
+    "title": "Generate module documentation",
+    "description": "Produce API reference for the qclaw-swarm test runtime",
+    "priority": "normal",
+    "parentTaskId": null
+  }
+}

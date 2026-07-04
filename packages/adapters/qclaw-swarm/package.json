@@ -1,0 +1,15 @@
+{
+  "name": "@agent-office/qclaw-swarm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent-office/protocol": "1.0.0",
+    "@agent-office/core": "1.0.0"
+  }
+}

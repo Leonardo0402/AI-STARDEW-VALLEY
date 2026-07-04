@@ -1,0 +1,19 @@
+{
+  "eventId": "qclaw-evt-0006",
+  "runtimeId": "qclaw-swarm-runtime-001",
+  "sequence": 6,
+  "schemaVersion": "1.0",
+  "type": "approval.requested",
+  "occurredAt": "2026-07-04T09:06:00.000Z",
+  "receivedAt": "2026-07-04T09:06:00.000Z",
+  "correlationId": "qclaw-corr-0001",
+  "causationId": "qclaw-evt-0005",
+  "traceId": "qclaw-trace-0001",
+  "payload": {
+    "approvalId": "qclaw-approval-001",
+    "taskId": "qclaw-task-001",
+    "kind": "artifact_delivery",
+    "requestedBy": "qclaw-agent-reviewer",
+    "reason": "Final deliverable ready — please approve for release"
+  }
+}
