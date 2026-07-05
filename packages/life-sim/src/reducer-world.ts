@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 import { computePhase } from "./clock.js";
 import { transitionToMinute } from "./schedule.js";
+import { computeDaySummary } from "./summary.js";
 
 function installBaseSchedules(
   snapshot: LifeSimSnapshot,
@@ -172,49 +173,89 @@ export function reduceWorldCommand(
     }
 
     case "world.end_day": {
-      if (clock.status === "ending") {
-        return {
-          snapshot,
-          events: [],
-          result: {
-            commandId: command.commandId,
-            status: "accepted",
-            lifeSimSequence: null,
-            events: [],
-            error: null,
-          },
-        };
-      }
       if (clock.status !== "running" && clock.status !== "paused") {
         return rejected("day_not_started", "No day is running");
       }
       if (clock.minuteOfDay !== config.endOfDayMinute) {
         return rejected("end_of_day_not_reached", "End-of-day minute not reached");
       }
-      const endingClock = { ...clock, status: "ending" as LifeSimStatus, updatedAt: now };
-      const seq = nextSequence();
-      const event: LifeSimEvent = {
-        eventId: `evt-end-day-${seq}`,
+      const events: LifeSimEvent[] = [];
+      const day = clock.day;
+      const startedAtWorldMinute = config.startOfDayMinute;
+      const endedAtWorldMinute = clock.minuteOfDay;
+
+      const endingSeq = nextSequence();
+      const endingEvent: LifeSimEvent = {
+        eventId: `evt-end-day-${endingSeq}`,
         worldId: snapshot.worldId,
-        lifeSimSequence: seq,
+        lifeSimSequence: endingSeq,
         type: "world.day_ending",
         occurredAt: now,
-        worldMinute: clock.minuteOfDay,
-        day: clock.day,
+        worldMinute: endedAtWorldMinute,
+        day,
         causationId: command.commandId,
         runtimeEventId: null,
         runtimeSequence: null,
-        payload: { day: clock.day, endedAtWorldMinute: clock.minuteOfDay },
+        payload: { day, endedAtWorldMinute },
       };
-      const nextSnapshot = { ...snapshot, worldClock: endingClock };
+      events.push(endingEvent);
+
+      const { summary } = computeDaySummary(snapshot, day, startedAtWorldMinute, endedAtWorldMinute);
+      const snapshotWithSummary: LifeSimSnapshot = {
+        ...snapshot,
+        completedDaySummaries: [...snapshot.completedDaySummaries, summary],
+      };
+
+      const summarySeq = nextSequence();
+      events.push({
+        eventId: `evt-summary-recorded-${summarySeq}`,
+        worldId: snapshot.worldId,
+        lifeSimSequence: summarySeq,
+        type: "day.summary_recorded",
+        occurredAt: now,
+        worldMinute: endedAtWorldMinute,
+        day,
+        causationId: command.commandId,
+        runtimeEventId: null,
+        runtimeSequence: null,
+        payload: { day, summary },
+      });
+
+      const resetClock = {
+        ...clock,
+        status: "not_started" as LifeSimStatus,
+        minuteOfDay: config.startOfDayMinute,
+        phase: computePhase(config.startOfDayMinute),
+        updatedAt: now,
+      };
+      const snapshotAfterReset: LifeSimSnapshot = {
+        ...snapshotWithSummary,
+        worldClock: resetClock,
+      };
+
+      const endedSeq = nextSequence();
+      events.push({
+        eventId: `evt-day-ended-${endedSeq}`,
+        worldId: snapshot.worldId,
+        lifeSimSequence: endedSeq,
+        type: "world.day_ended",
+        occurredAt: now,
+        worldMinute: endedAtWorldMinute,
+        day,
+        causationId: command.commandId,
+        runtimeEventId: null,
+        runtimeSequence: null,
+        payload: { day, endedAtWorldMinute },
+      });
+
       return {
-        snapshot: nextSnapshot,
-        events: [event],
+        snapshot: snapshotAfterReset,
+        events,
         result: {
           commandId: command.commandId,
           status: "accepted",
-          lifeSimSequence: event.lifeSimSequence,
-          events: [event],
+          lifeSimSequence: endingEvent.lifeSimSequence,
+          events,
           error: null,
         },
       };

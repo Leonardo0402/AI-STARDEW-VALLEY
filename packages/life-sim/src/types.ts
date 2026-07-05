@@ -1,4 +1,5 @@
-import type { DomainEvent, RuntimeSnapshot } from "@agent-office/protocol";
+import type { DomainEvent } from "@agent-office/protocol";
+export type { RuntimeSnapshot } from "@agent-office/protocol";
 
 export type LifeSimStatus = "not_started" | "running" | "paused" | "ending";
 
