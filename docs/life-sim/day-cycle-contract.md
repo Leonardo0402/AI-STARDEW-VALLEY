@@ -108,7 +108,7 @@ interface WorldCommand<P = unknown> {
 
 | Command | Payload | Availability |
 |---|---|---|
-| `world.start_day` | `{ day?: number }` | When `status === "not_started"`. If `day` is omitted, use `currentDay + 1` after the first day. |
+| `world.start_day` | `{ day?: number }` | When `status === "not_started"`. `day` must be `1` for the first day, or `lastCompletedDay + 1` afterwards. |
 | `world.pause` | `{}` | When `status === "running"`. |
 | `world.resume` | `{}` | When `status === "paused"`. |
 | `world.advance_time` | `{ minutes: number }` | Manual/dev mode only. Rejected in real-time mode. |
@@ -118,7 +118,7 @@ Command rules:
 
 - `commandId` is used for idempotency. Repeating a command with the same `commandId` returns the stored result without mutating state.
 - Invalid day/time transitions are rejected structurally with `LifeSimCommandResult { status: "rejected", error: { code, message } }`.
-- `world.start_day` is rejected unless `status === "not_started"`. If `day` is supplied it must be a positive integer; if omitted, the engine uses `currentDay + 1` (or `1` for the first day).
+- `world.start_day` is rejected unless `status === "not_started"`. If `day` is supplied, it must equal `1` when no day has been completed, otherwise `lastCompletedDay + 1`. If omitted, the engine uses the same computed next day. Jumping ahead or rewinding is not allowed in V1.
 - `world.end_day` is rejected if the current virtual minute is not exactly the configured end-of-day minute. Forced early end is not supported in V1.
 - `world.end_day` is guarded by a `dayEnded` flag per day; repeated invocations for the same day are idempotent no-ops.
 - `world.advance_time` with `minutes <= 0` is rejected.

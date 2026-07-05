@@ -87,8 +87,11 @@ The browser must establish life-sim state in this exact order:
 1. `GET /life-sim/{worldId}/snapshot`.
 2. Install `snapshot` as the current local projection.
 3. Apply every event in `eventLogTail` sequentially, in the order returned by the server.
-4. Verify tail continuity: the first tail event (if any) must have `lifeSimSequence === checkpointLifeSimSequence + 1`. If the tail is non-empty and starts later, discard the local projection and repeat from step 1.
-5. Record `lastAppliedLifeSimSequence = checkpointLifeSimSequence + eventLogTail.length`.
+4. Verify tail continuity:
+   - the first tail event (if any) must have `lifeSimSequence === checkpointLifeSimSequence + 1`;
+   - every subsequent event must have `lifeSimSequence === previous lifeSimSequence + 1`.
+   If any event is missing or out of order, discard the local projection and repeat from step 1.
+5. Record `lastAppliedLifeSimSequence` from the last tail event's `lifeSimSequence`, or from `checkpointLifeSimSequence` if the tail is empty.
 6. Open the event stream with `afterLifeSimSequence = lastAppliedLifeSimSequence`.
 7. On reconnection, repeat from step 1; do not reuse a stale local sequence without re-fetching the snapshot.
 
@@ -219,11 +222,12 @@ interface LifeSimCommandResult {
 }
 ```
 
-- `status === "accepted"` means the command passed validation, was enqueued, processed, persisted, and produced events.
+- `status === "accepted"` means the command passed validation, was enqueued, processed, persisted, and produced zero or more events.
 - `status === "rejected"` means the command failed validation before entering the queue.
-- `lifeSimSequence` is the sequence of the first event produced by the command, or `null` if rejected.
-- Repeating an accepted command by `commandId` returns the same `lifeSimSequence` and `events` (which may be an empty array `[]` for no-op idempotent replays).
-- An accepted no-op (for example, an idempotent replay of a command whose effects are already reflected) returns the original `lifeSimSequence` and an empty `events` array; it does not consume a new life-sim sequence.
+- `lifeSimSequence` is the sequence of the first event produced by the command. It is `null` if the command was rejected, or if the command was accepted but produced zero events (a true no-op).
+- Repeating an accepted command by `commandId` returns the stored `lifeSimSequence` and `events` without re-mutating state.
+- A true accepted no-op has `lifeSimSequence === null` and `events === []`.
+- An idempotent replay of a previously accepted command returns the original `lifeSimSequence` and original `events` (which may be empty); it does not consume a new life-sim sequence.
 - The `error.code` is a closed union, not an arbitrary string. Clients may switch on it.
 
 ## Capabilities
@@ -260,8 +264,8 @@ On reconnection the browser client:
 
 1. Calls `GET /life-sim/{worldId}/snapshot`.
 2. Compares the returned `checkpointLifeSimSequence` with its last known sequence.
-3. Applies `eventLogTail` in order and updates `lastAppliedLifeSimSequence`.
-4. Verifies tail continuity as described in the startup sequence; re-fetches the snapshot if the tail starts after `checkpointLifeSimSequence + 1`.
+3. Applies `eventLogTail` in order and updates `lastAppliedLifeSimSequence` from the last tail event (or `checkpointLifeSimSequence` if empty).
+4. Verifies full tail continuity as described in the startup sequence; re-fetches the snapshot if any event is missing or out of order.
 5. Opens the event stream from `afterLifeSimSequence = lastAppliedLifeSimSequence`.
 6. If `truncatedHistory.truncated` is `true`, the client resets any cached historical counters for the current day and displays a truncated-history indicator.
 

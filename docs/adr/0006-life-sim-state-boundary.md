@@ -1,6 +1,6 @@
 # ADR-0006: Life-Sim State Boundary
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-05
 - **Issue**: #15 — AI Stardew foundation: persistent day cycle and deterministic Agent schedules
 
