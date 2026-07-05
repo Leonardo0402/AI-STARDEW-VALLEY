@@ -1,1 +1,108 @@
-export {};
+import type { DomainEvent } from "@agent-office/protocol";
+import type {
+  LifeSimCommand,
+  LifeSimCommandResult,
+  LifeSimEngine,
+  LifeSimEngineConfig,
+  LifeSimEvent,
+  LifeSimSnapshot,
+  LifeSimSnapshotResponse,
+  LifeSimStore,
+  LifeSimCapabilities,
+} from "./types.js";
+import { createEmptySnapshot, InMemoryLifeSimStore } from "./store.js";
+import { reduceWorldCommand } from "./reducer-world.js";
+
+export interface LifeSimEngineOptions {
+  store?: LifeSimStore;
+  now?: () => string;
+}
+
+export async function createLifeSimEngine(
+  config: LifeSimEngineConfig,
+  options: LifeSimEngineOptions = {}
+): Promise<LifeSimEngine> {
+  const store = options.store ?? new InMemoryLifeSimStore();
+  const now = options.now ?? (() => new Date().toISOString());
+  const loaded = await store.load();
+  const snapshot = loaded?.snapshot ?? createEmptySnapshot(config, now());
+  const eventLogTail = loaded?.eventLogTail ?? [];
+  const commandResults = loaded?.commandResults ?? new Map<string, LifeSimCommandResult>();
+  let currentSnapshot = snapshot;
+  let currentTail = eventLogTail;
+  let nextLifeSimSequence = Math.max(snapshot.checkpointLifeSimSequence, ...eventLogTail.map((e) => e.lifeSimSequence)) + 1;
+  const listeners = new Set<(event: LifeSimEvent) => void>();
+  let queueTail: Promise<unknown> = Promise.resolve();
+
+  const persist = async (): Promise<void> => {
+    await store.save(currentSnapshot, currentTail, commandResults);
+  };
+
+  const appendEvents = (events: LifeSimEvent[]): void => {
+    for (const event of events) {
+      currentTail.push(event);
+      for (const listener of listeners) {
+        listener(event);
+      }
+    }
+  };
+
+  const runCommand = async (command: LifeSimCommand): Promise<LifeSimCommandResult> => {
+    const cached = commandResults.get(command.commandId);
+    if (cached) return cached;
+    const { snapshot: next, events, result } = reduceWorldCommand(
+      currentSnapshot,
+      command,
+      config,
+      () => nextLifeSimSequence++,
+      now()
+    );
+    currentSnapshot = next;
+    appendEvents(events);
+    commandResults.set(command.commandId, result);
+    await persist();
+    return result;
+  };
+
+  const engine: LifeSimEngine = {
+    execute: (command) => {
+      const promise = queueTail.then(() => runCommand(command));
+      queueTail = promise.catch(() => undefined);
+      return promise;
+    },
+    getSnapshot: (): LifeSimSnapshotResponse => ({
+      worldId: currentSnapshot.worldId,
+      schemaVersion: currentSnapshot.schemaVersion,
+      checkpointLifeSimSequence: currentSnapshot.checkpointLifeSimSequence,
+      snapshot: currentSnapshot,
+      eventLogTail: [...currentTail],
+    }),
+    getCapabilities: (): LifeSimCapabilities => ({
+      world: {
+        startDay: currentSnapshot.worldClock.status === "not_started",
+        pause: currentSnapshot.worldClock.status === "running",
+        resume: currentSnapshot.worldClock.status === "paused",
+        endDay:
+          (currentSnapshot.worldClock.status === "running" || currentSnapshot.worldClock.status === "paused") &&
+          currentSnapshot.worldClock.minuteOfDay === config.endOfDayMinute,
+        advanceTime: currentSnapshot.worldClock.status === "running" && currentSnapshot.worldClock.speed === 0,
+        runToEndOfDay: currentSnapshot.worldClock.status === "running" && currentSnapshot.worldClock.speed === 0,
+      },
+      schedule: { override: false, clearOverride: false },
+    }),
+    applyRuntimeEvent: async (_event: DomainEvent) => {
+      // placeholder for Task 5
+      throw new Error("not implemented");
+    },
+    observeRuntimeSequence: async (_sequence: number) => {
+      // placeholder for Task 5
+      throw new Error("not implemented");
+    },
+    onLifeSimEvent: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+
+  return engine;
+}
