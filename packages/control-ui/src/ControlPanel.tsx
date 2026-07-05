@@ -116,9 +116,13 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   };
 
   const handleOpenArtifact = async (artifactId: string) => {
-    await runAction(`open-${artifactId}`, () =>
-      onSendCommand(CommandType.ARTIFACT_OPEN, { artifactId }, artifactId)
-    );
+    try {
+      await runAction(`open-${artifactId}`, () =>
+        onSendCommand(CommandType.ARTIFACT_OPEN, { artifactId }, artifactId)
+      );
+    } catch {
+      // Error is already recorded in actionErrors; keep the artifact selected so the failure is visible.
+    }
     setSelectedArtifact(artifactId);
   };
 
@@ -262,43 +266,64 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 count={projection.artifacts.length}
                 countIntent="approved"
               />
-              {projection.artifacts.map((art) => (
-                <Card key={art.artifactId}>
-                  <div className="card-row">
-                    <div>
-                      <div className="card-title">{art.title}</div>
-                      <div className="card-meta">
-                        {art.artifactId} · {art.type}
-                        {art.reviewResult
-                          ? ` · ${art.reviewResult.verdict}: ${art.reviewResult.comment}`
-                          : ""}
+              {projection.artifacts.map((art) => {
+                const artifactOpenSupported = isSupported(CommandType.ARTIFACT_OPEN);
+                const hasContent = Boolean(art.content);
+                const hasUri = Boolean(art.uri);
+                const canOpen = artifactOpenSupported && (hasContent || hasUri);
+                const openError = actionErrors[`open-${art.artifactId}`];
+
+                return (
+                  <Card key={art.artifactId}>
+                    <div className="card-row">
+                      <div>
+                        <div className="card-title">{art.title}</div>
+                        <div className="card-meta">
+                          {art.artifactId} · {art.type}
+                          {art.reviewResult
+                            ? ` · ${art.reviewResult.verdict}: ${art.reviewResult.comment}`
+                            : ""}
+                        </div>
                       </div>
+                      <Badge intent={artifactStatusIntent(art.status)}>
+                        {art.status} v{art.version}
+                      </Badge>
                     </div>
-                    <Badge intent={artifactStatusIntent(art.status)}>
-                      {art.status} v{art.version}
-                    </Badge>
-                  </div>
-                  <div className="card-footer">
-                    <button
-                      className="btn btn--secondary btn--small"
-                      onClick={() => handleOpenArtifact(art.artifactId)}
-                      disabled={!isSupported(CommandType.ARTIFACT_OPEN)}
-                      title={isSupported(CommandType.ARTIFACT_OPEN) ? undefined : "Unsupported by adapter"}
-                    >
-                      View
-                    </button>
-                  </div>
-                  {selectedArtifact === art.artifactId && (
+                    <div className="card-footer">
+                      <button
+                        className="btn btn--secondary btn--small"
+                        onClick={() => handleOpenArtifact(art.artifactId)}
+                        disabled={!canOpen}
+                        title={
+                          !artifactOpenSupported
+                            ? "Unsupported by adapter"
+                            : !hasContent && !hasUri
+                              ? "No content or URI available"
+                              : undefined
+                        }
+                      >
+                        View
+                      </button>
+                    </div>
                     <div className="artifact-preview">
-                      <div>Artifact URI: {art.artifactId}</div>
-                      <div>（Mock 内容 — 实际内容需通过 URI 获取）</div>
+                      {hasContent ? (
+                        <div className="artifact-preview__content">{art.content}</div>
+                      ) : hasUri ? (
+                        <div className="artifact-preview__uri">{art.uri}</div>
+                      ) : art.uri === null ? (
+                        <div className="artifact-preview__unavailable">Content unavailable</div>
+                      ) : (
+                        <div className="artifact-preview__metadata">
+                          Metadata only — content not loaded.
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {actionErrors[`open-${art.artifactId}`] && (
-                    <div className="action-error">{actionErrors[`open-${art.artifactId}`]}</div>
-                  )}
-                </Card>
-              ))}
+                    {openError && (
+                      <div className="action-error">{openError}</div>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           )}
 

@@ -307,8 +307,13 @@ describe("ControlPanel", () => {
   });
 
   it("opens an artifact when clicking View", async () => {
-    const { props } = renderPanel();
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], uri: "file:///q3-report.md" }],
+    };
+    const { props } = renderPanel({ projection });
     const viewBtn = screen.getByRole("button", { name: /View/i });
+    expect(viewBtn).not.toBeDisabled();
     fireEvent.click(viewBtn);
 
     await waitFor(() => {
@@ -318,6 +323,58 @@ describe("ControlPanel", () => {
         "art-1"
       );
     });
+  });
+
+  it("shows real content preview when artifact has content", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], content: "Q3 Report content" }],
+    };
+    renderPanel({ projection });
+    expect(screen.getByText("Q3 Report content")).toBeInTheDocument();
+  });
+
+  it("shows metadata-only state when artifact has no content or URI", () => {
+    renderPanel();
+    expect(screen.getByText(/Metadata only/i)).toBeInTheDocument();
+  });
+
+  it("shows content-unavailable state when URI is explicitly null", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], uri: null }],
+    };
+    renderPanel({ projection });
+    expect(screen.getByText(/Content unavailable/i)).toBeInTheDocument();
+  });
+
+  it("shows load error near the action button when open fails", async () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], uri: "file:///q3-report.md" }],
+    };
+    const { props } = renderPanel({ projection });
+    vi.mocked(props.onSendCommand).mockRejectedValueOnce(new Error("Network timeout"));
+    const artifactCard = screen.getByText("Q3-report-v2.md").closest(".card") as HTMLElement;
+    fireEvent.click(within(artifactCard).getByRole("button", { name: /View/i }));
+
+    await waitFor(() => {
+      expect(within(artifactCard).getByText(/Network timeout/)).toBeInTheDocument();
+    });
+  });
+
+  it("disables View button when adapter lacks ARTIFACT_OPEN support", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], uri: "file:///q3-report.md" }],
+    };
+    renderPanel({
+      projection,
+      capabilities: { ...capabilities, supportedCommands: [CommandType.TASK_CREATE] },
+    });
+    const viewBtn = screen.getByRole("button", { name: /View/i });
+    expect(viewBtn).toBeDisabled();
+    expect(viewBtn).toHaveAttribute("title", "Unsupported by adapter");
   });
 
   it("only renders the approval drawer when pendingApprovals is non-empty", () => {
