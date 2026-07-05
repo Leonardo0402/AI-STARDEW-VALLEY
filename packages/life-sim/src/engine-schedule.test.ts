@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createLifeSimEngine } from "./engine.js";
 import { createEmptySnapshot, InMemoryLifeSimStore } from "./store.js";
-import { findEffectiveEntry } from "./schedule.js";
+import { buildActiveActivity, findEffectiveEntry } from "./schedule.js";
 import { sampleDay1Schedules } from "./__fixtures__/schedules.js";
 import type { AgentScheduleEntry, LifeSimCommand, LifeSimEngineConfig, LifeSimSnapshot } from "./types.js";
 
@@ -44,10 +44,10 @@ describe("base schedule transitions", () => {
     expect(result.events.map((e) => e.type)).toEqual([
       "world.day_started",
       "schedule.activity_started",
-      "agent.location_changed",
+      "schedule.activity_started",
       "schedule.activity_started",
       "agent.location_changed",
-      "schedule.activity_started",
+      "agent.location_changed",
       "agent.location_changed",
     ]);
     const starts = result.events.filter((e) => e.type === "schedule.activity_started");
@@ -66,8 +66,8 @@ describe("base schedule transitions", () => {
       "schedule.activity_completed",
       "schedule.activity_started",
       "schedule.activity_started",
-      "agent.location_changed",
       "schedule.activity_started",
+      "agent.location_changed",
       "agent.location_changed",
       "world.time_advanced",
     ]);
@@ -117,8 +117,8 @@ describe("base schedule transitions", () => {
       "schedule.activity_completed",
       "schedule.activity_started",
       "schedule.activity_started",
-      "agent.location_changed",
       "schedule.activity_started",
+      "agent.location_changed",
       "agent.location_changed",
       // 12:00 - morning work/review ends, afternoon begins
       "schedule.activity_completed",
@@ -248,5 +248,49 @@ describe("findEffectiveEntry overlay precedence", () => {
     };
     const snapshot = makeSnapshot({ baseSchedules: [e1, e2, e3, e4] });
     expect(findEffectiveEntry(snapshot, "a", 50)?.entryId).toBe("c");
+  });
+});
+
+describe("buildActiveActivity", () => {
+  it("returns an active activity from the effective entry", () => {
+    const entry: AgentScheduleEntry = {
+      entryId: "active",
+      agentId: "a",
+      startMinute: 10,
+      endMinute: 100,
+      activity: "work",
+      roomId: "room-a",
+      priority: 1,
+      source: "base",
+    };
+    const snapshot = makeSnapshot({ baseSchedules: [entry] });
+    expect(buildActiveActivity(snapshot, "a", 50, 42, "task-1")).toEqual({
+      agentId: "a",
+      scheduleEntryId: "active",
+      activity: "work",
+      roomId: "room-a",
+      startedAtWorldMinute: 42,
+      interruptedByTaskId: "task-1",
+    });
+  });
+
+  it("returns null when no effective entry matches", () => {
+    const snapshot = makeSnapshot();
+    expect(buildActiveActivity(snapshot, "a", 50, 42)).toBeNull();
+  });
+
+  it("defaults interruptedByTaskId to null", () => {
+    const entry: AgentScheduleEntry = {
+      entryId: "active",
+      agentId: "a",
+      startMinute: 10,
+      endMinute: 100,
+      activity: "idle",
+      roomId: null,
+      priority: 1,
+      source: "base",
+    };
+    const snapshot = makeSnapshot({ baseSchedules: [entry] });
+    expect(buildActiveActivity(snapshot, "a", 50, 42)?.interruptedByTaskId).toBeNull();
   });
 });

@@ -31,6 +31,25 @@ export function findEffectiveEntry(
   return candidates[0] ?? null;
 }
 
+export function buildActiveActivity(
+  snapshot: LifeSimSnapshot,
+  agentId: string,
+  minute: number,
+  startedAtWorldMinute: number,
+  interruptedByTaskId: string | null = null
+): ActiveAgentActivity | null {
+  const entry = findEffectiveEntry(snapshot, agentId, minute);
+  if (!entry) return null;
+  return {
+    agentId,
+    scheduleEntryId: entry.entryId,
+    activity: entry.activity,
+    roomId: entry.roomId,
+    startedAtWorldMinute,
+    interruptedByTaskId,
+  };
+}
+
 export interface TransitionResult {
   snapshot: LifeSimSnapshot;
   events: LifeSimEvent[];
@@ -92,9 +111,7 @@ export function transitionToMinute(
   const startMinute = currentMinute === nextMinute ? nextMinute : currentMinute + 1;
 
   for (let m = startMinute; m <= nextMinute; m++) {
-    // 2. Existing overlays that end early at minute m (handled by runtime/overlay commands).
-
-    // 3. Activity completions for entries ending at minute m.
+    // 2. Activity completions for entries ending at minute m.
     for (const agentId of agentIds) {
       const prev = previousEntries.get(agentId);
       if (prev && prev.endMinute === m) {
@@ -108,7 +125,7 @@ export function transitionToMinute(
       }
     }
 
-    // 4. Phase changes if minute m crosses a phase boundary.
+    // 3. Phase changes if minute m crosses a phase boundary.
     if (PHASE_BOUNDARIES.includes(m)) {
       events.push(
         makeEvent("world.phase_changed", m, {
@@ -119,12 +136,16 @@ export function transitionToMinute(
       );
     }
 
-    // 5. Activity starts for entries beginning at minute m.
-    // 6. Location changes implied by the above, only when the room actually changes.
+    // Compute the effective entry at minute m for every agent once.
+    const nextEntries = new Map<string, AgentScheduleEntry | null>();
+    for (const agentId of agentIds) {
+      nextEntries.set(agentId, findEffectiveEntry(snapshot, agentId, m));
+    }
+
+    // 4. Activity starts for entries beginning at minute m.
     for (const agentId of agentIds) {
       const prev = previousEntries.get(agentId);
-      const nextEntry = findEffectiveEntry(snapshot, agentId, m);
-
+      const nextEntry = nextEntries.get(agentId);
       if (nextEntry && nextEntry.startMinute === m && (!prev || prev.entryId !== nextEntry.entryId)) {
         entryStartedAt.set(agentId, m);
         events.push(
@@ -137,7 +158,12 @@ export function transitionToMinute(
           })
         );
       }
+    }
 
+    // 5. Location changes implied by the above, only when the room actually changes.
+    for (const agentId of agentIds) {
+      const prev = previousEntries.get(agentId);
+      const nextEntry = nextEntries.get(agentId);
       const oldRoomId = prev?.roomId ?? null;
       const newRoomId = nextEntry?.roomId ?? null;
       if (oldRoomId !== newRoomId) {
@@ -150,26 +176,19 @@ export function transitionToMinute(
           })
         );
       }
+    }
 
-      previousEntries.set(agentId, nextEntry);
+    // Advance previous entries for the next minute.
+    for (const agentId of agentIds) {
+      previousEntries.set(agentId, nextEntries.get(agentId) ?? null);
     }
   }
 
   const newActivities: ActiveAgentActivity[] = [];
   for (const agentId of agentIds) {
-    const entry = findEffectiveEntry(snapshot, agentId, nextMinute);
-    if (!entry) continue;
-
     const startedAtWorldMinute = entryStartedAt.get(agentId) ?? nextMinute;
-
-    newActivities.push({
-      agentId,
-      scheduleEntryId: entry.entryId,
-      activity: entry.activity,
-      roomId: entry.roomId,
-      startedAtWorldMinute,
-      interruptedByTaskId: null,
-    });
+    const activity = buildActiveActivity(snapshot, agentId, nextMinute, startedAtWorldMinute);
+    if (activity) newActivities.push(activity);
   }
 
   return { snapshot: { ...snapshot, activeActivities: newActivities }, events };
