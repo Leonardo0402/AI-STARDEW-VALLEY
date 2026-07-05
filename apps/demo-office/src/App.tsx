@@ -97,7 +97,7 @@ export const App: FC<AppProps> = ({
       scene.destroy();
       sceneRef.current = null;
     };
-  }, [view, reduceMotion]);
+  }, [view]);
 
   // 将 reduceMotion 变更同步到已存在的场景
   useEffect(() => {

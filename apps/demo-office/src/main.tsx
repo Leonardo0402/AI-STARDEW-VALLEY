@@ -10,14 +10,16 @@ import { App } from "./App.js";
 import { DemoControls } from "./DemoControls.js";
 import "./theme.css";
 
-function renderStartupError(err: unknown): void {
+function renderStartupError(
+  root: ReturnType<typeof createRoot>,
+  err: unknown
+): void {
   if (err instanceof ConfigError) {
     console.error("[demo-office] Configuration error:", err.message);
   } else {
     console.error("[demo-office] Unexpected startup error:", err);
   }
 
-  const root = createRoot(document.getElementById("root")!);
   root.render(
     <React.StrictMode>
       <div
@@ -76,15 +78,16 @@ function renderAppComposition(
 // HttpSseRuntimeAdapter fetches capabilities from the runtime; calling
 // getCapabilities() before connect() throws because they are not cached yet.
 async function bootstrap(): Promise<void> {
+  const root = createRoot(document.getElementById("root")!);
+
   let config: DemoRuntimeConfig;
   try {
     config = readConfigFromEnv(import.meta.env as unknown as Record<string, string>);
   } catch (err) {
-    renderStartupError(err);
+    renderStartupError(root, err);
     return;
   }
 
-  const root = createRoot(document.getElementById("root")!);
   let composition = createRuntime(config);
 
   async function handleRetry(): Promise<void> {
@@ -94,7 +97,7 @@ async function bootstrap(): Promise<void> {
       });
     } catch (err) {
       console.error("[demo-office] Runtime retry failed:", err);
-      renderStartupError(err);
+      renderStartupError(root, err);
     }
   }
 
@@ -122,7 +125,7 @@ async function bootstrap(): Promise<void> {
     await composition.session.connect();
   } catch (err) {
     console.error("[demo-office] RuntimeSession bootstrap failed:", err);
-    renderStartupError(err);
+    renderStartupError(root, err);
     return;
   }
 

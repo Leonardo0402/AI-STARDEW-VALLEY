@@ -150,6 +150,22 @@ describe("App shell", () => {
     expect(document.querySelector("canvas")).toBeInTheDocument();
   });
 
+  it("toggling reduceMotion does not re-create the PixelOfficeScene", () => {
+    renderApp();
+    const scene = (PixelOfficeScene as Mock).mock.results[0].value;
+    expect(PixelOfficeScene).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Motion on" }));
+    expect(PixelOfficeScene).toHaveBeenCalledTimes(1);
+    expect(scene.destroy).not.toHaveBeenCalled();
+    expect(scene.setReduceMotion).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Motion off" }));
+    expect(PixelOfficeScene).toHaveBeenCalledTimes(1);
+    expect(scene.destroy).not.toHaveBeenCalled();
+    expect(scene.setReduceMotion).toHaveBeenLastCalledWith(false);
+  });
+
   it("focus mode keeps the canvas visible, dims the stage, and shows the ambient overlay", () => {
     renderApp();
     fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
