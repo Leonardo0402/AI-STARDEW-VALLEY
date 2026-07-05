@@ -66,14 +66,22 @@ describe("world commands", () => {
       "day.summary_recorded",
       "world.day_ended",
     ]);
+    expect(result.events[0].payload).toEqual({ day: 1, endedAtWorldMinute: config.endOfDayMinute });
+    expect(result.events[1].payload).toEqual({
+      summaryId: "summary-1",
+      day: 1,
+      summary: expect.objectContaining({ day: 1 }),
+    });
+    expect(result.events[2].payload).toEqual({ day: 1, summaryId: "summary-1" });
     const finalSnapshot = engine.getSnapshot().snapshot;
     expect(finalSnapshot.worldClock.status).toBe("not_started");
     expect(finalSnapshot.worldClock.minuteOfDay).toBe(config.startOfDayMinute);
+    expect(finalSnapshot.worldClock.fractionalMinute).toBe(0);
     expect(finalSnapshot.completedDaySummaries).toHaveLength(1);
     expect(finalSnapshot.completedDaySummaries[0].day).toBe(1);
   });
 
-  it("repeated end_day after reset is rejected", async () => {
+  it("repeated end_day for the same day returns accepted no-op", async () => {
     await engine.execute(makeCommand("world.start_day", {}));
     await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
     await engine.execute(makeCommand("world.end_day", {}));
@@ -82,8 +90,9 @@ describe("world commands", () => {
       commandId: "cmd-world.end_day-repeat",
     };
     const result = await engine.execute(repeat);
-    expect(result.status).toBe("rejected");
-    expect(result.error?.code).toBe("day_not_started");
+    expect(result.status).toBe("accepted");
+    expect(result.lifeSimSequence).toBeNull();
+    expect(result.events).toEqual([]);
   });
 
   it("advance_time stops at EOD without day_ending", async () => {

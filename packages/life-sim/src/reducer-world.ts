@@ -173,20 +173,69 @@ export function reduceWorldCommand(
     }
 
     case "world.end_day": {
+      const day = clock.day;
+      if (snapshot.completedDaySummaries.some((s) => s.day === day)) {
+        return {
+          snapshot,
+          events: [],
+          result: {
+            commandId: command.commandId,
+            status: "accepted",
+            lifeSimSequence: null,
+            events: [],
+            error: null,
+          },
+        };
+      }
       if (clock.status !== "running" && clock.status !== "paused") {
         return rejected("day_not_started", "No day is running");
       }
       if (clock.minuteOfDay !== config.endOfDayMinute) {
         return rejected("end_of_day_not_reached", "End-of-day minute not reached");
       }
+
       const events: LifeSimEvent[] = [];
-      const day = clock.day;
       const startedAtWorldMinute = config.startOfDayMinute;
       const endedAtWorldMinute = clock.minuteOfDay;
+      const summaryId = `summary-${day}`;
+
+      // 1. Move to "ending".
+      let nextSnapshot: LifeSimSnapshot = {
+        ...snapshot,
+        worldClock: {
+          ...clock,
+          status: "ending" as LifeSimStatus,
+          updatedAt: now,
+        },
+      };
+
+      // End any remaining active overlays with reason "day_ending".
+      for (const overlay of nextSnapshot.activeOverlays) {
+        const seq = nextSequence();
+        events.push({
+          eventId: `evt-overlay-ended-${seq}`,
+          worldId: snapshot.worldId,
+          lifeSimSequence: seq,
+          type: "schedule.overlay_ended",
+          occurredAt: now,
+          worldMinute: endedAtWorldMinute,
+          day,
+          causationId: command.commandId,
+          runtimeEventId: null,
+          runtimeSequence: null,
+          payload: {
+            agentId: overlay.agentId,
+            overlayId: overlay.overlayId,
+            reason: "day_ending",
+            endedAtWorldMinute,
+          },
+        });
+      }
+      nextSnapshot = { ...nextSnapshot, activeOverlays: [] };
 
       const endingSeq = nextSequence();
       const endingEvent: LifeSimEvent = {
-        eventId: `evt-end-day-${endingSeq}`,
+        eventId: `evt-day-ending-${endingSeq}`,
         worldId: snapshot.worldId,
         lifeSimSequence: endingSeq,
         type: "world.day_ending",
@@ -200,10 +249,10 @@ export function reduceWorldCommand(
       };
       events.push(endingEvent);
 
-      const { summary } = computeDaySummary(snapshot, day, startedAtWorldMinute, endedAtWorldMinute);
-      const snapshotWithSummary: LifeSimSnapshot = {
-        ...snapshot,
-        completedDaySummaries: [...snapshot.completedDaySummaries, summary],
+      const { summary } = computeDaySummary(nextSnapshot, day, startedAtWorldMinute, endedAtWorldMinute);
+      nextSnapshot = {
+        ...nextSnapshot,
+        completedDaySummaries: [...nextSnapshot.completedDaySummaries, summary],
       };
 
       const summarySeq = nextSequence();
@@ -218,20 +267,8 @@ export function reduceWorldCommand(
         causationId: command.commandId,
         runtimeEventId: null,
         runtimeSequence: null,
-        payload: { day, summary },
+        payload: { summaryId, day, summary },
       });
-
-      const resetClock = {
-        ...clock,
-        status: "not_started" as LifeSimStatus,
-        minuteOfDay: config.startOfDayMinute,
-        phase: computePhase(config.startOfDayMinute),
-        updatedAt: now,
-      };
-      const snapshotAfterReset: LifeSimSnapshot = {
-        ...snapshotWithSummary,
-        worldClock: resetClock,
-      };
 
       const endedSeq = nextSequence();
       events.push({
@@ -245,11 +282,25 @@ export function reduceWorldCommand(
         causationId: command.commandId,
         runtimeEventId: null,
         runtimeSequence: null,
-        payload: { day, endedAtWorldMinute },
+        payload: { day, summaryId },
       });
 
+      // Final reset: back to "not_started" for the next day.
+      nextSnapshot = {
+        ...nextSnapshot,
+        worldClock: {
+          ...clock,
+          status: "not_started" as LifeSimStatus,
+          minuteOfDay: config.startOfDayMinute,
+          phase: computePhase(config.startOfDayMinute),
+          fractionalMinute: 0,
+          updatedAt: now,
+        },
+        activeActivities: [],
+      };
+
       return {
-        snapshot: snapshotAfterReset,
+        snapshot: nextSnapshot,
         events,
         result: {
           commandId: command.commandId,
