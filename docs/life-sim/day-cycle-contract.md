@@ -118,10 +118,12 @@ Command rules:
 
 - `commandId` is used for idempotency. Repeating a command with the same `commandId` returns the stored result without mutating state.
 - Invalid day/time transitions are rejected structurally with `LifeSimCommandResult { status: "rejected", error: { code, message } }`.
+- `world.start_day` is rejected unless `status === "not_started"`. If `day` is supplied it must be a positive integer; if omitted, the engine uses `currentDay + 1` (or `1` for the first day).
 - `world.end_day` is rejected if the current virtual minute is not exactly the configured end-of-day minute. Forced early end is not supported in V1.
 - `world.end_day` is guarded by a `dayEnded` flag per day; repeated invocations for the same day are idempotent no-ops.
 - `world.advance_time` with `minutes <= 0` is rejected.
-- `world.advance_time` that would cross the configured end-of-day minute stops at the end-of-day boundary and triggers `world.day_ending`.
+- `world.advance_time` that would reach the configured end-of-day minute stops at that boundary and does **not** emit `world.day_ending`; it only makes `world.end_day` available for the operator to call.
+- `world.run_to_end_of_day` is available only in manual mode; it advances to the configured end-of-day minute and does **not** emit `world.day_ending`.
 - A command returns `accepted` only after its effects have been durably persisted.
 
 ## Command result and capabilities
@@ -290,7 +292,7 @@ The server-side life-sim persistence layer stores:
 - `activeOverlays` — current schedule overlays.
 - `lifeSimEventLog` — events emitted since the checkpoint.
 - `completedDaySummaries` — immutable `DaySummary` records.
-- `lastAppliedRuntimeSequence` — the runtime `sequence` up to which the life-sim store has caught up.
+- `lastObservedRuntimeSequence` — the runtime replay cursor up to which every journal record has been observed, including `reducer_rejected` events.
 - `truncatedHistory` — marker for `history_truncated` recovery.
 - `idempotencyResults` — map from `commandId` to `LifeSimCommandResult` for accepted commands within the retention window.
 

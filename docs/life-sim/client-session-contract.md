@@ -30,7 +30,8 @@ interface LifeSimSnapshot {
   schemaVersion: string;
 
   checkpointLifeSimSequence: number;
-  lastAppliedRuntimeSequence: number;
+  lastObservedRuntimeSequence: number;   // replay cursor; advances across every journal record
+  lastAppliedRuntimeSequence: number;    // optional diagnostic; only applied events mutate LifeSim
 
   worldClock: WorldClockState;
   baseSchedules: AgentScheduleEntry[];
@@ -50,7 +51,8 @@ Field semantics:
 - `worldId` — identifies the persistent world.
 - `schemaVersion` — schema version of the snapshot; used for migration checks.
 - `checkpointLifeSimSequence` — the sequence number of the last event included in the checkpoint. The next emitted event will be `checkpointLifeSimSequence + 1`.
-- `lastAppliedRuntimeSequence` — the runtime sequence up to which the life-sim store has applied applied operational events.
+- `lastObservedRuntimeSequence` — the runtime replay cursor. It advances across every runtime journal record, including `reducer_rejected` events, so that restart does not re-request the same range forever.
+- `lastAppliedRuntimeSequence` — diagnostic; the runtime sequence of the most recent applied operational event that mutated LifeSim state.
 - `worldClock` — current virtual clock state.
 - `baseSchedules` — canonical base schedule entries for each agent.
 - `activeActivities` — currently active schedule entries.
@@ -85,9 +87,10 @@ The browser must establish life-sim state in this exact order:
 1. `GET /life-sim/{worldId}/snapshot`.
 2. Install `snapshot` as the current local projection.
 3. Apply every event in `eventLogTail` sequentially, in the order returned by the server.
-4. Record `lastAppliedLifeSimSequence = checkpointLifeSimSequence + eventLogTail.length`.
-5. Open the event stream with `afterLifeSimSequence = lastAppliedLifeSimSequence`.
-6. On reconnection, repeat from step 1; do not reuse a stale local sequence without re-fetching the snapshot.
+4. Verify tail continuity: the first tail event (if any) must have `lifeSimSequence === checkpointLifeSimSequence + 1`. If the tail is non-empty and starts later, discard the local projection and repeat from step 1.
+5. Record `lastAppliedLifeSimSequence = checkpointLifeSimSequence + eventLogTail.length`.
+6. Open the event stream with `afterLifeSimSequence = lastAppliedLifeSimSequence`.
+7. On reconnection, repeat from step 1; do not reuse a stale local sequence without re-fetching the snapshot.
 
 ## Event stream endpoint
 
@@ -146,7 +149,9 @@ The numbered list above defines input **kinds**, not priorities. Within the queu
 
 When an applied operational event is dequeued, the engine records the current `worldClock.minuteOfDay` as the event's binding minute. Commands and clock ticks are likewise stamped with the world minute at which they are processed.
 
-## Event envelope
+Every dequeued input is a persistence transaction: the engine binds it to the current world minute, applies the life-sim reducer, appends any emitted events to the life-sim event log, advances `lastObservedRuntimeSequence` when the input is a runtime event, and durably writes the snapshot, log tail, and idempotency record before the next input is dequeued or before the command result is returned.
+
+## Command envelope
 
 ```ts
 interface LifeSimEvent<P = unknown> {
@@ -218,6 +223,7 @@ interface LifeSimCommandResult {
 - `status === "rejected"` means the command failed validation before entering the queue.
 - `lifeSimSequence` is the sequence of the first event produced by the command, or `null` if rejected.
 - Repeating an accepted command by `commandId` returns the same `lifeSimSequence` and `events` (which may be an empty array `[]` for no-op idempotent replays).
+- An accepted no-op (for example, an idempotent replay of a command whose effects are already reflected) returns the original `lifeSimSequence` and an empty `events` array; it does not consume a new life-sim sequence.
 - The `error.code` is a closed union, not an arbitrary string. Clients may switch on it.
 
 ## Capabilities
@@ -244,7 +250,8 @@ interface LifeSimCapabilities {
 
 - `advanceTime` is `true` only when `clock.mode === "manual"`.
 - `endDay` is advertised as `true` only when the current virtual minute equals the configured end-of-day minute. Forced early end is not a capability in V1.
-- Capabilities are static per deployment in V1; per-user capability grants are out of scope.
+- World capabilities (`startDay`, `pause`, `resume`, `endDay`, `advanceTime`) are recomputed after every accepted input because they depend on `WorldClockState`.
+- Schedule capabilities (`override`, `clearOverride`) and per-user grants are static per deployment in V1; per-user capability grants are out of scope.
 - The UI hides or disables controls for capabilities that are `false`.
 
 ## Reconnection and catch-up
@@ -254,8 +261,9 @@ On reconnection the browser client:
 1. Calls `GET /life-sim/{worldId}/snapshot`.
 2. Compares the returned `checkpointLifeSimSequence` with its last known sequence.
 3. Applies `eventLogTail` in order and updates `lastAppliedLifeSimSequence`.
-4. Opens the event stream from `afterLifeSimSequence = lastAppliedLifeSimSequence`.
-5. If `truncatedHistory.truncated` is `true`, the client resets any cached historical counters for the current day and displays a truncated-history indicator.
+4. Verifies tail continuity as described in the startup sequence; re-fetches the snapshot if the tail starts after `checkpointLifeSimSequence + 1`.
+5. Opens the event stream from `afterLifeSimSequence = lastAppliedLifeSimSequence`.
+6. If `truncatedHistory.truncated` is `true`, the client resets any cached historical counters for the current day and displays a truncated-history indicator.
 
 ## Error handling
 

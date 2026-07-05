@@ -141,7 +141,7 @@ Rules:
 - Its `priority` is higher than any overlapping base entry.
 - Its `createdByTaskId` references the runtime task ID.
 - Its `createdByRuntimeSequence` records the runtime sequence of the triggering event.
-- The overlay is removed when the task reaches a terminal or waiting state (`completed`, `failed`, `blocked`, `cancelled`, or `waiting_approval`), when the Agent is reassigned away from the task, or at `world.day_ending`.
+- The overlay is removed when the task reaches a terminal state (`completed`, `failed`, `blocked`, or `cancelled`), when the Agent is reassigned away from the task, or at `world.day_ending`. `waiting_approval` does not end the Worker overlay.
 - If multiple tasks are assigned to the same Agent before the first overlay clears, the assignment with the higher runtime sequence wins, using `entryId` lexicographic order as a tie-breaker. The earlier task overlay is ended early.
 - When an overlay replaces a currently active entry with the same `activity` and `roomId`, no `agent.location_changed` event is emitted.
 
@@ -299,7 +299,7 @@ Within each group, ordering is deterministic by `(runtimeSequence, entryId, over
 
 A task overlay may end before its original `endMinute` when:
 
-- the task reaches `completed`, `failed`, `blocked`, `cancelled`, or `waiting_approval`;
+- the task reaches a terminal state (`completed`, `failed`, `blocked`, or `cancelled`);
 - the Agent is reassigned away from the task;
 - a later task assignment with a higher runtime sequence replaces it;
 - `world.day_ending` occurs.

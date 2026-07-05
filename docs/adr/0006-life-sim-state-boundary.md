@@ -103,7 +103,8 @@ interface LifeSimSnapshot {
   worldId: string;
   schemaVersion: string;
   checkpointLifeSimSequence: number;
-  lastAppliedRuntimeSequence: number;
+  lastObservedRuntimeSequence: number;   // replay cursor; advances across every journal record
+  lastAppliedRuntimeSequence: number;    // diagnostic; only applied events mutate LifeSim
   worldClock: WorldClockState;
   baseSchedules: AgentScheduleEntry[];
   activeActivities: ActiveAgentActivity[];
@@ -133,7 +134,7 @@ interface OperationalEventJournal {
 
 interface OperationalReplayResult {
   events: Array<{ runtimeEvent: DomainEvent; runtimeSequence: number }>;
-  nextRuntimeSequence: number;
+  nextRuntimeSequence: number; // watermark to advance the replay cursor; may equal fromSequence if the range had no applied events
   truncated: boolean;
   lostRuntimeRange: { from: number; to: number } | null;
 }
@@ -142,6 +143,7 @@ interface OperationalReplayResult {
 Responsibilities:
 
 - `replayApplied` returns only applied operational events from the requested runtime sequence onward. It never returns `reducer_rejected` or transport-rejected events.
+- `nextRuntimeSequence` is a watermark that advances across every runtime journal record in the requested range, including `reducer_rejected` entries. The engine must persist this as `lastObservedRuntimeSequence` even when `events` is empty, otherwise restart will repeatedly request the same range.
 - `getCurrentSnapshot` returns the latest runtime snapshot for reconciliation when the event log is trimmed.
 - The Reference Swarm runtime or a companion server implements this interface. The HTTP/SSE `RuntimeAdapter` itself is not involved.
 - The public `GET /life-sim/{worldId}/replay` endpoint is for diagnostics and external tools only; the engine does not call it.
@@ -157,16 +159,23 @@ Responsibilities:
 
 ## Persistent event catch-up and event-log-trimmed reconciliation
 
-The life-sim store records `lastAppliedRuntimeSequence` in its checkpoint. On restart it calls `OperationalEventJournal.replayApplied(lastAppliedRuntimeSequence + 1)`.
+The life-sim store records `lastObservedRuntimeSequence` in its checkpoint. On restart it calls `OperationalEventJournal.replayApplied(lastObservedRuntimeSequence + 1)`.
+
+For each replay result:
+
+- The engine applies every returned applied event in order, emitting any resulting life-sim events.
+- It atomically persists `lastObservedRuntimeSequence = nextRuntimeSequence`, even when `events` is empty. This prevents restart from re-requesting the same range.
+- It updates `lastAppliedRuntimeSequence` to the most recent applied event that actually mutated LifeSim state.
 
 Three cases:
 
-1. **Full replay available.** The engine replays all missing applied events in order and reaches consistency.
-2. **Partial replay available.** The engine replays available events. If a gap remains, it enters `history_truncated` reconciliation.
+1. **Full replay available.** The engine replays all missing applied events in order, advances the cursor to the current journal head, and reaches consistency.
+2. **Partial replay available.** The engine replays available events and advances the cursor to the end of the available range. If a gap remains, it enters `history_truncated` reconciliation.
 3. **Event log trimmed / snapshot ahead.** If `replayApplied` returns `truncated: true` and the latest runtime snapshot is already beyond the missing range, the engine:
    - emits `world.history_truncated` with the lost runtime sequence range;
    - reconciles active overlays against `getCurrentSnapshot()`;
    - marks the current day summary as `truncated: true`;
+   - persists the new replay cursor;
    - continues from the next available applied event.
 
 ### Truncated reconciliation rules
@@ -175,12 +184,14 @@ A latest runtime snapshot cannot reconstruct exact historical approval counts or
 
 For each `RuntimeSnapshot.task` after a truncated gap:
 
-- If the task is absent or in a terminal state (`completed`, `failed`, `cancelled`), any overlay referencing that task is closed.
-- If the task is `assigned` to an Agent and that Agent is operational, a provisional `task_overlay` is created from the current world minute to the configured end-of-day minute. Its `createdByRuntimeSequence` is set to the runtime sequence of the snapshot, and a `schedule.overlay_reconstructed` event is emitted with `reconstructionSource: "runtime_snapshot"`.
-- If the task is `waiting_approval`, the Worker overlay is retained or reconstructed, and a Reviewer overlay is created if a reviewer is currently assigned by the runtime or selected by the deterministic reviewer policy. If no reviewer is deterministically selectable, the approval is left unassigned.
+- **Terminal-for-overlay states:** `completed`, `failed`, `blocked`, `cancelled`. Any overlay referencing a task in one of these states is closed.
+- **Active Worker overlay states:** `assigned`, `planning`, `running`, `reviewing`, `revision_required`. If the task is in one of these states and assigned to an operational Agent, a provisional `task_overlay` is created for that Agent from the current world minute to the configured end-of-day minute. Its `createdByRuntimeSequence` is set to the runtime sequence of the snapshot, and a `schedule.overlay_reconstructed` event is emitted with `reconstructionSource: "runtime_snapshot"`.
+- **`waiting_approval`:** the Worker overlay is retained or reconstructed, and a Reviewer overlay is created if a reviewer is currently assigned by the runtime or selected by the deterministic reviewer policy. If no reviewer is deterministically selectable, the approval is left unassigned but the Worker overlay remains.
 - Any overlay whose referenced task cannot be found is closed; no orphaned overlays are allowed.
 - Reconstructed overlays record `originalStartMinute: null` to indicate that the exact start time is unknown.
 - Activity duration and day-summary counters for the truncated day are marked `truncated: true`. They are valid from the reconciliation point forward, not for the entire day.
+
+This reconciliation table must match the live task-overlay lifecycle in `docs/life-sim/schedule-semantics.md`.
 
 For each `RuntimeSnapshot.agent`:
 
@@ -190,6 +201,8 @@ For each `RuntimeSnapshot.agent`:
 ## Persistence and durability boundary
 
 `LifeSimStore` persists on the server. A command returns `accepted` only after the resulting events, the updated snapshot, and the idempotency result have all been durably written.
+
+The same durability rule applies to every dequeued input, not only to commands. When an applied operational runtime event or a clock tick is dequeued, the engine binds it to the current world minute, runs the life-sim reducer, appends any emitted events to the life-sim event log, advances `lastObservedRuntimeSequence` when applicable, and durably writes the snapshot, log tail, and idempotency record before the next input is dequeued.
 
 Two acceptable persistence strategies:
 
