@@ -141,13 +141,26 @@ export function reduceWorldCommand(
     }
 
     case "world.end_day": {
+      if (clock.status === "ending") {
+        return {
+          snapshot,
+          events: [],
+          result: {
+            commandId: command.commandId,
+            status: "accepted",
+            lifeSimSequence: null,
+            events: [],
+            error: null,
+          },
+        };
+      }
       if (clock.status !== "running" && clock.status !== "paused") {
         return rejected("day_not_started", "No day is running");
       }
       if (clock.minuteOfDay !== config.endOfDayMinute) {
         return rejected("end_of_day_not_reached", "End-of-day minute not reached");
       }
-      const endingClock = { ...clock, status: "not_started" as LifeSimStatus, updatedAt: now };
+      const endingClock = { ...clock, status: "ending" as LifeSimStatus, updatedAt: now };
       const seq = nextSequence();
       const event: LifeSimEvent = {
         eventId: `evt-end-day-${seq}`,
@@ -171,6 +184,53 @@ export function reduceWorldCommand(
           status: "accepted",
           lifeSimSequence: event.lifeSimSequence,
           events: [event],
+          error: null,
+        },
+      };
+    }
+
+    case "world.run_to_end_of_day": {
+      if (clock.status !== "running") {
+        return rejected("day_not_started", "Clock is not running");
+      }
+      if (clock.speed !== 0) {
+        return rejected("advance_not_allowed_in_realtime", "run_to_end_of_day is only allowed in manual mode");
+      }
+      const targetMinute = config.endOfDayMinute;
+      const delta = targetMinute - clock.minuteOfDay;
+      if (delta <= 0) {
+        return rejected("end_of_day_not_reached", "Already at end of day");
+      }
+      const nextClock = {
+        ...clock,
+        minuteOfDay: targetMinute,
+        phase: computePhase(targetMinute),
+        updatedAt: now,
+      };
+      const events: LifeSimEvent[] = [];
+      const baseSeq = nextSequence();
+      events.push({
+        eventId: `evt-run-to-eod-${baseSeq}`,
+        worldId: snapshot.worldId,
+        lifeSimSequence: baseSeq,
+        type: "world.time_advanced",
+        occurredAt: now,
+        worldMinute: targetMinute,
+        day: clock.day,
+        causationId: command.commandId,
+        runtimeEventId: null,
+        runtimeSequence: null,
+        payload: { fromMinute: clock.minuteOfDay, toMinute: targetMinute, minutes: delta },
+      });
+      const nextSnapshot: LifeSimSnapshot = { ...snapshot, worldClock: nextClock };
+      return {
+        snapshot: nextSnapshot,
+        events,
+        result: {
+          commandId: command.commandId,
+          status: "accepted",
+          lifeSimSequence: events[0].lifeSimSequence,
+          events,
           error: null,
         },
       };
