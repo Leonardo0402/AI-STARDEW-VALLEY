@@ -193,4 +193,5 @@ export interface LifeSimEngineConfig {
   worldId: string;
   startOfDayMinute: number;
   endOfDayMinute: number;
+  baseSchedules?: AgentScheduleEntry[];
 }

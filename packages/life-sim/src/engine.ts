@@ -25,7 +25,10 @@ export async function createLifeSimEngine(
   const store = options.store ?? new InMemoryLifeSimStore();
   const now = options.now ?? (() => new Date().toISOString());
   const loaded = await store.load();
-  const snapshot = loaded?.snapshot ?? createEmptySnapshot(config, now());
+  const snapshot = loaded?.snapshot ?? {
+    ...createEmptySnapshot(config, now()),
+    baseSchedules: config.baseSchedules ?? [],
+  };
   const eventLogTail = loaded?.eventLogTail ?? [];
   const commandResults = loaded?.commandResults ?? new Map<string, LifeSimCommandResult>();
   let currentSnapshot = snapshot;

@@ -1,4 +1,5 @@
 import type {
+  AgentScheduleEntry,
   LifeSimCommand,
   LifeSimCommandErrorCode,
   LifeSimCommandResult,
@@ -9,8 +10,16 @@ import type {
   WorldClockState,
 } from "./types.js";
 import { computePhase } from "./clock.js";
+import { transitionToMinute } from "./schedule.js";
 
 const PHASE_BOUNDARIES = [360, 720, 1080, 1260];
+
+function installBaseSchedules(
+  snapshot: LifeSimSnapshot,
+  baseSchedules: AgentScheduleEntry[]
+): LifeSimSnapshot {
+  return { ...snapshot, baseSchedules };
+}
 
 function buildPhaseChangedEvents(
   fromMinute: number,
@@ -96,6 +105,8 @@ export function reduceWorldCommand(
         phase: computePhase(config.startOfDayMinute),
         updatedAt: now,
       };
+      const snapshotWithClock = { ...snapshot, worldClock: nextClock };
+      const snapshotWithSchedules = installBaseSchedules(snapshotWithClock, config.baseSchedules ?? []);
       const event: LifeSimEvent = {
         eventId: `evt-start-day-${day}`,
         worldId: snapshot.worldId,
@@ -109,18 +120,26 @@ export function reduceWorldCommand(
         runtimeSequence: null,
         payload: { day, dayOfWeek, startedAtWorldMinute: config.startOfDayMinute },
       };
+      const scheduleResult = transitionToMinute(
+        snapshotWithSchedules,
+        config.startOfDayMinute,
+        nextSequence,
+        now,
+        command.commandId
+      );
       const nextSnapshot: LifeSimSnapshot = {
-        ...snapshot,
-        worldClock: nextClock,
+        ...snapshotWithSchedules,
+        activeActivities: scheduleResult.snapshot.activeActivities,
       };
+      const events = [event, ...scheduleResult.events];
       return {
         snapshot: nextSnapshot,
-        events: [event],
+        events,
         result: {
           commandId: command.commandId,
           status: "accepted",
           lifeSimSequence: event.lifeSimSequence,
-          events: [event],
+          events,
           error: null,
         },
       };
@@ -171,7 +190,19 @@ export function reduceWorldCommand(
         runtimeSequence: null,
         payload: { oldMinute: clock.minuteOfDay, newMinute: targetMinute, day: clock.day },
       });
-      const nextSnapshot: LifeSimSnapshot = { ...snapshot, worldClock: nextClock };
+      const snapshotWithClock = { ...snapshot, worldClock: nextClock };
+      const scheduleResult = transitionToMinute(
+        snapshotWithClock,
+        targetMinute,
+        nextSequence,
+        now,
+        command.commandId
+      );
+      const nextSnapshot: LifeSimSnapshot = {
+        ...snapshotWithClock,
+        activeActivities: scheduleResult.snapshot.activeActivities,
+      };
+      events.push(...scheduleResult.events);
       return {
         snapshot: nextSnapshot,
         events,
