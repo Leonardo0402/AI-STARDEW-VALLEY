@@ -107,7 +107,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
     await runAction(`reject-${approvalId}`, () =>
       onSendCommand(
         CommandType.APPROVAL_REJECT,
-        { approvalId, reason: "用户拒绝" },
+        { approvalId, reason: "rejected by operator" },
         approvalId
       )
     );
@@ -139,11 +139,11 @@ export const ControlPanel: FC<ControlPanelProps> = ({
     <div className="control-panel">
       {visibleErrors.length > 0 && (
         <div className="panel-section">
-          {visibleErrors.map((err) => {
+          {visibleErrors.map((err, index) => {
             const { code, message } = parseError(err);
             return (
               <ErrorBanner
-                key={err}
+                key={`${index}-${hashString(message)}`}
                 code={code}
                 message={message}
                 onDismiss={() => dismissError(err)}
@@ -157,7 +157,8 @@ export const ControlPanel: FC<ControlPanelProps> = ({
         approvals={projection.pendingApprovals}
         onApprove={handleAcceptApproval}
         onReject={handleRejectApproval}
-        disabled={!isSupported(CommandType.APPROVAL_ACCEPT) || !isSupported(CommandType.APPROVAL_REJECT)}
+        approveDisabled={!isSupported(CommandType.APPROVAL_ACCEPT)}
+        rejectDisabled={!isSupported(CommandType.APPROVAL_REJECT)}
       />
 
       <div className="panel-section">
@@ -301,6 +302,16 @@ export const ControlPanel: FC<ControlPanelProps> = ({
     </div>
   );
 };
+
+function hashString(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
 
 function parseError(err: string): { code: string; message: string } {
   const match = err.match(/^\[([^\]]+)\]\s*(.*)$/);

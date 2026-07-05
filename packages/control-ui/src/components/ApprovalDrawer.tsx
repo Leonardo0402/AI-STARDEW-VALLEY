@@ -6,24 +6,26 @@ interface ApprovalDrawerProps {
   approvals: ApprovalView[];
   onApprove: (approvalId: string) => void;
   onReject: (approvalId: string) => void;
-  disabled?: boolean;
+  approveDisabled?: boolean;
+  rejectDisabled?: boolean;
 }
 
 export const ApprovalDrawer: FC<ApprovalDrawerProps> = ({
   approvals,
   onApprove,
   onReject,
-  disabled = false,
+  approveDisabled = false,
+  rejectDisabled = false,
 }) => {
   if (approvals.length === 0) return null;
 
   return (
     <div className="panel-section">
+      <h3 className="approval-drawer__title">
+        Pending Approval <span className="badge badge--count">{approvals.length}</span>
+      </h3>
       {approvals.map((approval) => (
         <Card key={approval.approvalId} className="approval-drawer">
-          <h3 className="approval-drawer__title">
-            Pending Approval <span className="badge badge--count">{approvals.length}</span>
-          </h3>
           <div className="approval-drawer__meta">
             {approval.kind} · {approval.taskId}
             {approval.reason ? ` · ${approval.reason}` : ""}
@@ -32,14 +34,14 @@ export const ApprovalDrawer: FC<ApprovalDrawerProps> = ({
             <button
               className="btn btn--primary btn--small"
               onClick={() => onApprove(approval.approvalId)}
-              disabled={disabled}
+              disabled={approveDisabled}
             >
               Approve
             </button>
             <button
               className="btn btn--danger btn--small"
               onClick={() => onReject(approval.approvalId)}
-              disabled={disabled}
+              disabled={rejectDisabled}
             >
               Reject
             </button>

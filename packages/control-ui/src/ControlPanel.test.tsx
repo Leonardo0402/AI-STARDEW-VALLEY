@@ -254,9 +254,57 @@ describe("ControlPanel", () => {
 
     expect(props.onSendCommand).toHaveBeenCalledWith(
       CommandType.APPROVAL_REJECT,
-      { approvalId: "approval-1", reason: "用户拒绝" },
+      { approvalId: "approval-1", reason: "rejected by operator" },
       "approval-1"
     );
+  });
+
+  it("disables only Reject when only APPROVAL_ACCEPT is supported", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      pendingApprovals: [
+        {
+          approvalId: "approval-1",
+          taskId: "task-1",
+          kind: "artifact_delivery",
+          status: "requested",
+          requestedBy: "agent-2",
+          reason: "Deliver Q3 report",
+        },
+      ],
+    };
+    renderPanel({
+      projection,
+      capabilities: { ...capabilities, supportedCommands: [CommandType.APPROVAL_ACCEPT] },
+    });
+    const approveBtn = screen.getByRole("button", { name: /Approve/i });
+    const rejectBtn = screen.getByRole("button", { name: /Reject/i });
+    expect(approveBtn).not.toBeDisabled();
+    expect(rejectBtn).toBeDisabled();
+  });
+
+  it("disables only Approve when only APPROVAL_REJECT is supported", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      pendingApprovals: [
+        {
+          approvalId: "approval-1",
+          taskId: "task-1",
+          kind: "artifact_delivery",
+          status: "requested",
+          requestedBy: "agent-2",
+          reason: "Deliver Q3 report",
+        },
+      ],
+    };
+    renderPanel({
+      projection,
+      capabilities: { ...capabilities, supportedCommands: [CommandType.APPROVAL_REJECT] },
+    });
+    const approveBtn = screen.getByRole("button", { name: /Approve/i });
+    const rejectBtn = screen.getByRole("button", { name: /Reject/i });
+    expect(approveBtn).toBeDisabled();
+    expect(rejectBtn).not.toBeDisabled();
   });
 
   it("opens an artifact when clicking View", async () => {
