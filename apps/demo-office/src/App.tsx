@@ -15,6 +15,7 @@
  */
 import { useState, useEffect, useRef, type FC, type ReactNode } from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
+import type { AdapterCapabilities } from "@agent-office/protocol";
 import {
   ControlPanel,
   useOfficeState,
@@ -22,12 +23,17 @@ import {
 } from "@agent-office/control-ui";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
+import { StatusStrip } from "./StatusStrip.js";
+import type { DemoRuntimeMode } from "./runtime/types.js";
 
 interface AppProps {
   session: RuntimeSession;
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
+  mode: DemoRuntimeMode;
+  /** Adapter capabilities — used to disable unsupported command buttons. */
+  capabilities?: AdapterCapabilities;
   /** 演示层专用控件（如 DemoControls），由装配层 main.tsx 注入。
    *  App 本身不依赖任何 Mock 专用类型。 */
   demoControls?: ReactNode;
@@ -35,14 +41,22 @@ interface AppProps {
 
 type ViewMode = "pixel" | "list";
 
-export const App: FC<AppProps> = ({ session, store, gateway, runtimeId, demoControls }) => {
-  const { projection, eventLog, errors, sendCommand } = useOfficeState(
+export const App: FC<AppProps> = ({
+  session,
+  store,
+  gateway,
+  runtimeId,
+  mode,
+  capabilities,
+  demoControls,
+}) => {
+  const { projection, eventLog, errors, sessionState, diagnostics, sendCommand } = useOfficeState(
     session,
     store,
     gateway,
     runtimeId
   );
-  const [mode, setMode] = useState<ExperienceMode>("command");
+  const [experienceMode, setExperienceMode] = useState<ExperienceMode>("command");
   const [view, setView] = useState<ViewMode>("pixel");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PixelOfficeScene | null>(null);
@@ -72,14 +86,29 @@ export const App: FC<AppProps> = ({ session, store, gateway, runtimeId, demoCont
   }, [projection, view]);
 
   // Focus Mode 下隐藏像素视图（极简指示器）
-  const showFullView = mode !== "focus";
+  const showFullView = experienceMode !== "focus";
 
   return (
     <div style={styles.root}>
+      <StatusStrip
+        mode={mode}
+        runtimeId={runtimeId}
+        sessionState={sessionState}
+        diagnostics={diagnostics}
+        lastError={errors.length > 0 ? errors[errors.length - 1] : null}
+        onResync={() => {
+          session.resynchronize().catch((err) =>
+            console.error("[App] resync failed:", err)
+          );
+        }}
+        onReload={() => {
+          window.location.reload();
+        }}
+      />
       {/* 顶部工具栏 */}
       <div style={styles.topbar}>
         <span style={styles.title}>AI-像素 Agent Office</span>
-        <span style={styles.subtitle}>垂直切片 v1 · MockRuntimeAdapter</span>
+        <span style={styles.subtitle}>垂直切片 v1 · {mode === "mock" ? "Mock" : "Reference Swarm (HTTP/SSE)"}</span>
         <div style={styles.spacer} />
         <div style={styles.viewSwitch}>
           <button
@@ -130,9 +159,10 @@ export const App: FC<AppProps> = ({ session, store, gateway, runtimeId, demoCont
             projection={projection}
             eventLog={eventLog}
             errors={errors}
-            mode={mode}
-            onModeChange={setMode}
+            mode={experienceMode}
+            onModeChange={setExperienceMode}
             onSendCommand={sendCommand}
+            capabilities={capabilities}
           />
         </div>
       </div>

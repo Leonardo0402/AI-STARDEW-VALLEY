@@ -5,14 +5,17 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "bin": "./src/dev-server.ts",
   "scripts": {
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "dev": "node --import tsx ./src/dev-server.ts"
   },
   "dependencies": {
     "@agent-office/protocol": "1.0.0",
     "@agent-office/core": "1.0.0"
   },
   "devDependencies": {
-    "@agent-office/adapter-http-sse": "1.0.0"
+    "@agent-office/adapter-http-sse": "1.0.0",
+    "tsx": "^4.19.0"
   }
 }

@@ -13,7 +13,7 @@
  * - 批准/拒绝审批
  */
 import { useState, type FC } from "react";
-import type { OfficeProjection, DomainEvent } from "@agent-office/protocol";
+import type { OfficeProjection, DomainEvent, AdapterCapabilities } from "@agent-office/protocol";
 import { CommandType } from "@agent-office/protocol";
 import { EventLogViewer } from "./EventLogViewer.js";
 
@@ -30,6 +30,8 @@ interface ControlPanelProps {
     payload: unknown,
     targetId?: string | null
   ) => Promise<void>;
+  /** Adapter capabilities — unsupported commands disable their buttons. */
+  capabilities?: AdapterCapabilities;
 }
 
 export const ControlPanel: FC<ControlPanelProps> = ({
@@ -39,48 +41,82 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   mode,
   onModeChange,
   onSendCommand,
+  capabilities,
 }) => {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDesc, setTaskDesc] = useState("");
   const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null);
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+
+  const isSupported = (cmdType: string): boolean =>
+    capabilities ? capabilities.supportedCommands.includes(cmdType) : true;
+
+  const runAction = async (key: string, fn: () => Promise<void>): Promise<void> => {
+    setActionErrors((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      await fn();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionErrors((prev) => ({ ...prev, [key]: msg }));
+      throw err;
+    }
+  };
 
   const handleCreateTask = async () => {
     if (!taskTitle.trim()) return;
-    await onSendCommand(CommandType.TASK_CREATE, {
-      title: taskTitle,
-      description: taskDesc,
-      priority: "normal",
-    });
+    await runAction("create-task", () =>
+      onSendCommand(CommandType.TASK_CREATE, {
+        title: taskTitle,
+        description: taskDesc,
+        priority: "normal",
+      })
+    );
     setTaskTitle("");
     setTaskDesc("");
   };
 
   const handleAssignTask = async (taskId: string, agentId: string) => {
-    await onSendCommand(CommandType.TASK_ASSIGN, { taskId, agentId }, taskId);
+    await runAction(`assign-${taskId}`, () =>
+      onSendCommand(CommandType.TASK_ASSIGN, { taskId, agentId }, taskId)
+    );
   };
 
   const handlePauseAgent = async (agentId: string) => {
-    await onSendCommand(CommandType.AGENT_PAUSE, { agentId }, agentId);
+    await runAction(`pause-${agentId}`, () =>
+      onSendCommand(CommandType.AGENT_PAUSE, { agentId }, agentId)
+    );
   };
 
   const handleResumeAgent = async (agentId: string) => {
-    await onSendCommand(CommandType.AGENT_RESUME, { agentId }, agentId);
+    await runAction(`resume-${agentId}`, () =>
+      onSendCommand(CommandType.AGENT_RESUME, { agentId }, agentId)
+    );
   };
 
   const handleAcceptApproval = async (approvalId: string) => {
-    await onSendCommand(CommandType.APPROVAL_ACCEPT, { approvalId }, approvalId);
+    await runAction(`accept-${approvalId}`, () =>
+      onSendCommand(CommandType.APPROVAL_ACCEPT, { approvalId }, approvalId)
+    );
   };
 
   const handleRejectApproval = async (approvalId: string) => {
-    await onSendCommand(
-      CommandType.APPROVAL_REJECT,
-      { approvalId, reason: "用户拒绝" },
-      approvalId
+    await runAction(`reject-${approvalId}`, () =>
+      onSendCommand(
+        CommandType.APPROVAL_REJECT,
+        { approvalId, reason: "用户拒绝" },
+        approvalId
+      )
     );
   };
 
   const handleOpenArtifact = async (artifactId: string) => {
-    await onSendCommand(CommandType.ARTIFACT_OPEN, { artifactId }, artifactId);
+    await runAction(`open-${artifactId}`, () =>
+      onSendCommand(CommandType.ARTIFACT_OPEN, { artifactId }, artifactId)
+    );
     setSelectedArtifact(artifactId);
   };
 
@@ -125,9 +161,17 @@ export const ControlPanel: FC<ControlPanelProps> = ({
           value={taskDesc}
           onChange={(e) => setTaskDesc(e.target.value)}
         />
-        <button style={styles.button} onClick={handleCreateTask}>
+        <button
+          style={styles.button}
+          onClick={handleCreateTask}
+          disabled={!isSupported(CommandType.TASK_CREATE)}
+          title={isSupported(CommandType.TASK_CREATE) ? undefined : "Adapter does not support task.create"}
+        >
           创建任务
         </button>
+        {actionErrors["create-task"] && (
+          <div style={styles.actionError}>{actionErrors["create-task"]}</div>
+        )}
       </div>
 
       {/* Agent 列表 */}
@@ -152,18 +196,32 @@ export const ControlPanel: FC<ControlPanelProps> = ({
               <button
                 style={styles.smallButton}
                 onClick={() => handlePauseAgent(agent.agentId)}
-                disabled={agent.status === "paused" || agent.status === "offline"}
+                disabled={
+                  agent.status === "paused" ||
+                  agent.status === "offline" ||
+                  !isSupported(CommandType.AGENT_PAUSE)
+                }
+                title={isSupported(CommandType.AGENT_PAUSE) ? undefined : "Unsupported by adapter"}
               >
                 暂停
               </button>
               <button
                 style={styles.smallButton}
                 onClick={() => handleResumeAgent(agent.agentId)}
-                disabled={agent.status !== "paused"}
+                disabled={
+                  agent.status !== "paused" ||
+                  !isSupported(CommandType.AGENT_RESUME)
+                }
+                title={isSupported(CommandType.AGENT_RESUME) ? undefined : "Unsupported by adapter"}
               >
                 恢复
               </button>
             </div>
+            {(actionErrors[`pause-${agent.agentId}`] || actionErrors[`resume-${agent.agentId}`]) && (
+              <div style={styles.actionError}>
+                {actionErrors[`pause-${agent.agentId}`] ?? actionErrors[`resume-${agent.agentId}`]}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -187,7 +245,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 <span style={{ color: "#ff6666" }}>阻塞: {task.blockedReason}</span>
               )}
             </div>
-            {task.status === "created" && (
+            {task.status === "created" && isSupported(CommandType.TASK_ASSIGN) && (
               <div style={styles.buttonRow}>
                 {projection.agents
                   .filter((a) => a.role === "worker" && a.status === "idle")
@@ -201,6 +259,9 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                     </button>
                   ))}
               </div>
+            )}
+            {actionErrors[`assign-${task.taskId}`] && (
+              <div style={styles.actionError}>{actionErrors[`assign-${task.taskId}`]}</div>
             )}
           </div>
         ))}
@@ -226,16 +287,25 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 <button
                   style={{ ...styles.smallButton, backgroundColor: "#2a5a2a" }}
                   onClick={() => handleAcceptApproval(approval.approvalId)}
+                  disabled={!isSupported(CommandType.APPROVAL_ACCEPT)}
+                  title={isSupported(CommandType.APPROVAL_ACCEPT) ? undefined : "Unsupported by adapter"}
                 >
                   批准
                 </button>
                 <button
                   style={{ ...styles.smallButton, backgroundColor: "#5a2a2a" }}
                   onClick={() => handleRejectApproval(approval.approvalId)}
+                  disabled={!isSupported(CommandType.APPROVAL_REJECT)}
+                  title={isSupported(CommandType.APPROVAL_REJECT) ? undefined : "Unsupported by adapter"}
                 >
                   拒绝
                 </button>
               </div>
+              {(actionErrors[`accept-${approval.approvalId}`] || actionErrors[`reject-${approval.approvalId}`]) && (
+                <div style={styles.actionError}>
+                  {actionErrors[`accept-${approval.approvalId}`] ?? actionErrors[`reject-${approval.approvalId}`]}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -264,6 +334,8 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 <button
                   style={styles.smallButton}
                   onClick={() => handleOpenArtifact(art.artifactId)}
+                  disabled={!isSupported(CommandType.ARTIFACT_OPEN)}
+                  title={isSupported(CommandType.ARTIFACT_OPEN) ? undefined : "Unsupported by adapter"}
                 >
                   查看
                 </button>
@@ -273,6 +345,9 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                   <p>Artifact URI: {art.artifactId}</p>
                   <p>（Mock 内容 — 实际内容需通过 URI 获取）</p>
                 </div>
+              )}
+              {actionErrors[`open-${art.artifactId}`] && (
+                <div style={styles.actionError}>{actionErrors[`open-${art.artifactId}`]}</div>
               )}
             </div>
           ))}
@@ -412,6 +487,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 3,
     fontSize: 11,
     color: "#aaaaaa",
+  },
+  actionError: {
+    marginTop: 6,
+    padding: "4px 6px",
+    backgroundColor: "#3a1a1a",
+    border: "1px solid #5a2a2a",
+    borderRadius: 3,
+    fontSize: 11,
+    color: "#ff8888",
   },
 };
 
