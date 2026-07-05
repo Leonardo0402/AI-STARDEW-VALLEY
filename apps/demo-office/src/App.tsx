@@ -1,19 +1,17 @@
 /**
  * App — demo-office 的根组件。
  *
- * 布局：
- * ┌──────────────────────────────┬──────────────────┐
- * │  像素空间视图 / 列表视图       │  ControlPanel    │
- * │  （可切换）                    │                  │
- * └──────────────────────────────┴──────────────────┘
- *
- * 核心规则：
- * - 像素视图只消费 OfficeProjection
- * - 列表视图同样只消费 OfficeProjection（普通 Dashboard 对照）
- * - ControlPanel 通过 CommandGateway 发命令
- * - UI 卸载不影响 Runtime（PixelOfficeScene.destroy 不影响 adapter）
+ * 新布局（Swarm Office shell）：
+ * ┌──────────────────────────────────────┬──────────────────┐
+ * │ status strip                         │                  │
+ * ├──────────────────────────────────────┴──────────────────┤
+ * │ header (brand · mode switcher · view / motion toggles)   │
+ * ├──────────────────────────────────────┬──────────────────┤
+ * │  像素空间 / 列表视图 / Focus 指示器    │  ControlPanel    │
+ * │                                       │                  │
+ * └──────────────────────────────────────┴──────────────────┘
  */
-import { useState, useEffect, useRef, type FC, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo, type FC, type ReactNode } from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
 import type { AdapterCapabilities } from "@agent-office/protocol";
 import {
@@ -41,6 +39,12 @@ interface AppProps {
 
 type ViewMode = "pixel" | "list";
 
+const EXPERIENCE_MODES: ExperienceMode[] = ["command", "focus", "debrief"];
+
+function formatModeLabel(mode: ExperienceMode): string {
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+
 export const App: FC<AppProps> = ({
   session,
   store,
@@ -58,13 +62,14 @@ export const App: FC<AppProps> = ({
   );
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("command");
   const [view, setView] = useState<ViewMode>("pixel");
+  const [reduceMotion, setReduceMotion] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PixelOfficeScene | null>(null);
 
   // 初始化 PixelOfficeScene
   useEffect(() => {
     if (view !== "pixel" || !canvasRef.current) return;
-    if (sceneRef.current) return; // 已初始化
+    if (sceneRef.current) return;
 
     const scene = new PixelOfficeScene(canvasRef.current);
     sceneRef.current = scene;
@@ -85,17 +90,24 @@ export const App: FC<AppProps> = ({
     }
   }, [projection, view]);
 
-  // Focus Mode 下隐藏像素视图（极简指示器）
+  const lastEvent = useMemo(() => {
+    const event = eventLog[eventLog.length - 1];
+    if (!event) return null;
+    return { type: event.type, timestamp: event.occurredAt };
+  }, [eventLog]);
+
   const showFullView = experienceMode !== "focus";
 
   return (
-    <div style={styles.root}>
+    <div className={`app-shell ${reduceMotion ? "reduce-motion" : ""}`}>
       <StatusStrip
         mode={mode}
         runtimeId={runtimeId}
         sessionState={sessionState}
         diagnostics={diagnostics}
         lastError={errors.length > 0 ? errors[errors.length - 1] : null}
+        lastEvent={lastEvent}
+        retryable={false}
         onResync={() => {
           session.resynchronize().catch((err) =>
             console.error("[App] resync failed:", err)
@@ -105,42 +117,59 @@ export const App: FC<AppProps> = ({
           window.location.reload();
         }}
       />
-      {/* 顶部工具栏 */}
-      <div style={styles.topbar}>
-        <span style={styles.title}>AI-像素 Agent Office</span>
-        <span style={styles.subtitle}>垂直切片 v1 · {mode === "mock" ? "Mock" : "Reference Swarm (HTTP/SSE)"}</span>
-        <div style={styles.spacer} />
-        <div style={styles.viewSwitch}>
+
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand__logo" aria-hidden="true" />
+          <span>Swarm Office</span>
+        </div>
+
+        <div className="mode-switcher" role="tablist" aria-label="Experience mode">
+          {EXPERIENCE_MODES.map((m) => (
+            <button
+              key={m}
+              className={`mode-switcher__btn ${experienceMode === m ? "mode-switcher__btn--active" : ""}`}
+              role="tab"
+              aria-selected={experienceMode === m}
+              onClick={() => setExperienceMode(m)}
+            >
+              {formatModeLabel(m)}
+            </button>
+          ))}
+        </div>
+
+        <div className="header-actions">
           <button
-            style={{
-              ...styles.viewBtn,
-              ...(view === "pixel" ? styles.viewBtnActive : {}),
-            }}
+            className={`icon-btn ${view === "pixel" ? "icon-btn--active" : ""}`}
+            aria-pressed={view === "pixel"}
             onClick={() => setView("pixel")}
           >
             像素空间
           </button>
           <button
-            style={{
-              ...styles.viewBtn,
-              ...(view === "list" ? styles.viewBtnActive : {}),
-            }}
+            className={`icon-btn ${view === "list" ? "icon-btn--active" : ""}`}
+            aria-pressed={view === "list"}
             onClick={() => setView("list")}
           >
             列表视图
           </button>
+          <button
+            className={`icon-btn ${reduceMotion ? "icon-btn--active" : ""}`}
+            aria-pressed={reduceMotion}
+            onClick={() => setReduceMotion((v) => !v)}
+          >
+            {reduceMotion ? "Motion off" : "Motion on"}
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* 主体 */}
-      <div style={styles.body}>
-        {/* 左侧：空间视图或列表视图 */}
-        <div style={styles.stage}>
+      <div className="app-body">
+        <div className="app-stage">
           {showFullView ? (
             view === "pixel" ? (
               <canvas
                 ref={canvasRef}
-                style={styles.canvas}
+                className="app-canvas"
                 width={800}
                 height={600}
               />
@@ -152,8 +181,7 @@ export const App: FC<AppProps> = ({
           )}
         </div>
 
-        {/* 右侧：控制面板 */}
-        <div style={styles.panel}>
+        <div className="app-panel">
           {demoControls}
           <ControlPanel
             projection={projection}
@@ -181,140 +209,30 @@ const FocusModeIndicator: FC<{ projection: ReturnType<typeof useOfficeState>["pr
   ).length;
 
   return (
-    <div style={styles.focusContainer}>
-      <h2 style={styles.focusTitle}>Focus Mode</h2>
-      <p style={styles.focusHint}>Agent 在后台继续工作，事件静默积压。</p>
-      <div style={styles.focusStats}>
-        <div style={styles.focusStat}>
-          <span style={styles.focusStatNum}>{pending}</span>
-          <span style={styles.focusStatLabel}>待审批</span>
+    <div className="focus-indicator">
+      <h2 className="focus-indicator__title">Focus Mode</h2>
+      <p className="focus-indicator__hint">Agent 在后台继续工作，事件静默积压。</p>
+      <div className="focus-indicator__stats">
+        <div className="focus-indicator__stat">
+          <span className="focus-indicator__num" style={{ color: "var(--success)" }}>
+            {pending}
+          </span>
+          <span className="focus-indicator__label">待审批</span>
         </div>
-        <div style={styles.focusStat}>
-          <span style={styles.focusStatNum}>{blocked}</span>
-          <span style={styles.focusStatLabel}>阻塞任务</span>
+        <div className="focus-indicator__stat">
+          <span className="focus-indicator__num" style={{ color: "var(--failure)" }}>
+            {blocked}
+          </span>
+          <span className="focus-indicator__label">阻塞任务</span>
         </div>
-        <div style={styles.focusStat}>
-          <span style={styles.focusStatNum}>{artifacts}</span>
-          <span style={styles.focusStatLabel}>产物</span>
+        <div className="focus-indicator__stat">
+          <span className="focus-indicator__num" style={{ color: "var(--info)" }}>
+            {artifacts}
+          </span>
+          <span className="focus-indicator__label">产物</span>
         </div>
       </div>
-      <p style={styles.focusHint}>切换到 Command 或 Debrief 模式查看详情。</p>
+      <p className="focus-indicator__hint">切换到 Command 或 Debrief 模式查看详情。</p>
     </div>
   );
-};
-
-// ─── 样式 ────────────────────────────────────────────────────
-const styles: Record<string, React.CSSProperties> = {
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
-    height: "100vh",
-    backgroundColor: "#1a1a2e",
-  },
-  topbar: {
-    display: "flex",
-    alignItems: "center",
-    padding: "8px 16px",
-    backgroundColor: "#161623",
-    borderBottom: "1px solid #333",
-    gap: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#88ccff",
-  },
-  subtitle: {
-    fontSize: 11,
-    color: "#666",
-  },
-  spacer: {
-    flex: 1,
-  },
-  viewSwitch: {
-    display: "flex",
-    gap: 4,
-  },
-  viewBtn: {
-    padding: "4px 12px",
-    backgroundColor: "#2a2a3e",
-    color: "#aaa",
-    border: "1px solid #444",
-    borderRadius: 3,
-    cursor: "pointer",
-    fontSize: 12,
-    fontFamily: "monospace",
-  },
-  viewBtnActive: {
-    backgroundColor: "#4488cc",
-    color: "#fff",
-    borderColor: "#66aaff",
-  },
-  body: {
-    display: "flex",
-    flex: 1,
-    overflow: "hidden",
-  },
-  stage: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#111122",
-    overflow: "auto",
-    padding: 12,
-  },
-  canvas: {
-    border: "1px solid #333",
-    backgroundColor: "#1a1a2e",
-    maxWidth: "100%",
-    maxHeight: "100%",
-  },
-  panel: {
-    width: 420,
-    minWidth: 360,
-    maxWidth: 480,
-    borderLeft: "1px solid #333",
-    backgroundColor: "#1e1e2e",
-    overflowY: "auto",
-  },
-  focusContainer: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    padding: 24,
-  },
-  focusTitle: {
-    fontSize: 22,
-    color: "#88ccff",
-    margin: 0,
-  },
-  focusHint: {
-    fontSize: 12,
-    color: "#888",
-    margin: 0,
-  },
-  focusStats: {
-    display: "flex",
-    gap: 24,
-    margin: "16px 0",
-  },
-  focusStat: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 4,
-  },
-  focusStatNum: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  focusStatLabel: {
-    fontSize: 11,
-    color: "#888",
-  },
 };

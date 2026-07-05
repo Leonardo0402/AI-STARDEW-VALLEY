@@ -1,0 +1,414 @@
+/**
+ * Swarm Office — Global design tokens and utility classes.
+ * Direction: Cozy Pixel Operations Room.
+ */
+
+:root {
+  /* Color */
+  --base-900: #131014;
+  --base-800: #1a181c;
+  --base-700: #25222a;
+  --base-600: #322e36;
+  --base-500: #4a444e;
+  --base-400: #7d7682;
+  --base-300: #b8b0bc;
+  --base-100: #f2f0eb;
+
+  --warm-700: #3d3530;
+  --warm-500: #6b5f56;
+  --warm-300: #a89788;
+
+  --info: #7ec0c8;
+  --info-dim: #4a7c82;
+  --urgency: #e6a85c;
+  --urgency-dim: #8f6232;
+  --success: #7db68a;
+  --failure: #c96a5b;
+  --failure-dim: #7a3d34;
+  --paused: #7a9cc6;
+
+  --glow-info: rgba(126, 192, 200, 0.35);
+  --glow-urgency: rgba(230, 168, 92, 0.45);
+  --glow-failure: rgba(201, 106, 91, 0.45);
+
+  /* Typography */
+  --font-ui: Inter, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+  --font-pixel: "Press Start 2P", monospace;
+
+  /* Layout */
+  --panel-width: 420px;
+  --status-height: 28px;
+  --header-height: 44px;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* ─── App Shell ───────────────────────────────────────────── */
+
+.app-shell {
+  display: grid;
+  grid-template-rows: var(--status-height) var(--header-height) 1fr;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--base-800);
+  color: var(--base-100);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* ─── Status Strip ────────────────────────────────────────── */
+
+.status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--status-height);
+  padding: 0 var(--space-md);
+  background: var(--base-900);
+  border-bottom: 1px solid #231f26;
+  font-size: 11px;
+  color: var(--base-400);
+}
+
+.status-strip--urgency {
+  background: var(--urgency-dim);
+  border-bottom-color: var(--urgency);
+  color: var(--base-100);
+}
+
+.status-strip--failure {
+  background: var(--failure-dim);
+  border-bottom-color: var(--failure);
+  color: var(--base-100);
+}
+
+.status-left,
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: var(--base-800);
+  border: 1px solid var(--base-500);
+  border-radius: 100px;
+  white-space: nowrap;
+}
+
+.status-strip--failure .status-pill,
+.status-strip--urgency .status-pill {
+  background: rgba(19, 16, 20, 0.45);
+  border-color: rgba(19, 16, 20, 0.6);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot--success {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+.status-dot--info {
+  background: var(--info);
+  box-shadow: 0 0 6px var(--info);
+}
+
+.status-dot--urgency {
+  background: var(--urgency);
+  box-shadow: 0 0 6px var(--urgency);
+}
+
+.status-dot--failure {
+  background: var(--failure);
+  box-shadow: 0 0 6px var(--failure);
+}
+
+.status-dot--dim {
+  background: var(--base-500);
+}
+
+.status-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-data {
+  font-family: var(--font-mono);
+  color: var(--base-300);
+}
+
+.status-error-code {
+  font-family: var(--font-mono);
+  color: var(--failure);
+  font-weight: 700;
+}
+
+.status-message {
+  color: var(--base-300);
+}
+
+.status-action {
+  padding: 2px 8px;
+  background: var(--base-700);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-sm);
+  color: var(--base-100);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.status-strip--failure .status-action {
+  background: var(--failure);
+  border-color: var(--failure);
+  color: var(--base-100);
+}
+
+.status-strip--urgency .status-action {
+  background: var(--urgency);
+  border-color: var(--urgency);
+  color: var(--base-900);
+}
+
+.status-action:hover {
+  filter: brightness(1.08);
+}
+
+/* ─── App Header ──────────────────────────────────────────── */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--header-height);
+  padding: 0 var(--space-md);
+  background: var(--base-800);
+  border-bottom: 1px solid var(--base-500);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--base-100);
+}
+
+.brand__logo {
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(135deg, var(--info), var(--urgency));
+  border-radius: var(--radius-sm);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ─── Mode Switcher ───────────────────────────────────────── */
+
+.mode-switcher {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--base-700);
+  border-radius: var(--radius-md);
+}
+
+.mode-switcher__btn {
+  border: none;
+  background: transparent;
+  color: var(--base-400);
+  padding: 5px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.mode-switcher__btn:hover {
+  background: var(--base-700);
+  color: var(--base-100);
+}
+
+.mode-switcher__btn--active {
+  background: var(--base-600);
+  color: var(--base-100);
+}
+
+.mode-switcher__btn:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+/* ─── Icon Button ─────────────────────────────────────────── */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--base-700);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-sm);
+  color: var(--base-300);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.icon-btn:hover {
+  background: var(--base-600);
+  color: var(--base-100);
+}
+
+.icon-btn--active {
+  background: var(--base-600);
+  color: var(--base-100);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+/* ─── App Body ────────────────────────────────────────────── */
+
+.app-body {
+  display: grid;
+  grid-template-columns: 1fr var(--panel-width);
+  overflow: hidden;
+}
+
+.app-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #161418;
+  overflow: hidden;
+}
+
+.app-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--base-500);
+  background: var(--base-800);
+}
+
+.app-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--base-800);
+  border-left: 1px solid var(--base-500);
+  overflow-y: auto;
+  min-width: 360px;
+}
+
+/* ─── Focus Mode Indicator ────────────────────────────────── */
+
+.focus-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  text-align: center;
+}
+
+.focus-indicator__title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--info);
+  margin: 0;
+}
+
+.focus-indicator__hint {
+  font-size: 12px;
+  color: var(--base-400);
+  margin: 0;
+}
+
+.focus-indicator__stats {
+  display: flex;
+  gap: var(--space-lg);
+}
+
+.focus-indicator__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.focus-indicator__num {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--base-100);
+}
+
+.focus-indicator__label {
+  font-size: 11px;
+  color: var(--base-400);
+}
+
+/* ─── Reduced Motion ──────────────────────────────────────── */
+
+.reduce-motion,
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* ─── Base resets for shell widgets ───────────────────────── */
+
+button {
+  font-family: inherit;
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+/* ─── Responsive panel shrink ─────────────────────────────── */
+
+@media (max-width: 1365px) {
+  :root {
+    --panel-width: 360px;
+  }
+}
+
+@media (min-width: 1366px) and (max-width: 1439px) {
+  :root {
+    --panel-width: 380px;
+  }
+}
