@@ -10,6 +10,43 @@ import type {
 } from "./types.js";
 import { computePhase } from "./clock.js";
 
+const PHASE_BOUNDARIES = [360, 720, 1080, 1260];
+
+function buildPhaseChangedEvents(
+  fromMinute: number,
+  toMinute: number,
+  day: number,
+  worldId: string,
+  causationId: string,
+  nextSequence: () => number,
+  now: string
+): LifeSimEvent[] {
+  const events: LifeSimEvent[] = [];
+  for (const boundary of PHASE_BOUNDARIES) {
+    if (fromMinute < boundary && boundary <= toMinute) {
+      const seq = nextSequence();
+      events.push({
+        eventId: `evt-phase-${seq}`,
+        worldId,
+        lifeSimSequence: seq,
+        type: "world.phase_changed",
+        occurredAt: now,
+        worldMinute: boundary,
+        day,
+        causationId,
+        runtimeEventId: null,
+        runtimeSequence: null,
+        payload: {
+          oldPhase: computePhase(boundary - 1),
+          newPhase: computePhase(boundary),
+          minute: boundary,
+        },
+      });
+    }
+  }
+  return events;
+}
+
 export interface WorldReduceOutput {
   snapshot: LifeSimSnapshot;
   events: LifeSimEvent[];
@@ -111,7 +148,15 @@ export function reduceWorldCommand(
         phase: computePhase(targetMinute),
         updatedAt: now,
       };
-      const events: LifeSimEvent[] = [];
+      const events = buildPhaseChangedEvents(
+        clock.minuteOfDay,
+        targetMinute,
+        clock.day,
+        snapshot.worldId,
+        command.commandId,
+        nextSequence,
+        now
+      );
       const baseSeq = nextSequence();
       events.push({
         eventId: `evt-advance-${baseSeq}`,
@@ -124,7 +169,7 @@ export function reduceWorldCommand(
         causationId: command.commandId,
         runtimeEventId: null,
         runtimeSequence: null,
-        payload: { fromMinute: clock.minuteOfDay, toMinute: targetMinute, minutes: delta },
+        payload: { oldMinute: clock.minuteOfDay, newMinute: targetMinute, day: clock.day },
       });
       const nextSnapshot: LifeSimSnapshot = { ...snapshot, worldClock: nextClock };
       return {
@@ -207,7 +252,15 @@ export function reduceWorldCommand(
         phase: computePhase(targetMinute),
         updatedAt: now,
       };
-      const events: LifeSimEvent[] = [];
+      const events = buildPhaseChangedEvents(
+        clock.minuteOfDay,
+        targetMinute,
+        clock.day,
+        snapshot.worldId,
+        command.commandId,
+        nextSequence,
+        now
+      );
       const baseSeq = nextSequence();
       events.push({
         eventId: `evt-run-to-eod-${baseSeq}`,
@@ -220,7 +273,7 @@ export function reduceWorldCommand(
         causationId: command.commandId,
         runtimeEventId: null,
         runtimeSequence: null,
-        payload: { fromMinute: clock.minuteOfDay, toMinute: targetMinute, minutes: delta },
+        payload: { oldMinute: clock.minuteOfDay, newMinute: targetMinute, day: clock.day },
       });
       const nextSnapshot: LifeSimSnapshot = { ...snapshot, worldClock: nextClock };
       return {

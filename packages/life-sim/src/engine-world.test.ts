@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createLifeSimEngine } from "./engine.js";
-import { InMemoryLifeSimStore } from "./store.js";
+import { createEmptySnapshot, InMemoryLifeSimStore } from "./store.js";
 import type { LifeSimCommand, LifeSimEngineConfig } from "./types.js";
 
 const config: LifeSimEngineConfig = {
@@ -23,6 +23,16 @@ function makeCommand(type: string, payload: unknown): LifeSimCommand {
     worldId: config.worldId,
     payload,
   };
+}
+
+async function createEngineWithSpeed(speed: number) {
+  const store = new InMemoryLifeSimStore();
+  const snapshot = createEmptySnapshot(config, fixedNow());
+  snapshot.worldClock.status = "running";
+  snapshot.worldClock.speed = speed;
+  snapshot.worldClock.day = 1;
+  store.set(snapshot, [], new Map());
+  return createLifeSimEngine(config, { now: fixedNow, store });
 }
 
 describe("world commands", () => {
@@ -91,5 +101,78 @@ describe("world commands", () => {
     expect(engine.getSnapshot().snapshot.worldClock.minuteOfDay).toBe(config.endOfDayMinute);
     expect(result.events.map((e) => e.type)).toContain("world.time_advanced");
     expect(result.events.map((e) => e.type)).not.toContain("world.day_ending");
+  });
+
+  it("rejects start_day after end_day until the day is reset", async () => {
+    await engine.execute(makeCommand("world.start_day", {}));
+    await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
+    await engine.execute(makeCommand("world.end_day", {}));
+    const result = await engine.execute(makeCommand("world.start_day", { day: 2 }));
+    expect(result.status).toBe("rejected");
+    expect(result.error?.code).toBe("day_already_started");
+  });
+
+  it("rejects advance_time in real-time mode", async () => {
+    const rtEngine = await createEngineWithSpeed(10);
+    const result = await rtEngine.execute(makeCommand("world.advance_time", { minutes: 10 }));
+    expect(result.status).toBe("rejected");
+    expect(result.error?.code).toBe("advance_not_allowed_in_realtime");
+  });
+
+  it.each([0, -1, 1.5])("rejects advance_time with invalid_time for minutes=%s", async (minutes) => {
+    await engine.execute(makeCommand("world.start_day", {}));
+    const result = await engine.execute(makeCommand("world.advance_time", { minutes }));
+    expect(result.status).toBe("rejected");
+    expect(result.error?.code).toBe("invalid_time");
+  });
+
+  it("recomputes capabilities after accepted commands", async () => {
+    expect(engine.getCapabilities()).toEqual({
+      world: { startDay: true, pause: false, resume: false, endDay: false, advanceTime: false },
+      schedule: { override: false, clearOverride: false },
+      clock: { mode: "manual", maxSpeed: 0 },
+    });
+
+    await engine.execute(makeCommand("world.start_day", {}));
+    expect(engine.getCapabilities().world).toEqual({
+      startDay: false,
+      pause: true,
+      resume: false,
+      endDay: false,
+      advanceTime: true,
+    });
+
+    await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
+    expect(engine.getCapabilities().world).toEqual({
+      startDay: false,
+      pause: true,
+      resume: false,
+      endDay: true,
+      advanceTime: true,
+    });
+
+    await engine.execute(makeCommand("world.end_day", {}));
+    expect(engine.getCapabilities().world).toEqual({
+      startDay: false,
+      pause: false,
+      resume: false,
+      endDay: false,
+      advanceTime: false,
+    });
+    expect(engine.getCapabilities().clock).toEqual({ mode: "manual", maxSpeed: 0 });
+  });
+
+  it("emits phase_changed events for large advances crossing boundaries", async () => {
+    await engine.execute(makeCommand("world.start_day", {}));
+    const result = await engine.execute(makeCommand("world.advance_time", { minutes: 630 }));
+    expect(result.status).toBe("accepted");
+    expect(result.events.map((e) => e.type)).toEqual([
+      "world.phase_changed",
+      "world.phase_changed",
+      "world.time_advanced",
+    ]);
+    expect(result.events[0].payload).toEqual({ oldPhase: "morning", newPhase: "afternoon", minute: 720 });
+    expect(result.events[1].payload).toEqual({ oldPhase: "afternoon", newPhase: "evening", minute: 1080 });
+    expect(result.events[2].payload).toEqual({ oldMinute: 480, newMinute: 1110, day: 1 });
   });
 });

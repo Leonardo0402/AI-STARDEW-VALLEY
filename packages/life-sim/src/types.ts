@@ -153,11 +153,14 @@ export interface LifeSimCapabilities {
     resume: boolean;
     endDay: boolean;
     advanceTime: boolean;
-    runToEndOfDay: boolean;
   };
   schedule: {
     override: boolean;
     clearOverride: boolean;
+  };
+  clock: {
+    mode: "manual" | "realtime";
+    maxSpeed: number;
   };
 }
 
