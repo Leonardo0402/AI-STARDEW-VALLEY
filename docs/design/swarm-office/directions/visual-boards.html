@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Swarm Office — Phase 2 Visual Directions</title>
+  <style>
+    :root {
+      --bg: #121016;
+      --text: #f2f0eb;
+      --muted: #9f9ba8;
+      --line: #2a2630;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+      line-height: 1.55;
+    }
+    header {
+      padding: 32px 40px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    header h1 { margin: 0 0 6px; font-size: 24px; }
+    header p { margin: 0; color: var(--muted); }
+    main { padding: 24px 40px 60px; }
+    .direction {
+      margin: 32px 0 56px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .direction-header {
+      padding: 18px 24px;
+      background: #1a171e;
+      border-bottom: 1px solid var(--line);
+    }
+    .direction-header h2 { margin: 0 0 4px; font-size: 18px; }
+    .direction-header .tagline { color: var(--muted); font-size: 13px; }
+    .board {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      min-height: 360px;
+    }
+    .canvas { position: relative; overflow: hidden; }
+    .panel { padding: 18px; }
+
+    /* Direction 1 — Cozy */
+    .cozy-bg { background: #1a181c; }
+    .cozy-room { position: absolute; border-radius: 8px; border: 1px solid #3d3530; }
+    .cozy-room.command { top: 8%; left: 6%; width: 44%; height: 40%; background: #2a2528; }
+    .cozy-room.execution { top: 8%; right: 6%; width: 44%; height: 40%; background: #2b2621; }
+    .cozy-room.review { bottom: 8%; left: 6%; width: 44%; height: 40%; background: #262329; }
+    .cozy-room.approval { bottom: 8%; right: 6%; width: 44%; height: 40%; background: #28252a; }
+    .cozy-room::after {
+      content: attr(data-label);
+      position: absolute; top: 8px; left: 10px;
+      font-family: "Courier New", monospace; font-size: 10px; color: #c4b8a8;
+    }
+    .cozy-agent {
+      position: absolute; width: 24px; height: 32px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 8px; font-weight: 700; color: #1a181c;
+    }
+    .cozy-agent.orchestrator { background: #7ec0c8; }
+    .cozy-agent.worker { background: #e6a85c; }
+    .cozy-agent.reviewer { background: #b8a8d8; }
+    .cozy-panel { background: #25222a; color: #f2f0eb; }
+    .cozy-card { background: #2f292d; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 11px; }
+    .cozy-badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 9px; background: #3d3530; }
+
+    /* Direction 2 — Tactical */
+    .tac-bg { background: #0d0d12; }
+    .tac-grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(78,205,196,0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(78,205,196,0.08) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .tac-zone { position: absolute; border: 1px solid #2a3a4a; border-radius: 2px; background: rgba(20,22,32,0.8); }
+    .tac-zone::after {
+      content: attr(data-label);
+      position: absolute; top: 6px; left: 8px;
+      font-family: "JetBrains Mono", "Courier New", monospace; font-size: 9px; color: #4ecdc4; text-transform: uppercase;
+    }
+    .tac-zone.command { top: 8%; left: 6%; width: 44%; height: 40%; }
+    .tac-zone.execution { top: 8%; right: 6%; width: 44%; height: 40%; }
+    .tac-zone.review { bottom: 8%; left: 6%; width: 44%; height: 40%; }
+    .tac-zone.approval { bottom: 8%; right: 6%; width: 44%; height: 40%; }
+    .tac-agent {
+      position: absolute; width: 20px; height: 28px;
+      background: #1e1e2a; border: 1px solid;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 7px; font-weight: 700;
+    }
+    .tac-agent.orchestrator { border-color: #4ecdc4; color: #4ecdc4; }
+    .tac-agent.worker { border-color: #6eeb83; color: #6eeb83; }
+    .tac-agent.reviewer { border-color: #b8a8ff; color: #b8a8ff; }
+    .tac-panel { background: #13131a; color: #e8e8f0; font-family: "JetBrains Mono", "Courier New", monospace; }
+    .tac-card { background: #1e1e2a; border: 1px solid #3a3a4a; padding: 8px; margin-bottom: 8px; font-size: 10px; }
+    .tac-badge { display: inline-block; padding: 1px 5px; border: 1px solid #3a3a4a; font-size: 8px; }
+
+    /* Direction 3 — Studio */
+    .studio-bg { background: #f7f6f3; }
+    .studio-room { position: absolute; border-radius: 10px; border: 1px solid #e0ded6; background: #ffffff; }
+    .studio-room.command { top: 8%; left: 6%; width: 44%; height: 40%; }
+    .studio-room.execution { top: 8%; right: 6%; width: 44%; height: 40%; }
+    .studio-room.review { bottom: 8%; left: 6%; width: 44%; height: 40%; }
+    .studio-room.approval { bottom: 8%; right: 6%; width: 44%; height: 40%; }
+    .studio-room::after {
+      content: attr(data-label);
+      position: absolute; top: 8px; left: 10px;
+      font-size: 10px; color: #6c6a63; font-weight: 600;
+    }
+    .studio-agent {
+      position: absolute; width: 22px; height: 30px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 8px; font-weight: 700; color: #fff;
+    }
+    .studio-agent.orchestrator { background: #2a9d8f; }
+    .studio-agent.worker { background: #e9c46a; color: #3d3b36; }
+    .studio-agent.reviewer { background: #9b5de5; }
+    .studio-panel { background: #eeeeea; color: #2b2a26; }
+    .studio-card { background: #ffffff; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .studio-badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 9px; background: #e9c46a; color: #3d3b36; }
+
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
+    .legend { margin-top: 18px; padding: 14px; background: rgba(0,0,0,0.15); border-radius: 8px; font-size: 11px; }
+    .legend h3 { margin: 0 0 6px; font-size: 12px; }
+    .legend ul { margin: 0; padding-left: 16px; color: var(--muted); }
+    .direction.studio .legend { background: rgba(0,0,0,0.04); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Swarm Office — Phase 2 Visual Directions</h1>
+    <p>Three distinct visual directions for Issue #12. Each board shows the same functional state (Command mode, one running task, one pending approval) rendered in a different visual system.</p>
+  </header>
+
+  <main>
+    <!-- Direction 1 -->
+    <section class="direction">
+      <div class="direction-header">
+        <h2>Direction 1 — Cozy Pixel Operations Room</h2>
+        <div class="tagline">Warm, handcrafted, human-scale workspace. Dark warm base with soft amber and cyan accents.</div>
+      </div>
+      <div class="board">
+        <div class="canvas cozy-bg">
+          <div class="cozy-room command" data-label="command"></div>
+          <div class="cozy-room execution" data-label="execution"></div>
+          <div class="cozy-room review" data-label="review"></div>
+          <div class="cozy-room approval" data-label="approval/delivery"></div>
+          <div class="cozy-agent orchestrator" style="top:20%;left:22%">O</div>
+          <div class="cozy-agent worker" style="top:18%;right:22%">W</div>
+          <div class="cozy-agent reviewer" style="bottom:22%;left:24%">R</div>
+          <div class="cozy-agent worker" style="bottom:20%;right:20%">W</div>
+          <!-- approval bell -->
+          <div style="position:absolute;top:6%;right:18%;width:12px;height:12px;background:#e6a85c;border-radius:50%;animation:pulse 2s infinite"></div>
+        </div>
+        <div class="panel cozy-panel">
+          <div class="section-title">Command Panel</div>
+          <div class="cozy-card"><strong>Mode</strong><br><span class="cozy-badge">Command</span></div>
+          <div class="cozy-card"><strong>Create Task</strong><br>Write report · <span class="cozy-badge" style="background:#7db68a">running</span></div>
+          <div class="cozy-card"><strong>Pending Approval</strong><br>Review deliverable · <span class="cozy-badge" style="background:#e6a85c">waiting</span></div>
+          <div class="legend">
+            <h3>Character</h3>
+            <ul>
+              <li>Distinct agent sprites with role silhouettes</li>
+              <li>Room furniture and warm lighting</li>
+              <li>Breathing idle + small walk cycles</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Direction 2 -->
+    <section class="direction">
+      <div class="direction-header">
+        <h2>Direction 2 — Tactical Swarm Command Center</h2>
+        <div class="tagline">Dense operational hierarchy. Near-black base with electric cyan, amber, and red status colors.</div>
+      </div>
+      <div class="board">
+        <div class="canvas tac-bg">
+          <div class="tac-grid"></div>
+          <div class="tac-zone command" data-label="command"></div>
+          <div class="tac-zone execution" data-label="execution"></div>
+          <div class="tac-zone review" data-label="review"></div>
+          <div class="tac-zone approval" data-label="approval"></div>
+          <div class="tac-agent orchestrator" style="top:20%;left:22%">O</div>
+          <div class="tac-agent worker" style="top:18%;right:22%">W</div>
+          <div class="tac-agent reviewer" style="bottom:22%;left:24%">R</div>
+          <div class="tac-agent worker" style="bottom:20%;right:20%">W</div>
+          <div style="position:absolute;top:6%;right:18%;width:10px;height:10px;background:#ffb347;border-radius:2px;animation:pulse 1.5s infinite"></div>
+        </div>
+        <div class="panel tac-panel">
+          <div class="section-title">Command Panel</div>
+          <div class="tac-card">MODE: COMMAND</div>
+          <div class="tac-card">T-001 REPORT <span class="tac-badge" style="border-color:#6eeb83;color:#6eeb83">RUN</span></div>
+          <div class="tac-card">APR-002 REVIEW <span class="tac-badge" style="border-color:#ffb347;color:#ffb347">REQ</span></div>
+          <div class="legend">
+            <h3>Character</h3>
+            <ul>
+              <li>Silhouette agents with colored status halos</li>
+              <li>Dark grid, compact data, monospace</li>
+              <li>Motion trails and target reticles</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Direction 3 -->
+    <section class="direction studio">
+      <div class="direction-header" style="background:#f0efe9;border-color:#e0ded6">
+        <h2 style="color:#2b2a26">Direction 3 — Living Agent Studio</h2>
+        <div class="tagline" style="color:#6c6a63">Bright creative-lab environment. Off-white base with teal, goldenrod, and violet accents.</div>
+      </div>
+      <div class="board">
+        <div class="canvas studio-bg">
+          <div class="studio-room command" data-label="command"></div>
+          <div class="studio-room execution" data-label="execution"></div>
+          <div class="studio-room review" data-label="review"></div>
+          <div class="studio-room approval" data-label="approval/delivery"></div>
+          <div class="studio-agent orchestrator" style="top:20%;left:22%">O</div>
+          <div class="studio-agent worker" style="top:18%;right:22%">W</div>
+          <div class="studio-agent reviewer" style="bottom:22%;left:24%">R</div>
+          <div class="studio-agent worker" style="bottom:20%;right:20%">W</div>
+          <div style="position:absolute;top:6%;right:18%;width:12px;height:12px;background:#e9c46a;border-radius:50%;animation:pulse 2s infinite"></div>
+        </div>
+        <div class="panel studio-panel">
+          <div class="section-title" style="color:#6c6a63">Command Panel</div>
+          <div class="studio-card"><strong>Mode</strong> <span class="studio-badge">Command</span></div>
+          <div class="studio-card"><strong>Write report</strong><br><span style="color:#52b788">● running</span></div>
+          <div class="studio-card"><strong>Review deliverable</strong><br><span style="color:#c28e00">● waiting approval</span></div>
+          <div class="legend">
+            <h3>Character</h3>
+            <ul>
+              <li>Friendly agent sprites in a bright studio</li>
+              <li>Open-plan rooms with daylight feel</li>
+              <li>Sticky-note status badges</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <style>
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+  </style>
+</body>
+</html>

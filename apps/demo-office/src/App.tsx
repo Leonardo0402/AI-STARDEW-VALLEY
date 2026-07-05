@@ -1,19 +1,26 @@
 /**
  * App — demo-office 的根组件。
  *
- * 布局：
- * ┌──────────────────────────────┬──────────────────┐
- * │  像素空间视图 / 列表视图       │  ControlPanel    │
- * │  （可切换）                    │                  │
- * └──────────────────────────────┴──────────────────┘
- *
- * 核心规则：
- * - 像素视图只消费 OfficeProjection
- * - 列表视图同样只消费 OfficeProjection（普通 Dashboard 对照）
- * - ControlPanel 通过 CommandGateway 发命令
- * - UI 卸载不影响 Runtime（PixelOfficeScene.destroy 不影响 adapter）
+ * 新布局（Swarm Office shell）：
+ * ┌──────────────────────────────────────┬──────────────────┐
+ * │ status strip                         │                  │
+ * ├──────────────────────────────────────┴──────────────────┤
+ * │ header (brand · mode switcher · view / motion toggles)   │
+ * ├──────────────────────────────────────┬──────────────────┤
+ * │  像素空间 / 列表视图 / Focus 指示器    │  ControlPanel    │
+ * │                                       │                  │
+ * └──────────────────────────────────────┴──────────────────┘
  */
-import { useState, useEffect, useRef, type FC, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  type FC,
+  type ReactNode,
+  type KeyboardEvent,
+} from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
 import type { AdapterCapabilities } from "@agent-office/protocol";
 import {
@@ -23,32 +30,42 @@ import {
 } from "@agent-office/control-ui";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
+import { DebriefTimeline } from "./DebriefTimeline.js";
 import { StatusStrip } from "./StatusStrip.js";
-import type { DemoRuntimeMode } from "./runtime/types.js";
 
 interface AppProps {
   session: RuntimeSession;
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
-  mode: DemoRuntimeMode;
   /** Adapter capabilities — used to disable unsupported command buttons. */
   capabilities?: AdapterCapabilities;
   /** 演示层专用控件（如 DemoControls），由装配层 main.tsx 注入。
    *  App 本身不依赖任何 Mock 专用类型。 */
   demoControls?: ReactNode;
+  /** Whether the Runtime Composition can be rebuilt without a full page reload. */
+  retryable?: boolean;
+  /** Called when the user chooses Retry from the status strip. */
+  onRetry?: () => void;
 }
 
 type ViewMode = "pixel" | "list";
+
+const EXPERIENCE_MODES: ExperienceMode[] = ["command", "focus", "debrief"];
+
+function formatModeLabel(mode: ExperienceMode): string {
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
+}
 
 export const App: FC<AppProps> = ({
   session,
   store,
   gateway,
   runtimeId,
-  mode,
   capabilities,
   demoControls,
+  retryable = false,
+  onRetry,
 }) => {
   const { projection, eventLog, errors, sessionState, diagnostics, sendCommand } = useOfficeState(
     session,
@@ -58,15 +75,19 @@ export const App: FC<AppProps> = ({
   );
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("command");
   const [view, setView] = useState<ViewMode>("pixel");
+  const [reduceMotion, setReduceMotion] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PixelOfficeScene | null>(null);
+  const appBodyRef = useRef<HTMLDivElement>(null);
+  const modeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const lastManualViewRef = useRef<ViewMode>("pixel");
 
   // 初始化 PixelOfficeScene
   useEffect(() => {
     if (view !== "pixel" || !canvasRef.current) return;
-    if (sceneRef.current) return; // 已初始化
+    if (sceneRef.current) return;
 
-    const scene = new PixelOfficeScene(canvasRef.current);
+    const scene = new PixelOfficeScene(canvasRef.current, { reduceMotion });
     sceneRef.current = scene;
     scene.init(canvasRef.current).catch((err) => {
       console.error("[App] PixelOfficeScene 初始化失败：", err);
@@ -78,6 +99,68 @@ export const App: FC<AppProps> = ({
     };
   }, [view]);
 
+  // 将 reduceMotion 变更同步到已存在的场景
+  useEffect(() => {
+    sceneRef.current?.setReduceMotion?.(reduceMotion);
+  }, [reduceMotion]);
+
+  // 响应式：窄于 1024 px 自动切换到列表视图，恢复时还原上次手动选择的视图
+  useEffect(() => {
+    const el = appBodyRef.current;
+    if (!el) return;
+
+    let wasNarrow = el.getBoundingClientRect().width < 1024;
+    const update = (width: number) => {
+      const narrow = width < 1024;
+      if (narrow && !wasNarrow) {
+        setView("list");
+      } else if (!narrow && wasNarrow) {
+        setView(lastManualViewRef.current);
+      }
+      wasNarrow = narrow;
+    };
+
+    update(el.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect?.width ?? window.innerWidth;
+        update(width);
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+
+    const onResize = () => update(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const setManualView = useCallback((next: ViewMode) => {
+    lastManualViewRef.current = next;
+    setView(next);
+  }, []);
+
+  const handleModeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const buttons = modeButtonRefs.current.filter(Boolean) as HTMLButtonElement[];
+    const index = buttons.findIndex((b) => b === document.activeElement);
+    if (index === -1) return;
+
+    if (e.key === "ArrowRight") {
+      buttons[(index + 1) % buttons.length].focus();
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft") {
+      buttons[(index - 1 + buttons.length) % buttons.length].focus();
+      e.preventDefault();
+    } else if (e.key === "Home") {
+      buttons[0].focus();
+      e.preventDefault();
+    } else if (e.key === "End") {
+      buttons[buttons.length - 1].focus();
+      e.preventDefault();
+    }
+  };
+
   // 当 projection 变化时更新场景
   useEffect(() => {
     if (sceneRef.current && view === "pixel") {
@@ -85,17 +168,24 @@ export const App: FC<AppProps> = ({
     }
   }, [projection, view]);
 
-  // Focus Mode 下隐藏像素视图（极简指示器）
-  const showFullView = experienceMode !== "focus";
+  const lastEvent = useMemo(() => {
+    const event = eventLog[eventLog.length - 1];
+    if (!event) return null;
+    return { type: event.type, timestamp: event.occurredAt };
+  }, [eventLog]);
+
+  const isFocus = experienceMode === "focus";
+  const isDebrief = experienceMode === "debrief";
 
   return (
-    <div style={styles.root}>
+    <div className={`app-shell ${reduceMotion ? "reduce-motion" : ""}`}>
       <StatusStrip
-        mode={mode}
         runtimeId={runtimeId}
         sessionState={sessionState}
         diagnostics={diagnostics}
-        lastError={errors.length > 0 ? errors[errors.length - 1] : null}
+        lastEvent={lastEvent}
+        retryable={retryable}
+        onRetry={onRetry}
         onResync={() => {
           session.resynchronize().catch((err) =>
             console.error("[App] resync failed:", err)
@@ -105,62 +195,87 @@ export const App: FC<AppProps> = ({
           window.location.reload();
         }}
       />
-      {/* 顶部工具栏 */}
-      <div style={styles.topbar}>
-        <span style={styles.title}>AI-像素 Agent Office</span>
-        <span style={styles.subtitle}>垂直切片 v1 · {mode === "mock" ? "Mock" : "Reference Swarm (HTTP/SSE)"}</span>
-        <div style={styles.spacer} />
-        <div style={styles.viewSwitch}>
+
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand__logo" aria-hidden="true" />
+          <span>Swarm Office</span>
+        </div>
+
+        <div
+          className="mode-switcher"
+          role="tablist"
+          aria-label="Experience mode"
+          onKeyDown={handleModeKeyDown}
+        >
+          {EXPERIENCE_MODES.map((m, i) => (
+            <button
+              key={m}
+              ref={(el) => (modeButtonRefs.current[i] = el)}
+              className={`mode-switcher__btn ${experienceMode === m ? "mode-switcher__btn--active" : ""}`}
+              role="tab"
+              aria-selected={experienceMode === m}
+              onClick={() => setExperienceMode(m)}
+            >
+              {formatModeLabel(m)}
+            </button>
+          ))}
+        </div>
+
+        <div className="header-actions">
           <button
-            style={{
-              ...styles.viewBtn,
-              ...(view === "pixel" ? styles.viewBtnActive : {}),
-            }}
-            onClick={() => setView("pixel")}
+            className={`icon-btn ${view === "pixel" ? "icon-btn--active" : ""}`}
+            aria-pressed={view === "pixel"}
+            onClick={() => setManualView("pixel")}
           >
-            像素空间
+            Pixel
           </button>
           <button
-            style={{
-              ...styles.viewBtn,
-              ...(view === "list" ? styles.viewBtnActive : {}),
-            }}
-            onClick={() => setView("list")}
+            className={`icon-btn ${view === "list" ? "icon-btn--active" : ""}`}
+            aria-pressed={view === "list"}
+            onClick={() => setManualView("list")}
           >
-            列表视图
+            List
+          </button>
+          <button
+            className={`icon-btn ${reduceMotion ? "icon-btn--active" : ""}`}
+            aria-pressed={reduceMotion}
+            onClick={() => setReduceMotion((v) => !v)}
+          >
+            {reduceMotion ? "Motion off" : "Motion on"}
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* 主体 */}
-      <div style={styles.body}>
-        {/* 左侧：空间视图或列表视图 */}
-        <div style={styles.stage}>
-          {showFullView ? (
+      <div className="app-body" ref={appBodyRef}>
+        <div className={`app-stage ${isFocus ? "app-stage--dimmed" : ""}`}>
+          {isDebrief ? (
             view === "pixel" ? (
-              <canvas
-                ref={canvasRef}
-                style={styles.canvas}
-                width={800}
-                height={600}
-              />
+              <DebriefTimeline events={eventLog} />
             ) : (
               <ListView projection={projection} />
             )
+          ) : view === "pixel" ? (
+            <canvas
+              ref={canvasRef}
+              className="app-canvas"
+              width={800}
+              height={600}
+              aria-label="Pixel office map showing agent rooms and tasks"
+            />
           ) : (
-            <FocusModeIndicator projection={projection} />
+            <ListView projection={projection} />
           )}
+          {isFocus && <FocusModeIndicator projection={projection} />}
         </div>
 
-        {/* 右侧：控制面板 */}
-        <div style={styles.panel}>
+        <div className="app-panel">
           {demoControls}
           <ControlPanel
             projection={projection}
             eventLog={eventLog}
             errors={errors}
             mode={experienceMode}
-            onModeChange={setExperienceMode}
             onSendCommand={sendCommand}
             capabilities={capabilities}
           />
@@ -181,140 +296,30 @@ const FocusModeIndicator: FC<{ projection: ReturnType<typeof useOfficeState>["pr
   ).length;
 
   return (
-    <div style={styles.focusContainer}>
-      <h2 style={styles.focusTitle}>Focus Mode</h2>
-      <p style={styles.focusHint}>Agent 在后台继续工作，事件静默积压。</p>
-      <div style={styles.focusStats}>
-        <div style={styles.focusStat}>
-          <span style={styles.focusStatNum}>{pending}</span>
-          <span style={styles.focusStatLabel}>待审批</span>
+    <div className="focus-indicator">
+      <h2 className="focus-indicator__title">Focus Mode</h2>
+      <p className="focus-indicator__hint">Agents continue working in the background; events queue quietly.</p>
+      <div className="focus-indicator__stats">
+        <div className="focus-indicator__stat">
+          <span className="focus-indicator__num focus-indicator__num--urgency">
+            {pending}
+          </span>
+          <span className="focus-indicator__label">Pending</span>
         </div>
-        <div style={styles.focusStat}>
-          <span style={styles.focusStatNum}>{blocked}</span>
-          <span style={styles.focusStatLabel}>阻塞任务</span>
+        <div className="focus-indicator__stat">
+          <span className="focus-indicator__num focus-indicator__num--failure">
+            {blocked}
+          </span>
+          <span className="focus-indicator__label">Blocked</span>
         </div>
-        <div style={styles.focusStat}>
-          <span style={styles.focusStatNum}>{artifacts}</span>
-          <span style={styles.focusStatLabel}>产物</span>
+        <div className="focus-indicator__stat">
+          <span className="focus-indicator__num focus-indicator__num--info">
+            {artifacts}
+          </span>
+          <span className="focus-indicator__label">Artifacts</span>
         </div>
       </div>
-      <p style={styles.focusHint}>切换到 Command 或 Debrief 模式查看详情。</p>
+      <p className="focus-indicator__hint">Switch to Command or Debrief for details.</p>
     </div>
   );
-};
-
-// ─── 样式 ────────────────────────────────────────────────────
-const styles: Record<string, React.CSSProperties> = {
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
-    height: "100vh",
-    backgroundColor: "#1a1a2e",
-  },
-  topbar: {
-    display: "flex",
-    alignItems: "center",
-    padding: "8px 16px",
-    backgroundColor: "#161623",
-    borderBottom: "1px solid #333",
-    gap: 12,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#88ccff",
-  },
-  subtitle: {
-    fontSize: 11,
-    color: "#666",
-  },
-  spacer: {
-    flex: 1,
-  },
-  viewSwitch: {
-    display: "flex",
-    gap: 4,
-  },
-  viewBtn: {
-    padding: "4px 12px",
-    backgroundColor: "#2a2a3e",
-    color: "#aaa",
-    border: "1px solid #444",
-    borderRadius: 3,
-    cursor: "pointer",
-    fontSize: 12,
-    fontFamily: "monospace",
-  },
-  viewBtnActive: {
-    backgroundColor: "#4488cc",
-    color: "#fff",
-    borderColor: "#66aaff",
-  },
-  body: {
-    display: "flex",
-    flex: 1,
-    overflow: "hidden",
-  },
-  stage: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#111122",
-    overflow: "auto",
-    padding: 12,
-  },
-  canvas: {
-    border: "1px solid #333",
-    backgroundColor: "#1a1a2e",
-    maxWidth: "100%",
-    maxHeight: "100%",
-  },
-  panel: {
-    width: 420,
-    minWidth: 360,
-    maxWidth: 480,
-    borderLeft: "1px solid #333",
-    backgroundColor: "#1e1e2e",
-    overflowY: "auto",
-  },
-  focusContainer: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    padding: 24,
-  },
-  focusTitle: {
-    fontSize: 22,
-    color: "#88ccff",
-    margin: 0,
-  },
-  focusHint: {
-    fontSize: 12,
-    color: "#888",
-    margin: 0,
-  },
-  focusStats: {
-    display: "flex",
-    gap: 24,
-    margin: "16px 0",
-  },
-  focusStat: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 4,
-  },
-  focusStatNum: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  focusStatLabel: {
-    fontSize: 11,
-    color: "#888",
-  },
 };

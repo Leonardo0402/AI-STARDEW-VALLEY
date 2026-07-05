@@ -13,6 +13,11 @@
  * Usage: node scripts/dev-remote-demo.mjs
  */
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DEMO_OFFICE_DIR = join(__dirname, "..", "apps", "demo-office");
 
 const RUNTIME_PORT = "3456";
 const ALLOWED_ORIGIN = "http://localhost:5173";
@@ -61,11 +66,14 @@ async function waitForRuntimeReady(baseUrl) {
 }
 
 function startVite() {
+  const isWin = process.platform === "win32";
   const vite = spawn(
-    process.platform === "win32" ? "npx.cmd" : "npx",
-    ["vite", "--config", "apps/demo-office/vite.config.ts"],
+    isWin ? "npx.cmd" : "npx",
+    ["vite", "--config", "vite.config.ts"],
     {
       stdio: ["inherit", "pipe", "pipe"],
+      shell: isWin,
+      cwd: DEMO_OFFICE_DIR,
       env: {
         ...process.env,
         VITE_RUNTIME_MODE: "http-sse",

@@ -632,6 +632,10 @@ export interface ArtifactView {
   status: ArtifactStatus;
   version: number;
   reviewResult: ArtifactReviewResult | null;
+  /** Real content payload when already loaded by the UI/preview layer. */
+  content?: string | null;
+  /** External URI when the artifact content is addressable; `null` means unavailable. */
+  uri?: string | null;
 }
 
 export interface ApprovalView {

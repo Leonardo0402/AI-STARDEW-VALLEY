@@ -306,6 +306,20 @@ export class QclawTestRuntime {
       return;
     }
 
+    if (req.method === "POST" && url.endsWith("/runtime/demo/force-session-error")) {
+      this.forceSessionErrorForTest();
+      res.writeHead(200, { "content-type": "application/json", ...cors });
+      res.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+
+    if (req.method === "POST" && url.endsWith("/runtime/demo/reset")) {
+      this.resetStateForTest();
+      res.writeHead(200, { "content-type": "application/json", ...cors });
+      res.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+
     res.writeHead(404, cors);
     res.end("not found");
   }
@@ -613,6 +627,57 @@ export class QclawTestRuntime {
       reason: "Artifact approved, request delivery approval",
     });
     this.emit(approvalRequested);
+  }
+
+  // TEST-ONLY: Push a fake event with a mismatched runtimeId to connected SSE clients.
+  // This causes the client session to detect a runtime_mismatch and transition to
+  // the "degraded" state, surfacing the Resynchronize recovery action.
+  public forceSessionErrorForTest(): void {
+    const now = new Date().toISOString();
+    const fakeEvent: DomainEvent = {
+      eventId: `evt-forced-error-${Date.now()}`,
+      runtimeId: "forced-error-runtime",
+      sequence: this.sequence + 1,
+      schemaVersion: "1.0",
+      type: "demo.forced_error",
+      occurredAt: now,
+      receivedAt: now,
+      correlationId: this.correlationId,
+      causationId: this.eventLog.length > 0 ? this.eventLog[this.eventLog.length - 1].eventId : null,
+      traceId: this.traceId,
+      payload: { reason: "Baseline audit forced session error" },
+    };
+    for (const client of this.liveClients) {
+      if (fakeEvent.sequence > client.afterSequence) {
+        try {
+          client.res.write(`event: domain-event\nid: ${fakeEvent.sequence}\ndata: ${JSON.stringify(fakeEvent)}\n\n`);
+        } catch {
+          // best-effort — client may have disconnected
+        }
+      }
+    }
+  }
+
+  // TEST-ONLY: Reset runtime state back to the initial checkpoint. Used by the visual
+  // QA script to guarantee each resolution starts from a clean, deterministic state.
+  public resetStateForTest(): void {
+    for (const client of this.liveClients) {
+      try { client.res.end(); } catch { /* best-effort */ }
+    }
+    this.liveClients = [];
+    this.agents.clear();
+    this.tasks.clear();
+    this.artifacts.clear();
+    this.approvals.clear();
+    this.eventLog = [];
+    this.sequence = 0;
+    this.taskCounter = 0;
+    this.artifactCounter = 0;
+    this.approvalCounter = 0;
+    this.correlationId = "corr-qclaw-init";
+    this.traceId = "trace-qclaw-init";
+    this.initRooms();
+    this.initAgents();
   }
 
   // TEST-ONLY: Simulates the worker producing an artifact and the reviewer approving it.

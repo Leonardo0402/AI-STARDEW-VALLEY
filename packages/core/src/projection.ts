@@ -52,6 +52,7 @@ export function projectSnapshot(
     status: a.status,
     version: a.version,
     reviewResult: a.reviewResult ? { ...a.reviewResult } : null,
+    uri: a.uri,
   }));
 
   const approvals: ApprovalView[] = snapshot.approvals.map((a) => ({

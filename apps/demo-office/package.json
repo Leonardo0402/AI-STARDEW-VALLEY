@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "copy-pixel-assets": "node scripts/copy-pixel-assets.mjs",
+    "dev": "npm run copy-pixel-assets && vite",
+    "build": "npm run copy-pixel-assets && tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

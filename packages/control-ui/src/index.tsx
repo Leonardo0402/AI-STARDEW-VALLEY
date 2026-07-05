@@ -11,3 +11,13 @@ export type { ExperienceMode } from "./ControlPanel.js";
 export { EventLogViewer } from "./EventLogViewer.js";
 export { useOfficeState } from "./useOfficeState.js";
 export type { OfficeState } from "./useOfficeState.js";
+
+// Panel primitives for reuse across views.
+export { Card } from "./components/Card.js";
+export { Badge } from "./components/Badge.js";
+export type { BadgeIntent } from "./components/Badge.js";
+export { SectionHeader } from "./components/SectionHeader.js";
+export { ApprovalDrawer } from "./components/ApprovalDrawer.js";
+export { TaskForm } from "./components/TaskForm.js";
+export { ErrorBanner } from "./components/ErrorBanner.js";
+export { formatTime } from "./components/format-time.js";

@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Swarm Office — High-Fidelity Designs (Direction 1)</title>
+  <style>
+    :root {
+      --base-900: #131014;
+      --base-800: #1a181c;
+      --base-700: #25222a;
+      --base-600: #322e36;
+      --base-500: #4a444e;
+      --base-400: #7d7682;
+      --base-300: #b8b0bc;
+      --base-100: #f2f0eb;
+      --warm-700: #3d3530;
+      --warm-500: #6b5f56;
+      --warm-300: #a89788;
+      --info: #7ec0c8;
+      --info-dim: #4a7c82;
+      --urgency: #e6a85c;
+      --urgency-dim: #8f6232;
+      --success: #7db68a;
+      --failure: #c96a5b;
+      --failure-dim: #7a3d34;
+      --paused: #7a9cc6;
+      --panel-width: 420px;
+      --status-height: 28px;
+      --header-height: 48px;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --space-xs: 4px;
+      --space-sm: 8px;
+      --space-md: 12px;
+      --space-lg: 16px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #0c0b0e;
+      color: var(--base-100);
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .design-page { padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .subtitle { color: var(--base-400); margin-bottom: 24px; }
+    .artboard {
+      margin: 24px 0 48px;
+      border: 1px solid #2a2730;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      background: var(--base-900);
+      width: 1280px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .artboard-label {
+      background: #1e1b22;
+      padding: 10px 16px;
+      border-bottom: 1px solid #2a2730;
+      color: var(--base-300);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* App shell */
+    .app {
+      display: grid;
+      grid-template-rows: var(--status-height) var(--header-height) 1fr;
+      height: 720px;
+      background: var(--base-800);
+    }
+    .status-strip {
+      background: var(--base-900);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 11px;
+      color: var(--base-400);
+      border-bottom: 1px solid #231f26;
+    }
+    .status-left, .status-right { display: flex; align-items: center; gap: 14px; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--base-800);
+      padding: 2px 8px;
+      border-radius: 100px;
+      border: 1px solid var(--base-500);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .dot.success { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot.urgency { background: var(--urgency); box-shadow: 0 0 6px var(--urgency); }
+    .dot.failure { background: var(--failure); box-shadow: 0 0 6px var(--failure); }
+
+    .app-header {
+      background: var(--base-800);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--base-500);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
+    .logo {
+      width: 22px; height: 22px;
+      background: linear-gradient(135deg, var(--info), var(--urgency));
+      border-radius: var(--radius-sm);
+    }
+    .mode-switcher {
+      display: flex;
+      background: var(--base-700);
+      border-radius: var(--radius-md);
+      padding: 3px;
+      gap: 3px;
+    }
+    .mode-switcher button {
+      border: none; background: transparent; color: var(--base-400);
+      padding: 5px 16px; border-radius: var(--radius-sm);
+      font-size: 12px; font-weight: 500; cursor: pointer;
+    }
+    .mode-switcher button.active { background: var(--base-600); color: var(--base-100); }
+    .header-actions { display: flex; gap: 10px; align-items: center; }
+    .icon-btn {
+      background: var(--base-700); border: 1px solid var(--base-500);
+      color: var(--base-300); padding: 4px 10px; border-radius: var(--radius-sm);
+      font-size: 11px; cursor: pointer;
+    }
+
+    .app-body {
+      display: grid;
+      grid-template-columns: 1fr var(--panel-width);
+      overflow: hidden;
+    }
+
+    /* Canvas */
+    .canvas {
+      position: relative;
+      background: #161418;
+      overflow: hidden;
+    }
+    .floor {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    .room {
+      position: absolute;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--warm-700);
+      overflow: hidden;
+    }
+    .room::before {
+      content: "";
+      position: absolute; inset: 0;
+      opacity: 0.5;
+    }
+    .room-sign {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--warm-700);
+      color: var(--warm-300);
+      padding: 2px 10px;
+      border-radius: 100px;
+      font-size: 9px;
+      font-family: "Courier New", monospace;
+      letter-spacing: 0.05em;
+      border: 1px solid var(--warm-500);
+      z-index: 10;
+    }
+    .room.command { top: 6%; left: 4%; width: 46%; height: 42%; background: #201d22; }
+    .room.command::before { background: repeating-linear-gradient(90deg, #25212a 0 24px, #231f28 24px 48px); }
+    .room.execution { top: 6%; right: 4%; width: 46%; height: 42%; background: #211e1a; }
+    .room.execution::before { background: repeating-linear-gradient(45deg, #26221c 0 16px, #231f19 16px 32px); }
+    .room.review { bottom: 6%; left: 4%; width: 46%; height: 42%; background: #211e24; }
+    .room.review::before { background: radial-gradient(circle at 30% 30%, #2a2530 0 20%, #211e24 20% 100%); background-size: 24px 24px; }
+    .room.approval { bottom: 6%; right: 4%; width: 46%; height: 42%; background: #221f24; }
+    .room.approval::before { background: repeating-linear-gradient(0deg, #262228 0 20px, #231f24 20px 40px); }
+
+    /* Props (pixel-ish via box-shadow) */
+    .prop { position: absolute; }
+    .desk-shared {
+      bottom: 10%; left: 15%; width: 70%; height: 22%;
+      background: var(--warm-500);
+      border-radius: var(--radius-sm);
+      box-shadow: inset 0 -4px 0 var(--warm-700);
+    }
+    .monitor {
+      bottom: 30%; left: 25%; width: 14%; height: 18%;
+      background: #1a1a20; border: 2px solid #3a3a44; border-radius: 2px;
+    }
+    .monitor::after {
+      content: ""; position: absolute; inset: 2px;
+      background: linear-gradient(180deg, rgba(126,192,200,0.2), rgba(126,192,200,0.05));
+    }
+    .workbench {
+      bottom: 12%; left: 10%; width: 80%; height: 24%;
+      background: #4a3f36;
+      border-radius: var(--radius-sm);
+      box-shadow: inset 0 -5px 0 #2f2822;
+    }
+    .tool-rack {
+      top: 18%; right: 12%; width: 18%; height: 28%;
+      background: #3d3530;
+      border-radius: 2px;
+    }
+    .review-table {
+      bottom: 14%; left: 18%; width: 64%; height: 20%;
+      background: var(--warm-500);
+      border-radius: 40%;
+      box-shadow: inset 0 -4px 0 var(--warm-700);
+    }
+    .approval-counter {
+      bottom: 16%; left: 20%; width: 60%; height: 22%;
+      background: var(--warm-500);
+      border-radius: var(--radius-sm);
+      box-shadow: inset 0 -4px 0 var(--warm-700);
+    }
+    .service-bell {
+      position: absolute; top: -16px; right: 18%; width: 24px; height: 20px;
+      background: var(--urgency);
+      border-radius: 50% 50% 4px 4px;
+      box-shadow: 0 0 14px var(--urgency);
+      animation: bellPulse 1.2s ease-in-out infinite;
+    }
+    .service-bell::after {
+      content: ""; position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+      width: 6px; height: 6px; background: #fff; border-radius: 50%;
+    }
+    @keyframes bellPulse { 0%,100%{ transform: scale(1); opacity:1 } 50%{ transform: scale(1.12); opacity:.8 } }
+
+    /* Agents */
+    .agent {
+      position: absolute;
+      width: 28px; height: 36px;
+      z-index: 5;
+    }
+    .agent-body {
+      width: 100%; height: 100%;
+      position: relative;
+    }
+    .agent-head {
+      position: absolute; top: 0; left: 8px;
+      width: 12px; height: 12px;
+      background: #d8c8b8;
+      border-radius: 2px;
+    }
+    .agent-torso {
+      position: absolute; top: 12px; left: 4px;
+      width: 20px; height: 18px;
+      border-radius: 3px 3px 0 0;
+    }
+    .agent-legs {
+      position: absolute; bottom: 0; left: 6px;
+      width: 16px; height: 8px;
+      background: #4a444e;
+      border-radius: 0 0 2px 2px;
+    }
+    .agent-status {
+      position: absolute; top: -5px; right: -4px;
+      width: 8px; height: 8px; border-radius: 50%;
+      border: 1px solid var(--base-900);
+    }
+    .agent-label {
+      position: absolute; top: 38px; left: 50%; transform: translateX(-50%);
+      white-space: nowrap;
+      font-size: 8px; color: var(--base-300);
+      background: rgba(19,16,20,0.8);
+      padding: 1px 4px; border-radius: 2px;
+      font-family: "Courier New", monospace;
+    }
+    .agent.orchestrator .agent-torso { background: var(--info); }
+    .agent.worker .agent-torso { background: var(--urgency); }
+    .agent.reviewer .agent-torso { background: #b8a8d8; }
+    .agent-status.idle { background: var(--base-500); }
+    .agent-status.working { background: var(--success); }
+    .agent-status.approval { background: var(--urgency); }
+    .agent-status.blocked { background: var(--failure); }
+    .agent-status.failed { background: var(--failure); }
+    .speech-bubble {
+      position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+      background: var(--failure); color: #fff;
+      padding: 2px 6px; border-radius: var(--radius-sm);
+      font-size: 9px; font-weight: 700;
+      white-space: nowrap;
+      animation: bubblePulse 1s ease-in-out infinite;
+    }
+    @keyframes bubblePulse { 0%,100%{ opacity:1 } 50%{ opacity:.7 } }
+    .sparkle {
+      position: absolute; top: -8px; right: -6px;
+      width: 6px; height: 6px; background: #fff;
+      clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+      animation: sparkle 0.8s steps(2) infinite;
+    }
+    @keyframes sparkle { 0%{ opacity:0 } 50%{ opacity:1 } 100%{ opacity:0 } }
+
+    /* Panel */
+    .panel {
+      background: var(--base-800);
+      border-left: 1px solid var(--base-500);
+      display: flex; flex-direction: column;
+      overflow-y: auto;
+    }
+    .panel-section {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--base-500);
+    }
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: var(--space-sm);
+      font-weight: 600; font-size: 12px;
+    }
+    .card {
+      background: var(--base-700);
+      border: 1px solid var(--base-500);
+      border-radius: var(--radius-md);
+      padding: var(--space-sm);
+      margin-bottom: var(--space-sm);
+    }
+    .card-title { font-weight: 600; font-size: 11px; margin-bottom: 4px; }
+    .card-meta { color: var(--base-400); font-size: 10px; }
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 6px; border-radius: 100px;
+      font-size: 9px; font-weight: 700;
+    }
+    .badge.running { background: var(--success); color: var(--base-900); }
+    .badge.waiting { background: var(--urgency); color: var(--base-900); }
+    .badge.blocked { background: var(--failure); color: var(--base-100); }
+    .badge.failed { background: var(--failure); color: var(--base-100); }
+    .badge.paused { background: var(--paused); color: var(--base-100); }
+    .badge.idle { background: var(--base-600); color: var(--base-300); }
+    .badge.count {
+      width: 18px; height: 18px; padding: 0;
+      justify-content: center; border-radius: 50%;
+      background: var(--urgency); color: var(--base-900);
+    }
+    .approval-drawer {
+      background: var(--base-700);
+      border-left: 4px solid var(--urgency);
+      border-radius: var(--radius-md);
+      padding: var(--space-sm);
+      margin-bottom: var(--space-sm);
+    }
+    .approval-drawer .actions { display: flex; gap: var(--space-sm); margin-top: var(--space-sm); }
+    .btn {
+      border: none; border-radius: var(--radius-sm);
+      padding: 5px 12px; font-size: 11px; font-weight: 600; cursor: pointer;
+    }
+    .btn-primary { background: var(--info); color: var(--base-900); }
+    .btn-secondary { background: var(--base-600); color: var(--base-100); }
+    .btn-danger { background: var(--failure); color: var(--base-100); }
+    .input {
+      width: 100%; background: var(--base-800); color: var(--base-100);
+      border: 1px solid var(--base-500); border-radius: var(--radius-sm);
+      padding: 5px 8px; font-size: 11px; margin-bottom: var(--space-xs);
+    }
+    .input::placeholder { color: var(--base-400); }
+    .form-row { display: flex; gap: var(--space-xs); }
+    .form-row .input { flex: 1; }
+    .event-row {
+      display: flex; gap: var(--space-sm);
+      font-size: 10px; color: var(--base-300);
+      padding: 3px 0; border-bottom: 1px solid var(--base-600);
+    }
+    .event-row:last-child { border-bottom: none; }
+    .event-seq { font-family: "JetBrains Mono", monospace; color: var(--info); min-width: 36px; }
+    .event-type { color: var(--urgency); min-width: 90px; }
+
+    /* Focus mode overlay */
+    .focus-overlay {
+      position: absolute; inset: 0;
+      background: rgba(19,16,20,0.78);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: var(--space-lg);
+      z-index: 20;
+    }
+    .focus-card {
+      background: var(--base-700);
+      border: 1px solid var(--base-500);
+      border-radius: var(--radius-lg);
+      padding: var(--space-lg) var(--space-lg);
+      min-width: 320px;
+      text-align: center;
+    }
+    .focus-metric { font-size: 32px; font-weight: 700; }
+    .focus-label { color: var(--base-400); font-size: 11px; margin-top: 2px; }
+    .focus-row { display: flex; gap: var(--space-lg); justify-content: center; }
+
+    /* Debrief timeline */
+    .debrief-body {
+      display: grid;
+      grid-template-columns: 1fr var(--panel-width);
+      overflow: hidden;
+    }
+    .timeline {
+      position: relative;
+      padding: 24px 40px;
+      overflow-y: auto;
+    }
+    .timeline-line {
+      position: absolute; left: 54px; top: 36px; bottom: 36px;
+      width: 2px; background: var(--base-500);
+    }
+    .timeline-item {
+      display: flex; gap: 16px; margin-bottom: 20px; position: relative; z-index: 2;
+    }
+    .timeline-dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--base-600); border: 2px solid var(--base-500);
+      margin-top: 2px; flex-shrink: 0;
+    }
+    .timeline-dot.success { background: var(--success); border-color: var(--success); }
+    .timeline-dot.urgency { background: var(--urgency); border-color: var(--urgency); }
+    .timeline-dot.failure { background: var(--failure); border-color: var(--failure); }
+    .timeline-content { background: var(--base-700); border: 1px solid var(--base-500); border-radius: var(--radius-md); padding: 10px 12px; flex: 1; }
+    .timeline-time { color: var(--base-400); font-size: 10px; margin-bottom: 2px; }
+    .timeline-title { font-weight: 600; font-size: 12px; }
+    .timeline-desc { color: var(--base-300); font-size: 11px; margin-top: 2px; }
+
+    /* Error banner */
+    .error-banner {
+      background: var(--failure-dim);
+      border-left: 3px solid var(--failure);
+      padding: 8px 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px;
+    }
+    .error-code { font-family: "JetBrains Mono", monospace; color: var(--failure); font-weight: 700; margin-right: 8px; }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      padding: 16px;
+    }
+    .state-card {
+      background: var(--base-700);
+      border: 1px solid var(--base-500);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      text-align: center;
+    }
+    .state-card .agent { position: relative; margin: 12px auto; }
+    .state-name { font-weight: 700; margin-top: 8px; }
+    .state-desc { color: var(--base-400); font-size: 10px; margin-top: 2px; }
+
+    /* Helper positions for Command layout */
+    .pos-command-orchestrator { top: 22%; left: 28%; }
+    .pos-execution-worker { top: 20%; right: 26%; }
+    .pos-review-reviewer { bottom: 24%; left: 28%; }
+    .pos-approval-worker { bottom: 26%; right: 26%; }
+  </style>
+</head>
+<body>
+  <div class="design-page">
+    <h1>Swarm Office — High-Fidelity Designs</h1>
+    <div class="subtitle">Approved direction: Cozy Pixel Operations Room. Panel borrows scanability and error clarity from Tactical without becoming Tactical.</div>
+
+    <!-- 1. Command mode -->
+    <div class="artboard">
+      <div class="artboard-label">01 — Command Mode (full application, active task + pending approval)</div>
+      <div class="app">
+        <div class="status-strip">
+          <div class="status-left">
+            <span class="status-pill"><span class="dot success"></span> connected</span>
+            <span>runtime: qclaw-swarm-runtime-001</span>
+            <span style="font-family:JetBrains Mono,monospace;color:var(--base-300)">seq: 842</span>
+          </div>
+          <div class="status-right">
+            <span>last event: artifact.reviewed</span>
+            <span style="font-family:JetBrains Mono,monospace">12:04:18</span>
+          </div>
+        </div>
+        <div class="app-header">
+          <div class="brand"><div class="logo"></div> Swarm Office</div>
+          <div class="mode-switcher">
+            <button class="active">Command</button>
+            <button>Focus</button>
+            <button>Debrief</button>
+          </div>
+          <div class="header-actions">
+            <button class="icon-btn">Pixel</button>
+            <button class="icon-btn">Motion on</button>
+          </div>
+        </div>
+        <div class="app-body">
+          <div class="canvas">
+            <div class="floor"></div>
+            <div class="room command">
+              <div class="room-sign">COMMAND</div>
+              <div class="prop desk-shared"></div>
+              <div class="prop monitor"></div>
+              <div class="agent orchestrator pos-command-orchestrator">
+                <div class="agent-body">
+                  <div class="agent-head"></div>
+                  <div class="agent-torso"></div>
+                  <div class="agent-legs"></div>
+                  <div class="agent-status idle"></div>
+                </div>
+                <div class="agent-label">Orchestrator</div>
+              </div>
+            </div>
+            <div class="room execution">
+              <div class="room-sign">EXECUTION</div>
+              <div class="prop workbench"></div>
+              <div class="prop tool-rack"></div>
+              <div class="agent worker pos-execution-worker">
+                <div class="agent-body">
+                  <div class="agent-head"></div>
+                  <div class="agent-torso"></div>
+                  <div class="agent-legs"></div>
+                  <div class="agent-status working"></div>
+                  <div class="sparkle"></div>
+                </div>
+                <div class="agent-label">Worker-1</div>
+              </div>
+            </div>
+            <div class="room review">
+              <div class="room-sign">REVIEW</div>
+              <div class="prop review-table"></div>
+              <div class="agent reviewer pos-review-reviewer">
+                <div class="agent-body">
+                  <div class="agent-head"></div>
+                  <div class="agent-torso"></div>
+                  <div class="agent-legs"></div>
+                  <div class="agent-status approval"></div>
+                </div>
+                <div class="agent-label">Reviewer</div>
+              </div>
+            </div>
+            <div class="room approval">
+              <div class="room-sign">APPROVAL</div>
+              <div class="prop approval-counter"></div>
+              <div class="service-bell"></div>
+              <div class="agent worker pos-approval-worker">
+                <div class="agent-body">
+                  <div class="agent-head"></div>
+                  <div class="agent-torso"></div>
+                  <div class="agent-legs"></div>
+                  <div class="agent-status approval"></div>
+                </div>
+                <div class="agent-label">Worker-2</div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-section">
+              <div class="approval-drawer">
+                <div style="font-weight:700;margin-bottom:2px">Pending Approval <span class="badge count">1</span></div>
+                <div class="card-meta">Artifact "Q3-report-v2.md" awaits review</div>
+                <div class="actions">
+                  <button class="btn btn-primary">Approve</button>
+                  <button class="btn btn-danger">Reject</button>
+                </div>
+              </div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Create Task <span class="badge idle">new</span></div>
+              <input class="input" placeholder="Task title" value="Write Q3 report" />
+              <div class="form-row">
+                <input class="input" placeholder="Priority" value="high" />
+                <button class="btn btn-primary" style="white-space:nowrap">Create</button>
+              </div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Agents <span class="badge count" style="background:var(--base-500);color:var(--base-100)">4</span></div>
+              <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div class="card-title">Orchestrator</div>
+                    <div class="card-meta">command room · idle</div>
+                  </div>
+                  <span class="badge idle">idle</span>
+                </div>
+              </div>
+              <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div class="card-title">Worker-1</div>
+                    <div class="card-meta">execution room · Write Q3 report</div>
+                  </div>
+                  <span class="badge running">running</span>
+                </div>
+              </div>
+              <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div class="card-title">Reviewer</div>
+                    <div class="card-meta">review room · pending</div>
+                  </div>
+                  <span class="badge waiting">waiting</span>
+                </div>
+              </div>
+              <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div class="card-title">Worker-2</div>
+                    <div class="card-meta">approval room · pending</div>
+                  </div>
+                  <span class="badge waiting">waiting</span>
+                </div>
+              </div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Tasks <span class="badge count" style="background:var(--info);color:var(--base-900)">1</span></div>
+              <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div class="card-title">Write Q3 report</div>
+                    <div class="card-meta">T-842 · Worker-1 · high</div>
+                  </div>
+                  <span class="badge running">running</span>
+                </div>
+              </div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Event Log</div>
+              <div class="event-row"><span class="event-seq">842</span><span class="event-type">artifact.reviewed</span><span>Reviewer submitted v2</span></div>
+              <div class="event-row"><span class="event-seq">841</span><span class="event-type">approval.created</span><span>Q3-report-v2 approval requested</span></div>
+              <div class="event-row"><span class="event-seq">838</span><span class="event-type">task.started</span><span>Worker-1 started T-842</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Focus mode -->
+    <div class="artboard">
+      <div class="artboard-label">02 — Focus Mode (ambient workspace, urgent interruptions only)</div>
+      <div class="app">
+        <div class="status-strip">
+          <div class="status-left">
+            <span class="status-pill"><span class="dot success"></span> connected</span>
+            <span>runtime: qclaw-swarm-runtime-001</span>
+          </div>
+          <div class="status-right"><span style="color:var(--urgency)">1 approval waiting</span></div>
+        </div>
+        <div class="app-header">
+          <div class="brand"><div class="logo"></div> Swarm Office</div>
+          <div class="mode-switcher">
+            <button>Command</button>
+            <button class="active">Focus</button>
+            <button>Debrief</button>
+          </div>
+          <div class="header-actions">
+            <button class="icon-btn">Pixel</button>
+            <button class="icon-btn">Motion on</button>
+          </div>
+        </div>
+        <div class="app-body">
+          <div class="canvas">
+            <div class="floor"></div>
+            <div class="room command" style="opacity:.25"><div class="room-sign">COMMAND</div></div>
+            <div class="room execution" style="opacity:.35">
+              <div class="room-sign">EXECUTION</div>
+              <div class="agent worker pos-execution-worker" style="opacity:.6">
+                <div class="agent-body"><div class="agent-head"></div><div class="agent-torso"></div><div class="agent-legs"></div><div class="agent-status working"></div></div>
+              </div>
+            </div>
+            <div class="room review" style="opacity:.25"><div class="room-sign">REVIEW</div></div>
+            <div class="room approval" style="opacity:.55">
+              <div class="room-sign">APPROVAL</div>
+              <div class="service-bell"></div>
+            </div>
+            <div class="focus-overlay" style="pointer-events:none">
+              <div class="focus-row">
+                <div class="focus-card">
+                  <div class="focus-metric" style="color:var(--success)">1</div>
+                  <div class="focus-label">running task</div>
+                </div>
+                <div class="focus-card">
+                  <div class="focus-metric" style="color:var(--urgency)">1</div>
+                  <div class="focus-label">approval waiting</div>
+                </div>
+                <div class="focus-card">
+                  <div class="focus-metric" style="color:var(--base-400)">0</div>
+                  <div class="focus-label">blocked</div>
+                </div>
+              </div>
+              <div class="focus-card" style="width:420px;text-align:left;">
+                <div style="font-weight:700;margin-bottom:6px;color:var(--urgency)">Waiting approval</div>
+                <div style="color:var(--base-300);margin-bottom:10px">Artifact "Q3-report-v2.md" requires your decision.</div>
+                <div class="actions">
+                  <button class="btn btn-primary">Approve</button>
+                  <button class="btn btn-danger">Reject</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel" style="opacity:.9">
+            <div class="panel-section" style="text-align:center;color:var(--base-400)">
+              Focus Mode — non-urgent controls hidden
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Urgent Only</div>
+              <div class="approval-drawer">
+                <div style="font-weight:700">Q3-report-v2.md</div>
+                <div class="card-meta">Requested by Reviewer · 2 min ago</div>
+                <div class="actions">
+                  <button class="btn btn-primary">Approve</button>
+                  <button class="btn btn-danger">Reject</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Debrief mode -->
+    <div class="artboard">
+      <div class="artboard-label">03 — Debrief Mode (retrospective timeline and outcomes)</div>
+      <div class="app">
+        <div class="status-strip">
+          <div class="status-left">
+            <span class="status-pill"><span class="dot success"></span> connected</span>
+            <span>runtime: qclaw-swarm-runtime-001</span>
+          </div>
+          <div class="status-right"><span>session outcome: 1 approved, 0 blocked</span></div>
+        </div>
+        <div class="app-header">
+          <div class="brand"><div class="logo"></div> Swarm Office</div>
+          <div class="mode-switcher">
+            <button>Command</button>
+            <button>Focus</button>
+            <button class="active">Debrief</button>
+          </div>
+          <div class="header-actions">
+            <button class="icon-btn">Pixel</button>
+            <button class="icon-btn">Motion on</button>
+          </div>
+        </div>
+        <div class="debrief-body">
+          <div class="timeline">
+            <div class="timeline-line"></div>
+            <div class="timeline-item">
+              <div class="timeline-dot success"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">12:05:02</div>
+                <div class="timeline-title">Approval granted</div>
+                <div class="timeline-desc">Q3-report-v2.md approved by operator. Artifact moved to delivery queue.</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot urgency"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">12:04:18</div>
+                <div class="timeline-title">Artifact reviewed</div>
+                <div class="timeline-desc">Reviewer submitted revised report and requested final approval.</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">12:01:33</div>
+                <div class="timeline-title">Task started</div>
+                <div class="timeline-desc">Worker-1 began "Write Q3 report" in execution room.</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot"></div>
+              <div class="timeline-content">
+                <div class="timeline-time">12:00:07</div>
+                <div class="timeline-title">Task created</div>
+                <div class="timeline-desc">Operator created high-priority task T-842.</div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-section">
+              <div class="section-header">Session Summary</div>
+              <div class="card">
+                <div class="card-title">Outcome</div>
+                <div class="card-meta">1 approved · 0 rejected · 0 blocked · 0 failed</div>
+              </div>
+              <div class="card">
+                <div class="card-title">Active agents</div>
+                <div class="card-meta">4 participated · 1 task completed</div>
+              </div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Artifacts</div>
+              <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div class="card-title">Q3-report-v2.md</div>
+                    <div class="card-meta">approved · 12:05:02</div>
+                  </div>
+                  <span class="badge running">approved</span>
+                </div>
+              </div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Key decisions</div>
+              <div class="event-row"><span class="event-seq">—</span><span class="event-type">approve</span><span>Operator accepted v2 report</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Five key states -->
+    <div class="artboard">
+      <div class="artboard-label">04 — Five Key Agent States (non-color cues)</div>
+      <div class="state-grid">
+        <div class="state-card">
+          <div class="agent orchestrator">
+            <div class="agent-body">
+              <div class="agent-head"></div>
+              <div class="agent-torso"></div>
+              <div class="agent-legs"></div>
+              <div class="agent-status idle"></div>
+            </div>
+          </div>
+          <div class="state-name">idle</div>
+          <div class="state-desc">Neutral expression, relaxed posture, slow breathing bounce.</div>
+        </div>
+        <div class="state-card">
+          <div class="agent worker">
+            <div class="agent-body">
+              <div class="agent-head"></div>
+              <div class="agent-torso"></div>
+              <div class="agent-legs"></div>
+              <div class="agent-status working"></div>
+              <div class="sparkle"></div>
+            </div>
+          </div>
+          <div class="state-name">working</div>
+          <div class="state-desc">Focused face, leaning into work, tool/screen sparkle.</div>
+        </div>
+        <div class="state-card">
+          <div class="agent reviewer">
+            <div class="agent-body">
+              <div class="agent-head"></div>
+              <div class="agent-torso"></div>
+              <div class="agent-legs"></div>
+              <div class="agent-status approval"></div>
+            </div>
+          </div>
+          <div class="state-name">approval</div>
+          <div class="state-desc">Looks toward approval station, amber status, "?" thought bubble.</div>
+        </div>
+        <div class="state-card">
+          <div class="agent worker">
+            <div class="agent-body">
+              <div class="agent-head"></div>
+              <div class="agent-torso"></div>
+              <div class="agent-legs"></div>
+              <div class="agent-status blocked"></div>
+              <div class="speech-bubble">!</div>
+            </div>
+          </div>
+          <div class="state-name">blocked</div>
+          <div class="state-desc">Slumped posture, red exclamation bubble, reason tag.</div>
+        </div>
+        <div class="state-card">
+          <div class="agent worker">
+            <div class="agent-body">
+              <div class="agent-head"></div>
+              <div class="agent-torso"></div>
+              <div class="agent-legs"></div>
+              <div class="agent-status failed"></div>
+              <div class="speech-bubble">×</div>
+            </div>
+          </div>
+          <div class="state-name">failed</div>
+          <div class="state-desc">Downcast, sitting/head down, red pulse, error tag.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Error state -->
+    <div class="artboard">
+      <div class="artboard-label">05 — Error State (panel borrows Tactical clarity without Tactical theme)</div>
+      <div class="app">
+        <div class="status-strip" style="background:var(--failure-dim);border-bottom-color:var(--failure)">
+          <div class="status-left">
+            <span class="status-pill" style="border-color:var(--failure)"><span class="dot failure"></span> error</span>
+            <span style="font-family:JetBrains Mono,monospace;color:var(--failure);font-weight:700">RUNTIME_ECONNRESET</span>
+            <span style="color:var(--base-300)">Connection to runtime lost. Retry in 3s.</span>
+          </div>
+          <div class="status-right"><button class="btn btn-danger" style="padding:2px 8px;font-size:10px">Retry</button></div>
+        </div>
+        <div class="app-header">
+          <div class="brand"><div class="logo"></div> Swarm Office</div>
+          <div class="mode-switcher">
+            <button class="active">Command</button>
+            <button>Focus</button>
+            <button>Debrief</button>
+          </div>
+          <div class="header-actions">
+            <button class="icon-btn">Pixel</button>
+            <button class="icon-btn">Motion on</button>
+          </div>
+        </div>
+        <div class="app-body">
+          <div class="canvas">
+            <div class="floor"></div>
+            <div class="room command" style="opacity:.5"><div class="room-sign">COMMAND</div></div>
+            <div class="room execution" style="opacity:.5"><div class="room-sign">EXECUTION</div></div>
+            <div class="room review" style="opacity:.5"><div class="room-sign">REVIEW</div></div>
+            <div class="room approval" style="opacity:.5"><div class="room-sign">APPROVAL</div></div>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--base-400)">
+              <div style="font-size:48px">📡</div>
+              <div>Waiting for runtime…</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="error-banner">
+              <div><span class="error-code">RUNTIME_ECONNRESET</span><span>Runtime connection reset.</span></div>
+              <button class="btn btn-secondary" style="font-size:10px">Dismiss</button>
+            </div>
+            <div class="panel-section" style="opacity:.6">
+              <div class="section-header">Agents</div>
+              <div class="card"><div class="card-title">State unavailable</div><div class="card-meta">Last sync: 12:04:18</div></div>
+            </div>
+            <div class="panel-section" style="opacity:.6">
+              <div class="section-header">Tasks</div>
+              <div class="card"><div class="card-title">Write Q3 report</div><div class="card-meta">Status unknown</div></div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header">Diagnostics</div>
+              <div class="event-row"><span class="event-seq">ERR</span><span class="event-type" style="color:var(--failure)">ECONNRESET</span><span>socket closed unexpectedly</span></div>
+              <div class="event-row"><span class="event-seq">—</span><span class="event-type">retry</span><span>scheduled in 3s</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -2,3 +2,14 @@ node_modules/
 dist/
 .vite/
 *.tsbuildinfo
+
+# Local debug artifacts
+debug*.png
+debug*.log
+
+# Review / diff artifacts
+*-review.txt
+*.diff
+
+# Copied pixel assets (source of truth is packages/pixel-office/assets)
+apps/demo-office/public/assets/
