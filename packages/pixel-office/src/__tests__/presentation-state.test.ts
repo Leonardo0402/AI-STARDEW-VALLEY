@@ -3,7 +3,7 @@ import {
   computeAgentPresentationState,
   type AgentPresentationState,
 } from "../presentation-state.js";
-import type { AgentView, OfficeProjection, TaskView } from "@agent-office/protocol";
+import type { AgentView, OfficeProjection, RoomView, TaskView } from "@agent-office/protocol";
 
 function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
   return {
@@ -34,13 +34,24 @@ function makeTask(overrides: Partial<TaskView> = {}): TaskView {
   };
 }
 
-function makeProjection(agents: AgentView[], tasks: TaskView[] = []): OfficeProjection {
+function makeRoom(overrides: Partial<RoomView> = {}): RoomView {
+  return {
+    roomId: "r1",
+    name: "Room",
+    type: "command",
+    bounds: { x: 0, y: 0, width: 100, height: 100 },
+    activeAgentIds: [],
+    ...overrides,
+  };
+}
+
+function makeProjection(agents: AgentView[], tasks: TaskView[] = [], rooms: RoomView[] = []): OfficeProjection {
   return {
     agents,
     tasks,
     artifacts: [],
     approvals: [],
-    rooms: [],
+    rooms,
     pendingApprovals: [],
     blockedTasks: [],
     errors: [],
@@ -77,12 +88,29 @@ describe("computeAgentPresentationState", () => {
     expect(computeAgentPresentationState(agent, makeProjection([agent], [task]))).toBe("working");
   });
 
-  it("returns approval when pending approvals exist, agent is in review/approval_delivery, and status is waiting/reviewing", () => {
-    for (const roomId of ["review", "approval_delivery"] as const) {
+  it("returns approval when room type is review or approval_delivery even if currentRoomId differs", () => {
+    for (const type of ["review", "approval_delivery"] as const) {
       for (const status of ["waiting", "reviewing"] as const) {
+        const roomId = `room-${type}`;
         const agent = makeAgent({ status, currentRoomId: roomId });
+        const room = makeRoom({ roomId, type });
         const projection: OfficeProjection = {
-          ...makeProjection([agent]),
+          ...makeProjection([agent], [], [room]),
+          pendingApprovals: [makePendingApproval("t1")],
+        } as OfficeProjection;
+        expect(computeAgentPresentationState(agent, projection)).toBe("approval");
+      }
+    }
+  });
+
+  it("returns approval when pending approvals exist, agent is in review/approval_delivery, and status is waiting/reviewing", () => {
+    for (const type of ["review", "approval_delivery"] as const) {
+      for (const status of ["waiting", "reviewing"] as const) {
+        const roomId = `room-${type}`;
+        const agent = makeAgent({ status, currentRoomId: roomId });
+        const room = makeRoom({ roomId, type });
+        const projection: OfficeProjection = {
+          ...makeProjection([agent], [], [room]),
           pendingApprovals: [makePendingApproval("t1")],
         } as OfficeProjection;
         expect(computeAgentPresentationState(agent, projection)).toBe("approval");
@@ -91,44 +119,49 @@ describe("computeAgentPresentationState", () => {
   });
 
   it("returns approval when current task is waiting_approval", () => {
-    const agent = makeAgent({ status: "idle", currentRoomId: "review", currentTaskId: "t1" });
+    const agent = makeAgent({ status: "idle", currentRoomId: "r1", currentTaskId: "t1" });
     const task = makeTask({ taskId: "t1", status: "waiting_approval" });
+    const room = makeRoom({ roomId: "r1", type: "review" });
     const projection: OfficeProjection = {
-      ...makeProjection([agent], [task]),
+      ...makeProjection([agent], [task], [room]),
       pendingApprovals: [makePendingApproval("t1")],
     } as OfficeProjection;
     expect(computeAgentPresentationState(agent, projection)).toBe("approval");
   });
 
   it("returns approval when current task has a matching pending approval", () => {
-    const agent = makeAgent({ status: "idle", currentRoomId: "approval_delivery", currentTaskId: "t1" });
+    const agent = makeAgent({ status: "idle", currentRoomId: "r2", currentTaskId: "t1" });
     const task = makeTask({ taskId: "t1", status: "assigned" });
+    const room = makeRoom({ roomId: "r2", type: "approval_delivery" });
     const projection: OfficeProjection = {
-      ...makeProjection([agent], [task]),
+      ...makeProjection([agent], [task], [room]),
       pendingApprovals: [makePendingApproval("t1")],
     } as OfficeProjection;
     expect(computeAgentPresentationState(agent, projection)).toBe("approval");
   });
 
   it("does not return approval without pending approvals", () => {
-    const agent = makeAgent({ status: "waiting", currentRoomId: "review" });
-    expect(computeAgentPresentationState(agent, makeProjection([agent]))).toBe("idle");
+    const agent = makeAgent({ status: "waiting", currentRoomId: "r1" });
+    const room = makeRoom({ roomId: "r1", type: "review" });
+    expect(computeAgentPresentationState(agent, makeProjection([agent], [], [room]))).toBe("idle");
   });
 
   it("does not return approval outside review/approval_delivery rooms", () => {
-    const agent = makeAgent({ status: "waiting", currentRoomId: "command" });
+    const agent = makeAgent({ status: "waiting", currentRoomId: "r1" });
+    const room = makeRoom({ roomId: "r1", type: "command" });
     const projection: OfficeProjection = {
-      ...makeProjection([agent]),
+      ...makeProjection([agent], [], [room]),
       pendingApprovals: [makePendingApproval("t1")],
     } as OfficeProjection;
     expect(computeAgentPresentationState(agent, projection)).toBe("idle");
   });
 
   it("does not return approval when not waiting/reviewing and task is not awaiting approval", () => {
-    const agent = makeAgent({ status: "idle", currentRoomId: "review", currentTaskId: "t1" });
+    const agent = makeAgent({ status: "idle", currentRoomId: "r1", currentTaskId: "t1" });
     const task = makeTask({ taskId: "t1", status: "assigned" });
+    const room = makeRoom({ roomId: "r1", type: "review" });
     const projection: OfficeProjection = {
-      ...makeProjection([agent], [task]),
+      ...makeProjection([agent], [task], [room]),
       pendingApprovals: [makePendingApproval("other")],
     } as OfficeProjection;
     expect(computeAgentPresentationState(agent, projection)).toBe("idle");

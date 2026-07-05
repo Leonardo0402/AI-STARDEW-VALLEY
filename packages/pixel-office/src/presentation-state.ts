@@ -18,8 +18,8 @@ export function computeAgentPresentationState(
 
   // 审批展示状态：全局存在待审批、位于审批/复核房间、且处于等待/复核或任务待审批
   if (projection.pendingApprovals.length > 0) {
-    const roomId = agent.currentRoomId;
-    if (roomId === "review" || roomId === "approval_delivery") {
+    const room = projection.rooms.find((r) => r.roomId === agent.currentRoomId);
+    if (room && (room.type === "review" || room.type === "approval_delivery")) {
       const isWaitingOrReviewing = agent.status === "waiting" || agent.status === "reviewing";
       const task = agent.currentTaskId
         ? projection.tasks.find((t) => t.taskId === agent.currentTaskId)
