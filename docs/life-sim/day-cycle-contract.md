@@ -2,6 +2,7 @@
 
 This document defines the virtual clock and day boundary semantics for the server-side `LifeSimEngine` and the browser-side `LifeSimSession`. It does not define task execution, artifact production, or approval resolution — those remain in the Runtime contract.
 
+For the canonical `LifeSimSnapshot` structure, see `docs/life-sim/client-session-contract.md`.
 For the transport boundary between server and browser, see `docs/life-sim/client-session-contract.md`.
 
 ## State
@@ -13,7 +14,7 @@ interface WorldClockState {
   worldId: string;
   day: number;
   dayOfWeek: 1 | 2 | 3 | 4 | 5 | 6 | 7;
-  minuteOfDay: number; // 0..1439
+  minuteOfDay: number; // 0..1439 while a day is running; configured start-of-day minute when not_started
   phase: "dawn" | "morning" | "afternoon" | "evening" | "night";
   status: "not_started" | "running" | "paused" | "ending";
   speed: number; // virtual minutes per real second, or 0 in manual mode
@@ -27,8 +28,8 @@ Field semantics:
 - `worldId` — identifies the persistent world. One office/demo owns one world in V1.
 - `day` — positive integer, starts at 1.
 - `dayOfWeek` — 1..7, purely for display and future weekly-schedule support.
-- `minuteOfDay` — 0 (00:00) to 1439 (23:59). 1440 is never stored; the day ends first.
-- `phase` — derived from `minuteOfDay` using the table below.
+- `minuteOfDay` — 0 (00:00) to 1439 (23:59) while `status !== "not_started"`. After `world.day_ended` and before the next `world.start_day`, `minuteOfDay` is reset to the configured start-of-day minute (default 480 = 08:00).
+- `phase` — derived from `minuteOfDay` using the table below. When `status === "not_started"`, phase is derived from the start-of-day minute.
 - `status` — controls whether the clock may advance.
 - `speed` — `0` means manual mode; a positive number means real-time compressed mode.
 - `fractionalMinute` — accumulated fractional minutes when running in real-time mode. Saved on pause/shutdown so resume continues from the exact virtual time.
@@ -76,14 +77,18 @@ Used for interactive demos.
 
 ## Serial input queue
 
-All inputs to `LifeSimEngine` are serialized through one ordered queue:
+All inputs to `LifeSimEngine` are serialized through one FIFO queue:
 
 1. Applied operational runtime events (`DomainEvent` with `result.code === "applied"`).
 2. World commands (`world.*`).
 3. Schedule commands (`schedule.*`).
-4. Clock tick inputs (real-time mode only).
+4. Clock tick inputs (real-time compressed mode only).
 
-See `docs/life-sim/client-session-contract.md` for queue semantics.
+The numbered list defines input **kinds**, not priorities. Within the queue, inputs are processed strictly in FIFO order. Concurrent inputs are never applied in parallel; the engine is single-threaded per world.
+
+When an applied operational event is dequeued, the engine records the current `worldClock.minuteOfDay` as the event's binding minute. Commands and clock ticks are likewise stamped with the world minute at which they are processed.
+
+A `world.advance_time` command is a single FIFO input. While it is being processed, no other input can be interleaved. Runtime events that were enqueued before the advance are processed before it; runtime events enqueued after it are processed after it.
 
 ## Commands
 
@@ -107,15 +112,17 @@ interface WorldCommand<P = unknown> {
 | `world.pause` | `{}` | When `status === "running"`. |
 | `world.resume` | `{}` | When `status === "paused"`. |
 | `world.advance_time` | `{ minutes: number }` | Manual/dev mode only. Rejected in real-time mode. |
-| `world.end_day` | `{}` | Operator/test capability. Rejected unless `status === "running"` or `"paused"`. |
+| `world.end_day` | `{}` | Only when `status === "running"` or `"paused"` **and** `minuteOfDay === configuredEndOfDayMinute`. |
 
 Command rules:
 
 - `commandId` is used for idempotency. Repeating a command with the same `commandId` returns the stored result without mutating state.
 - Invalid day/time transitions are rejected structurally with `LifeSimCommandResult { status: "rejected", error: { code, message } }`.
+- `world.end_day` is rejected if the current virtual minute is not exactly the configured end-of-day minute. Forced early end is not supported in V1.
 - `world.end_day` is guarded by a `dayEnded` flag per day; repeated invocations for the same day are idempotent no-ops.
 - `world.advance_time` with `minutes <= 0` is rejected.
 - `world.advance_time` that would cross the configured end-of-day minute stops at the end-of-day boundary and triggers `world.day_ending`.
+- A command returns `accepted` only after its effects have been durably persisted.
 
 ## Command result and capabilities
 
@@ -126,8 +133,11 @@ interface LifeSimCommandResult {
   commandId: string;
   status: "accepted" | "rejected";
   lifeSimSequence: number | null;
-  events: LifeSimEvent[] | null;
-  error: { code: string; message: string } | null;
+  events: LifeSimEvent[];
+  error: {
+    code: LifeSimCommandErrorCode;
+    message: string;
+  } | null;
 }
 
 interface LifeSimCapabilities {
@@ -135,7 +145,7 @@ interface LifeSimCapabilities {
     startDay: boolean;
     pause: boolean;
     resume: boolean;
-    endDay: boolean;
+    endDay: boolean; // true only at configured end-of-day minute in V1
     advanceTime: boolean;
   };
   schedule: {
@@ -150,6 +160,7 @@ interface LifeSimCapabilities {
 ```
 
 - `advanceTime` is `true` only when `clock.mode === "manual"`.
+- `endDay` is advertised as `true` only when the current virtual minute equals the configured end-of-day minute.
 - The UI hides or disables controls for capabilities that are `false`.
 
 ## Events
@@ -183,6 +194,7 @@ Event types:
 | `world.day_ended` | `{ day, summaryId }` | Day summary is persisted and all end-of-day processing is complete. |
 | `day.summary_recorded` | `{ summaryId, day, summary: DaySummary }` | The factual summary is computed and stored. |
 | `world.history_truncated` | `{ lostRuntimeRange: { from: number; to: number } }` | Runtime event log is trimmed beyond the life-sim checkpoint. |
+| `schedule.overlay_reconstructed` | `{ overlayId, agentId, reconstructionSource, originalStartMinute }` | An overlay is rebuilt from a runtime snapshot after history truncation. |
 
 Event rules:
 
@@ -194,16 +206,17 @@ Event rules:
 
 ## Complete event ordering for a large time advance
 
-When the clock advances from `oldMinute` to `newMinute` in one step, the engine emits life-sim events in the following order for each crossed minute `m` (from `oldMinute + 1` to `newMinute`):
+A `world.advance_time` command is processed atomically. Within that command, the engine advances from `oldMinute` to `newMinute` and evaluates schedule boundaries for each crossed minute `m` (from `oldMinute + 1` to `newMinute`):
 
-1. Interruptions caused by runtime events that occurred at minute `m`.
-2. Activity completions for entries ending at minute `m`.
-3. Phase changes if minute `m` crosses a phase boundary.
-4. Activity starts for entries beginning at minute `m`.
-5. Location changes implied by the above.
-6. `world.time_advanced` coalescing the entire advance.
+1. Runtime events that were enqueued before the advance have already been applied. No runtime event is applied mid-advance.
+2. Existing overlays that end early at minute `m` (`schedule.overlay_ended`).
+3. Activity completions for entries ending at minute `m`.
+4. Phase changes if minute `m` crosses a phase boundary.
+5. Activity starts for entries beginning at minute `m`.
+6. Location changes implied by the above, but only when `oldRoomId !== newRoomId`.
+7. After all crossed minutes are processed, `world.time_advanced` coalesces the entire advance.
 
-For deterministic replay, the ordering must depend only on `(day, minute, entryId, runtimeSequence)`, not on wall-clock timing.
+For deterministic replay, the ordering must depend only on `(day, minute, entryId, overlayId, runtimeSequence)`, not on wall-clock timing.
 
 ## Day boundaries
 
@@ -219,17 +232,19 @@ For deterministic replay, the ordering must depend only on `(day, minute, entryI
 
 End-of-day processing follows this exact order:
 
-1. `world.end_day` accepted; `status` moves to `"ending"`.
+1. `world.end_day` accepted; `status` moves to `"ending"`. This is allowed only when `minuteOfDay` equals the configured end-of-day minute.
 2. No new ordinary base-schedule activities may start.
-3. Existing in-flight activities continue until their configured `endMinute` or until the configured end-of-day minute, whichever comes first (default: no carry-over in V1).
+3. Existing in-flight activities continue until their configured `endMinute`, but they are not allowed to extend beyond the configured end-of-day minute (default: no carry-over in V1).
 4. All leave activities complete.
-5. `world.day_ending` emitted.
-6. `DaySummary` computed.
-7. `world.day_ended` emitted.
-8. `day.summary_recorded` emitted.
-9. `status` becomes `"not_started"` for the next day.
+5. Any remaining active overlays are ended with reason `day_ending`.
+6. Necessary `agent.location_changed` events are emitted (only when the room actually changes).
+7. `world.day_ending` is emitted.
+8. `DaySummary` is computed.
+9. `day.summary_recorded` is emitted.
+10. `world.day_ended` is emitted.
+11. `status` becomes `"not_started"` and `minuteOfDay` resets to the configured start-of-day minute for the next day. `day` does not increment until the next `world.start_day`.
 
-`day` does not increment until the next `world.start_day`. There is no implicit day rollover at 00:00.
+There is no implicit day rollover at 00:00.
 
 ### Day summary
 
@@ -277,13 +292,24 @@ The server-side life-sim persistence layer stores:
 - `completedDaySummaries` — immutable `DaySummary` records.
 - `lastAppliedRuntimeSequence` — the runtime `sequence` up to which the life-sim store has caught up.
 - `truncatedHistory` — marker for `history_truncated` recovery.
+- `idempotencyResults` — map from `commandId` to `LifeSimCommandResult` for accepted commands within the retention window.
 
-Atomicity:
+Durability rule:
 
-- Writes go to a temp file in the same directory, then `fs.rename` / `MoveFileEx` is used for atomic replacement.
+- A command returns `accepted` only after the resulting events, the updated snapshot, and the idempotency result have been durably written.
+- Two strategies are acceptable:
+  1. **Simple immediate atomic write** — every accepted command triggers a single atomic JSON write of the full snapshot + event log tail + idempotency map.
+  2. **WAL + periodic snapshot** — commands are appended to a durable write-ahead log; a background process checkpoints the snapshot.
+- Atomicity is achieved by write-to-temp + atomic rename (`fs.rename` / `MoveFileEx`).
 - A corrupt or unsupported file causes startup to fail with a clear diagnostic; the app does not silently reset the world.
 - Test storage paths are deterministic and isolated per test.
 - No secrets, model prompts, or partial state may be written.
+
+### Idempotency retention
+
+- Idempotency results are retained for at least the most recent 10,000 accepted commands or 7 days, whichever is larger.
+- After the retention window, a repeated `commandId` is treated as a new command.
+- The retention policy is per-world and configurable at deployment time.
 
 ## UI projection
 
@@ -329,11 +355,14 @@ The UI uses existing design tokens and components. It exposes, when capabilities
 ## Invariants
 
 - `0 <= minuteOfDay <= 1439` while `status !== "not_started"`.
-- `status === "not_started"` implies `minuteOfDay` is the configured start-of-day minute and `fractionalMinute === 0`.
+- When `status === "not_started"`, `minuteOfDay` equals the configured start-of-day minute and `fractionalMinute === 0`.
 - `phase` is always the phase that corresponds to `minuteOfDay`.
 - `speed >= 0`.
 - `day > 0`.
 - `world.time_advanced` never carries `newMinute < oldMinute`.
+- `world.day_ending` is emitted at most once per `day`.
 - `world.day_ended` is emitted at most once per `day`.
+- `day.summary_recorded` is emitted exactly once between `world.day_ending` and `world.day_ended`.
 - `world.history_truncated` is emitted at most once per recovery.
 - `fractionalMinute` is persisted on every pause and shutdown in real-time mode.
+- No active overlay may reference a non-existent task after truncated reconciliation.

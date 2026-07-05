@@ -2,6 +2,8 @@
 
 This example walks through a deterministic Day 1 in manual mode. It demonstrates how runtime events interrupt and resume schedule entries without the schedule engine fabricating operational outcomes.
 
+> Payloads below are the **minimum required fields** for the narrative. Runtime validators require additional fields; always consult `packages/protocol/src/index.ts` for full schema.
+
 ## Setup
 
 - World ID: `world-demo-001`
@@ -77,14 +79,13 @@ At 08:30 the arrive entries end and work/review entries begin automatically as t
 }
 ```
 
-The life-sim layer observes this applied event and creates a `task_overlay` for `worker-1` from 09:00 until the configured end-of-day minute.
+The life-sim layer always creates a `task_overlay` for `worker-1` from 09:00 until the configured end-of-day minute. Because the overlay has the same activity (`work`) and room (`qclaw-room-execution`) as the currently active base entry, no `agent.location_changed` event is emitted.
 
 **Life-sim events emitted**
 
 ```json
 { "type": "schedule.activity_interrupted", "payload": { "agentId": "worker-1", "entryId": "worker-work-am", "interruptedByTaskId": "t-1", "interruptedAtWorldMinute": 540 } }
 { "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "overlay-t-1", "activity": "work", "roomId": "qclaw-room-execution", "startedAtWorldMinute": 540 } }
-{ "type": "agent.location_changed", "payload": { "agentId": "worker-1", "oldRoomId": "qclaw-room-execution", "newRoomId": "qclaw-room-execution", "reason": "task_overlay" } }
 ```
 
 ### 10:30 — Worker produces artifact and approval is requested
@@ -92,21 +93,37 @@ The life-sim layer observes this applied event and creates a `task_overlay` for 
 **Runtime events (applied)**
 
 ```json
-{ "type": "artifact.created", "payload": { "artifactId": "a-1", "taskId": "t-1" } }
+{
+  "type": "artifact.created",
+  "payload": {
+    "artifactId": "a-1",
+    "taskId": "t-1",
+    "producerAgentId": "worker-1",
+    "type": "deliverable",
+    "title": "Day 1 deliverable",
+    "uri": "artifact://a-1",
+    "version": 1
+  }
+}
 {
   "type": "approval.requested",
-  "payload": { "approvalId": "ap-1", "taskId": "t-1", "kind": "artifact_delivery", "artifactIds": ["a-1"], "reason": "Deliverable ready for review" }
+  "payload": {
+    "approvalId": "ap-1",
+    "taskId": "t-1",
+    "kind": "artifact_delivery",
+    "requestedBy": "worker-1",
+    "reason": "Deliverable ready for review"
+  }
 }
 ```
 
-The Worker remains in `overlay-t-1` because the task is still active. The deterministic reviewer policy selects `reviewer-1` (only reviewer, operational status). `reviewer-1` receives a `task_overlay` for the pending approval.
+The Worker keeps `overlay-t-1` because the task is still active. The deterministic reviewer policy selects `reviewer-1` (only reviewer, operational status). `reviewer-1` receives a `task_overlay` for the pending approval. Because the reviewer's current activity is already `review` in `qclaw-room-review`, no `agent.location_changed` event is emitted.
 
 **Life-sim events emitted**
 
 ```json
 { "type": "schedule.activity_interrupted", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-review-am", "interruptedByTaskId": "t-1", "interruptedAtWorldMinute": 630 } }
 { "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "overlay-ap-1", "activity": "review", "roomId": "qclaw-room-review", "startedAtWorldMinute": 630 } }
-{ "type": "agent.location_changed", "payload": { "agentId": "reviewer-1", "oldRoomId": "qclaw-room-review", "newRoomId": "qclaw-room-review", "reason": "task_overlay" } }
 ```
 
 ### 11:00 — Approval approved, task completes
@@ -118,18 +135,16 @@ The Worker remains in `overlay-t-1` because the task is still active. The determ
 { "type": "task.completed", "payload": { "taskId": "t-1" } }
 ```
 
-The life-sim layer ends both task overlays early and resumes the current base entries.
+The life-sim layer ends both task overlays early and resumes the current base entries. Because the resumed base entries use the same rooms as the overlays, no `agent.location_changed` events are emitted.
 
 **Life-sim events emitted**
 
 ```json
 { "type": "schedule.overlay_ended", "payload": { "agentId": "worker-1", "overlayId": "overlay-t-1", "reason": "task_completed", "endedAtWorldMinute": 660 } }
 { "type": "schedule.activity_resumed", "payload": { "agentId": "worker-1", "entryId": "worker-work-am", "resumedAtWorldMinute": 660 } }
-{ "type": "agent.location_changed", "payload": { "agentId": "worker-1", "oldRoomId": "qclaw-room-execution", "newRoomId": "qclaw-room-execution", "reason": "overlay_ended" } }
 
 { "type": "schedule.overlay_ended", "payload": { "agentId": "reviewer-1", "overlayId": "overlay-ap-1", "reason": "task_completed", "endedAtWorldMinute": 660 } }
 { "type": "schedule.activity_resumed", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-review-am", "resumedAtWorldMinute": 660 } }
-{ "type": "agent.location_changed", "payload": { "agentId": "reviewer-1", "oldRoomId": "qclaw-room-review", "newRoomId": "qclaw-room-review", "reason": "overlay_ended" } }
 ```
 
 Note: `worker-work-am` and `reviewer-review-am` are resumed even though they originally ended at 12:00. Because the interruption happened inside each entry's time window, the schedule engine treats the remaining window as resumed.
@@ -180,7 +195,7 @@ First, the leave entries reach their `endMinute`:
 { "type": "schedule.activity_completed", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-leave", "completedAtWorldMinute": 1110 } }
 ```
 
-Then the operator ends the day:
+Then the operator ends the day. `world.end_day` is allowed because the current virtual minute equals the configured end-of-day minute (1110).
 
 **Operator command**
 
@@ -196,9 +211,11 @@ Then the operator ends the day:
 
 ```json
 { "type": "world.day_ending", "payload": { "day": 1, "endedAtWorldMinute": 1110 } }
-{ "type": "world.day_ended", "payload": { "day": 1, "summaryId": "ds-1" } }
 { "type": "day.summary_recorded", "payload": { "summaryId": "ds-1", "day": 1, "summary": { /* see below */ } } }
+{ "type": "world.day_ended", "payload": { "day": 1, "summaryId": "ds-1" } }
 ```
+
+After `world.day_ended`, the world status becomes `"not_started"` and `minuteOfDay` resets to the configured start-of-day minute (480). `day` does not increment until the next `world.start_day`.
 
 ## Expected state after `world.advance_time(150)` from 08:00 to 10:30
 
@@ -228,7 +245,8 @@ At world minute 630, before the approval request:
       "createdBy": "task",
       "createdAtWorldMinute": 540,
       "createdByTaskId": "t-1",
-      "createdByRuntimeSequence": 7
+      "createdByRuntimeSequence": 7,
+      "originalStartMinute": 540
     }
   ],
   "lastAppliedRuntimeSequence": 7

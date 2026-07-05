@@ -23,7 +23,7 @@ The initial draft of this ADR placed `LifeSimStore` inside the browser. Review s
 
 Run `LifeSimEngine` and `LifeSimStore` on the server side (co-located with the Reference Swarm or a companion server). Expose a dedicated life-sim API for snapshots, events, and commands. The browser holds both `RuntimeSession` (for operational state) and `LifeSimSession` (for life-sim state), and composes the two projections at the application boundary.
 
-`LifeSimStore` maintains a separate `LifeSimSnapshot` and its own event log. It consumes only **applied** operational events (`result.code === "applied"`) from the runtime event stream. It does not modify `RuntimeSnapshot`, `DomainEvent`, or any `RuntimeAdapter`. The generic runtime protocol remains unchanged.
+`LifeSimStore` maintains a separate `LifeSimSnapshot` and its own event log. It consumes only **applied** operational events (`result.code === "applied"`) from the runtime event stream through an internal `OperationalEventJournal` interface. It does not modify `RuntimeSnapshot`, `DomainEvent`, or any `RuntimeAdapter`. The generic runtime protocol remains unchanged.
 
 This is **Option B (separate `LifeSimSnapshot`) composed with Option C's separate reducer/event stream**, now hosted on a server with a dedicated browser client.
 
@@ -44,7 +44,7 @@ This is **Option B (separate `LifeSimSnapshot`) composed with Option C's separat
 - **The UI must compose two sessions/projections.** A new hook or view model merges `OfficeProjection` and `LifeSimProjection`.
 - **Two server-side checkpoints must be kept consistent at restart.** On startup the life-sim engine must replay applied runtime events from after its own last-known runtime sequence.
 - **A separate transport contract is required.** The browser needs a `LifeSimClient` with its own subscribe/replay/cursor semantics (see `docs/life-sim/client-session-contract.md`).
-- **Event-log trimming requires a fallback.** If the runtime event log is trimmed beyond the life-sim checkpoint, exact historical minute-level counts cannot be reconstructed from the latest runtime snapshot alone.
+- **Event-log trimming requires a fallback.** If the runtime event log is trimmed beyond the life-sim checkpoint, exact historical minute-level counts cannot be reconstructed from the latest runtime snapshot alone. However, the latest snapshot can still be used to reconcile current overlays and tasks.
 
 ## Alternatives considered
 
@@ -70,6 +70,7 @@ Reference Swarm / companion server
 └─ LifeSimEngine
    ├─ LifeSimStore  (persistent)
    ├─ LifeSimReducer
+   ├─ OperationalEventJournal  (internal dependency)
    └─ life-sim API (snapshot, event stream, commands)
 
 Browser / demo-office
@@ -81,9 +82,9 @@ Browser / demo-office
 Server-side responsibilities:
 
 - Own the canonical `LifeSimSnapshot` and life-sim event log.
-- Receive applied operational events from the runtime event journal.
+- Receive applied operational events from the runtime event journal via `OperationalEventJournal`.
 - Process world commands, clock ticks, and committed runtime events through one ordered input queue.
-- Persist atomically and recover from restarts, including event-log-trimmed fallback.
+- Persist atomically and recover from restarts, including event-log-trimmed reconciliation.
 - Expose snapshots and events to browser clients.
 
 Browser responsibilities:
@@ -93,6 +94,58 @@ Browser responsibilities:
 - Compose `OfficeProjection` and `LifeSimProjection` for the UI.
 - Never own canonical life-sim state or persistence.
 
+## `LifeSimSnapshot`
+
+The canonical server-side state is defined in `docs/life-sim/client-session-contract.md` as:
+
+```ts
+interface LifeSimSnapshot {
+  worldId: string;
+  schemaVersion: string;
+  checkpointLifeSimSequence: number;
+  lastAppliedRuntimeSequence: number;
+  worldClock: WorldClockState;
+  baseSchedules: AgentScheduleEntry[];
+  activeActivities: ActiveAgentActivity[];
+  activeOverlays: ScheduleOverlay[];
+  completedDaySummaries: DaySummary[];
+  truncatedHistory: {
+    truncated: boolean;
+    lostRuntimeRange: { from: number; to: number } | null;
+  };
+}
+```
+
+This structure is separate from `RuntimeSnapshot` and is not visible to adapters.
+
+## Internal dependency: `OperationalEventJournal`
+
+The `LifeSimEngine` depends on the runtime's applied event journal through an internal interface, not through its own public HTTP API.
+
+```ts
+interface OperationalEventJournal {
+  replayApplied(
+    fromRuntimeSequence: number
+  ): Promise<OperationalReplayResult>;
+
+  getCurrentSnapshot(): Promise<RuntimeSnapshot>;
+}
+
+interface OperationalReplayResult {
+  events: Array<{ runtimeEvent: DomainEvent; runtimeSequence: number }>;
+  nextRuntimeSequence: number;
+  truncated: boolean;
+  lostRuntimeRange: { from: number; to: number } | null;
+}
+```
+
+Responsibilities:
+
+- `replayApplied` returns only applied operational events from the requested runtime sequence onward. It never returns `reducer_rejected` or transport-rejected events.
+- `getCurrentSnapshot` returns the latest runtime snapshot for reconciliation when the event log is trimmed.
+- The Reference Swarm runtime or a companion server implements this interface. The HTTP/SSE `RuntimeAdapter` itself is not involved.
+- The public `GET /life-sim/{worldId}/replay` endpoint is for diagnostics and external tools only; the engine does not call it.
+
 ## Operational event consumption
 
 `LifeSimEngine` consumes operational events only when they are committed by `SnapshotStore` with `result.code === "applied"`.
@@ -100,18 +153,72 @@ Browser responsibilities:
 - `reducer_rejected` events advance runtime sequence but do not change `RuntimeSnapshot`; they must not drive schedules.
 - Transport-rejected events (`duplicate`, `runtime_mismatch`, `sequence_gap`, etc.) are invisible to the life-sim engine.
 - Each consumed operational event carries `eventId` and `runtimeSequence`. Life-sim events that are caused by an operational event retain those identifiers in `runtimeEventId` and `runtimeSequence`.
+- When an applied operational event is dequeued by the engine, it is bound to the current `worldClock.minuteOfDay`. This binding is deterministic and replayable because inputs are processed in FIFO order.
 
-## Persistent event catch-up and event-log-trimmed recovery
+## Persistent event catch-up and event-log-trimmed reconciliation
 
-The life-sim store records `lastAppliedRuntimeSequence` in its checkpoint. On restart it requests runtime event replay from `lastAppliedRuntimeSequence + 1` using a cursor-based API (see `docs/life-sim/client-session-contract.md`).
+The life-sim store records `lastAppliedRuntimeSequence` in its checkpoint. On restart it calls `OperationalEventJournal.replayApplied(lastAppliedRuntimeSequence + 1)`.
 
 Three cases:
 
 1. **Full replay available.** The engine replays all missing applied events in order and reaches consistency.
-2. **Partial replay available.** The engine replays available events. If a gap remains, it enters `history_truncated` mode.
-3. **Event log trimmed / snapshot ahead.** If the runtime snapshot is already beyond `lastAppliedRuntimeSequence + 1` and the intervening events are unavailable, the engine emits `world.history_truncated` with the lost runtime sequence range, marks the current day summary as `truncated: true`, and continues from the next available applied event.
+2. **Partial replay available.** The engine replays available events. If a gap remains, it enters `history_truncated` reconciliation.
+3. **Event log trimmed / snapshot ahead.** If `replayApplied` returns `truncated: true` and the latest runtime snapshot is already beyond the missing range, the engine:
+   - emits `world.history_truncated` with the lost runtime sequence range;
+   - reconciles active overlays against `getCurrentSnapshot()`;
+   - marks the current day summary as `truncated: true`;
+   - continues from the next available applied event.
 
-A latest runtime snapshot cannot reconstruct exact historical approval counts or interruption times. The contract makes this explicit: minute-level historical accuracy is only guaranteed when every applied event is replayed.
+### Truncated reconciliation rules
+
+A latest runtime snapshot cannot reconstruct exact historical approval counts or interruption times, but it can repair the current state so that stale overlays do not live forever.
+
+For each `RuntimeSnapshot.task` after a truncated gap:
+
+- If the task is absent or in a terminal state (`completed`, `failed`, `cancelled`), any overlay referencing that task is closed.
+- If the task is `assigned` to an Agent and that Agent is operational, a provisional `task_overlay` is created from the current world minute to the configured end-of-day minute. Its `createdByRuntimeSequence` is set to the runtime sequence of the snapshot, and a `schedule.overlay_reconstructed` event is emitted with `reconstructionSource: "runtime_snapshot"`.
+- If the task is `waiting_approval`, the Worker overlay is retained or reconstructed, and a Reviewer overlay is created if a reviewer is currently assigned by the runtime or selected by the deterministic reviewer policy. If no reviewer is deterministically selectable, the approval is left unassigned.
+- Any overlay whose referenced task cannot be found is closed; no orphaned overlays are allowed.
+- Reconstructed overlays record `originalStartMinute: null` to indicate that the exact start time is unknown.
+- Activity duration and day-summary counters for the truncated day are marked `truncated: true`. They are valid from the reconciliation point forward, not for the entire day.
+
+For each `RuntimeSnapshot.agent`:
+
+- If the agent is non-operational (`offline`, `failed`, `paused`), its current activity is interrupted.
+- The agent's `operationalRoomId` is read from `AgentSnapshot.currentRoomId` and fed into the room-precedence rules in `docs/life-sim/schedule-semantics.md`.
+
+## Persistence and durability boundary
+
+`LifeSimStore` persists on the server. A command returns `accepted` only after the resulting events, the updated snapshot, and the idempotency result have all been durably written.
+
+Two acceptable persistence strategies:
+
+1. **Simple immediate atomic write.** Every accepted command triggers a single atomic JSON write of the full snapshot + event log tail + idempotency map. Suitable for demo and small-scale deployments.
+2. **WAL + periodic snapshot.** Accepted commands are first appended to a durable write-ahead log; a background process periodically checkpoints the snapshot. Recovery replays the WAL from the last snapshot. This is the preferred path for higher throughput in later phases.
+
+Regardless of strategy, the contract is:
+
+- `LifeSimCommandResult.status === "accepted"` implies that the command's effects are durable before the result is returned.
+- Idempotency results are persisted alongside the state so that replayed commands return the original `events` and `lifeSimSequence` without re-mutating state.
+- Atomicity is achieved by write-to-temp + atomic rename (`fs.rename` / `MoveFileEx`).
+- Corrupt or unsupported files cause startup to fail with a clear diagnostic.
+
+### Idempotency retention
+
+- Idempotency results are retained for at least the most recent 10,000 accepted commands or 7 days, whichever is larger.
+- After the retention window, a repeated `commandId` is treated as a new command and may be rejected if it conflicts with current state (e.g., `world.start_day` when a day is already running).
+- The retention policy is per-world and configurable at deployment time.
+
+## Browser startup and subscription
+
+The browser must establish life-sim state in this exact order:
+
+1. `GET /life-sim/{worldId}/snapshot`.
+2. Install `snapshot` as the current local projection.
+3. Apply `eventLogTail` in order.
+4. Subscribe from `afterLifeSimSequence = checkpointLifeSimSequence + eventLogTail.length`.
+
+See `docs/life-sim/client-session-contract.md` for the full client contract.
 
 ## Integration sketch
 
@@ -126,8 +233,8 @@ A latest runtime snapshot cannot reconstruct exact historical approval counts or
 │  │                         │      │  │  (snapshot + event log) │  │  │
 │  │  event journal          │      │  └─────────────────────────┘  │  │
 │  └───────────┬─────────────┘      │  ┌─────────────────────────┐  │  │
-│              │ applied events     │  │ Ordered input queue     │  │  │
-│              │ (cursor replay)    │  │ (commands, ticks, ops)  │  │  │
+│              │ applied events     │  │ OperationalEventJournal │  │  │
+│              │ (internal)         │  │  (internal interface)   │  │  │
 │              └──────────────────>│  └─────────────────────────┘  │  │
 │                                  └───────────┬───────────────────┘  │
 │                                              │ snapshot / events   │
@@ -158,36 +265,9 @@ A latest runtime snapshot cannot reconstruct exact historical approval counts or
 
 Key points:
 
-- Operational commands (`task.create`, `approval.accept`, etc.) flow through `CommandGateway → RuntimeAdapter.execute → Runtime → SnapshotStore → runtime event journal → LifeSimEngine`.
+- Operational commands (`task.create`, `approval.accept`, etc.) flow through `CommandGateway → RuntimeAdapter.execute → Runtime → SnapshotStore → OperationalEventJournal → LifeSimEngine`.
 - Life-sim commands (`world.*`, `schedule.*`) flow through `LifeSimSession → LifeSimEngine`.
 - The UI uses a composed projection that merges `OfficeProjection` and `LifeSimProjection`.
-
-## Persistence and restart
-
-`LifeSimStore` persists on the server:
-
-- `lifeSimSnapshot` — a checkpoint of world clock, active activities, base schedules, active overlays, and `lastAppliedRuntimeSequence`;
-- `lifeSimEventLog` — life-sim events emitted since the checkpoint;
-- `baseSchedules` — the deterministic base schedules for each agent;
-- `completedDaySummaries` — immutable summaries of ended days;
-- `truncatedHistory` — marker for `history_truncated` recovery.
-
-The persistence store is an atomic JSON file:
-
-- schema version field;
-- write to a temp file + atomic rename;
-- startup validation with a clear diagnostic on corrupt or unsupported files;
-- deterministic paths for tests;
-- no secrets or model prompts.
-
-Restart procedure:
-
-1. Load the life-sim checkpoint from disk.
-2. Request runtime event replay from `lastAppliedRuntimeSequence + 1`.
-3. Apply all available applied events through the life-sim reducer.
-4. If the runtime event log is trimmed, emit `world.history_truncated` and mark the current day summary as truncated.
-5. Replay the life-sim event log from the checkpoint forward.
-6. The life-sim API becomes available only after the store is consistent or has entered a defined truncated state.
 
 ## Migration path
 
@@ -202,7 +282,3 @@ Later issues (memory, weather, relationships, town map) add new fields and reduc
 - `docs/life-sim/client-session-contract.md`
 - `docs/life-sim/day-cycle-contract.md`
 - `docs/life-sim/schedule-semantics.md`
-- `packages/core/src/session.ts`
-- `packages/core/src/store.ts`
-- `packages/core/src/reducer.ts`
-- `packages/core/src/projection.ts`

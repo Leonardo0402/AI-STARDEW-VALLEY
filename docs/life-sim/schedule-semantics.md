@@ -45,6 +45,7 @@ interface ScheduleOverlay {
   createdAtWorldMinute: number;
   createdByTaskId: string | null;
   createdByRuntimeSequence: number;
+  originalStartMinute: number | null; // null for reconstructed overlays after truncation
 }
 ```
 
@@ -130,7 +131,7 @@ Base schedule entries are cloned per day so that overlays do not mutate the cano
 
 ## Task-driven overlays
 
-When a runtime event assigns a task to an Agent, the life-sim layer creates a `task_overlay` entry if the Agent is not already in a compatible activity.
+When a runtime event assigns a task to an Agent, the life-sim layer **always** creates a `task_overlay` for that Agent from the current world minute to the configured end-of-day minute. This preserves task causality even if the Agent is already in a compatible activity or room.
 
 Rules:
 
@@ -140,25 +141,39 @@ Rules:
 - Its `priority` is higher than any overlapping base entry.
 - Its `createdByTaskId` references the runtime task ID.
 - Its `createdByRuntimeSequence` records the runtime sequence of the triggering event.
-- The overlay is removed when the task reaches a terminal or waiting state (`completed`, `failed`, `blocked`, or `waiting_approval`).
-- The overlay is also removed at `world.day_ended`.
-
-If multiple tasks are assigned to the same Agent before the first overlay clears, the assignment with the higher runtime sequence wins, using `entryId` lexicographic order as a tie-breaker. The earlier task overlay is ended early.
+- The overlay is removed when the task reaches a terminal or waiting state (`completed`, `failed`, `blocked`, `cancelled`, or `waiting_approval`), when the Agent is reassigned away from the task, or at `world.day_ending`.
+- If multiple tasks are assigned to the same Agent before the first overlay clears, the assignment with the higher runtime sequence wins, using `entryId` lexicographic order as a tie-breaker. The earlier task overlay is ended early.
+- When an overlay replaces a currently active entry with the same `activity` and `roomId`, no `agent.location_changed` event is emitted.
 
 ## Reviewer selection
 
 `approval.requested` does not identify a reviewer. The deterministic V1 policy is:
 
-1. Consider Agents whose runtime role is `reviewer` and whose runtime status is operational (`idle`, `running`, etc.).
+1. Consider Agents whose runtime role is `reviewer` and whose runtime status is available.
 2. Select the reviewer with the fewest active review overlays.
 3. Break ties by lexicographically smallest `agentId`.
+
+A reviewer is considered **available** when `AgentSnapshot.status` is one of:
+
+- `"idle"`
+- `"planning"`
+- `"working"`
+- `"waiting"`
+- `"reviewing"`
+
+The following statuses exclude a reviewer from selection:
+
+- `"offline"`
+- `"blocked"`
+- `"paused"`
+- `"failed"`
 
 If no reviewer is available:
 
 - The approval request is recorded by the runtime in the normal way.
 - No reviewer overlay is created.
 - The task remains `waiting_approval`.
-- When a reviewer later becomes available, no retroactive overlay is created for the already-pending approval.
+- When a reviewer later becomes available, no retroactive overlay is created for already-pending approvals. Only newly requested approvals use the selection policy.
 
 ## Operator overlays
 
@@ -171,7 +186,7 @@ Rules:
 - It has `source === "operator_overlay"` and a configurable `priority`.
 - It may temporarily hide base and task entries but never mutates them.
 - It is removed by `schedule.clear_override { agentId, overlayId }` or automatically when its `endMinute` passes.
-- It is also removed at `world.day_ended`.
+- It is also removed at `world.day_ending`.
 
 ## Interruption and resumption
 
@@ -211,7 +226,7 @@ When the runtime reports an Agent as `offline`, `failed`, or `paused`:
 
 If a runtime task is in `waiting_approval`:
 
-- The assigned Worker remains in `work` activity for that task until the approval is resolved, unless the Worker is explicitly reassigned.
+- The assigned Worker keeps its `task_overlay` for that task. The Worker overlay is not removed until the approval is resolved or the task leaves `waiting_approval`.
 - The selected Reviewer receives a `task_overlay` with `activity === "review"` and `roomId` derived from the reviewer's role-default room while the approval is pending.
 - The reviewer's overlay is removed when the approval is resolved or when the task leaves `waiting_approval`.
 - If the approval is rejected (task becomes `blocked`), the Worker's overlay is removed and the Worker resumes base schedule or becomes `idle` if no base entry matches.
@@ -227,7 +242,7 @@ Three room identifiers exist for an Agent at any moment:
 
 Display precedence:
 
-1. If the Agent has an active task overlay (i.e., is actively working on a runtime-assigned task), `displayRoomId = operationalRoomId`.
+1. If the Agent has an active task overlay (i.e., is actively working on a runtime-assigned task), `displayRoomId = operationalRoomId ?? scheduledRoomId`.
 2. Otherwise, if the Agent has an active operator overlay with a non-null room, `displayRoomId = scheduledRoomId` from the operator overlay.
 3. Otherwise, `displayRoomId = scheduledRoomId` from the current base or review overlay.
 4. If no scheduled entry matches, `displayRoomId = operationalRoomId`.
@@ -267,14 +282,16 @@ All schedule commands are addressed to the server-side `LifeSimEngine`.
 | `schedule.activity_resumed` | `{ agentId, entryId, resumedAtWorldMinute }` | A previously interrupted entry resumes. |
 | `schedule.activity_completed` | `{ agentId, entryId, completedAtWorldMinute }` | A schedule entry reaches its `endMinute` without interruption. |
 | `schedule.overlay_ended` | `{ agentId, overlayId, reason, endedAtWorldMinute }` | An overlay ends early or on schedule. |
-| `agent.location_changed` | `{ agentId, oldRoomId, newRoomId, reason }` | The Agent's display location changes. |
+| `schedule.overlay_reconstructed` | `{ overlayId, agentId, reconstructionSource, originalStartMinute }` | An overlay is rebuilt from a runtime snapshot after history truncation. |
+| `agent.location_changed` | `{ agentId, oldRoomId, newRoomId, reason }` | The Agent's display location changes. Only emitted when `oldRoomId !== newRoomId`. |
 
 Event ordering for the same virtual minute, after any runtime events are applied:
 
 1. Existing overlays that end early at this minute (`schedule.overlay_ended`).
 2. Activity completions for entries ending at this minute.
-3. Activity starts for entries beginning at this minute.
-4. Location changes implied by the above.
+3. Phase changes if minute `m` crosses a phase boundary.
+4. Activity starts for entries beginning at this minute.
+5. Location changes implied by the above, but only when the room actually changes.
 
 Within each group, ordering is deterministic by `(runtimeSequence, entryId, overlayId)`.
 
@@ -282,7 +299,8 @@ Within each group, ordering is deterministic by `(runtimeSequence, entryId, over
 
 A task overlay may end before its original `endMinute` when:
 
-- the task reaches `completed`, `failed`, `blocked`, or `waiting_approval`;
+- the task reaches `completed`, `failed`, `blocked`, `cancelled`, or `waiting_approval`;
+- the Agent is reassigned away from the task;
 - a later task assignment with a higher runtime sequence replaces it;
 - `world.day_ending` occurs.
 

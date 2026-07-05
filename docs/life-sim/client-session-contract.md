@@ -8,20 +8,57 @@ This document defines the transport boundary between the server-side `LifeSimEng
 
 - Own the canonical `LifeSimSnapshot`, event log, and base schedules.
 - Expose a read API for snapshots and events, and a write API for life-sim commands.
-- Push applied runtime events from the runtime event journal into its ordered input queue.
-- Persist atomically on every committed state change (configurable batch window allowed in real-time mode, bounded by durability requirements).
+- Push applied runtime events from the runtime event journal into its ordered input queue via an internal `OperationalEventJournal` interface (see `docs/adr/0006-life-sim-state-boundary.md`).
+- Persist atomically before returning an accepted command result.
 
 ### Browser-side `LifeSimSession`
 
 - Connect to the life-sim API and obtain the latest snapshot.
-- Subscribe to life-sim events.
+- Apply the snapshot's `eventLogTail` in order.
+- Subscribe to life-sim events starting from the last applied `lifeSimSequence`.
 - Send life-sim commands and receive command results.
 - Expose `onLifeSimEvent`, `getSnapshot()`, and `execute(command)` to the application.
 - Never own canonical state; it is a projection cache and command forwarder.
 
-## API surface
+## `LifeSimSnapshot`
 
-### Snapshot endpoint
+The canonical server-side state is defined as:
+
+```ts
+interface LifeSimSnapshot {
+  worldId: string;
+  schemaVersion: string;
+
+  checkpointLifeSimSequence: number;
+  lastAppliedRuntimeSequence: number;
+
+  worldClock: WorldClockState;
+  baseSchedules: AgentScheduleEntry[];
+  activeActivities: ActiveAgentActivity[];
+  activeOverlays: ScheduleOverlay[];
+  completedDaySummaries: DaySummary[];
+
+  truncatedHistory: {
+    truncated: boolean;
+    lostRuntimeRange: { from: number; to: number } | null;
+  };
+}
+```
+
+Field semantics:
+
+- `worldId` — identifies the persistent world.
+- `schemaVersion` — schema version of the snapshot; used for migration checks.
+- `checkpointLifeSimSequence` — the sequence number of the last event included in the checkpoint. The next emitted event will be `checkpointLifeSimSequence + 1`.
+- `lastAppliedRuntimeSequence` — the runtime sequence up to which the life-sim store has applied applied operational events.
+- `worldClock` — current virtual clock state.
+- `baseSchedules` — canonical base schedule entries for each agent.
+- `activeActivities` — currently active schedule entries.
+- `activeOverlays` — currently active overlays.
+- `completedDaySummaries` — immutable summaries of ended days.
+- `truncatedHistory` — marker for `history_truncated` recovery.
+
+## Snapshot endpoint
 
 ```text
 GET /life-sim/{worldId}/snapshot
@@ -33,34 +70,47 @@ Response body:
 interface LifeSimSnapshotResponse {
   worldId: string;
   schemaVersion: string;
+  checkpointLifeSimSequence: number;
   snapshot: LifeSimSnapshot;
   eventLogTail: LifeSimEvent[]; // events emitted after the snapshot checkpoint
-  lastAppliedRuntimeSequence: number;
-  truncated: boolean;
-  truncatedSinceRuntimeSequence: number | null;
 }
 ```
 
-The snapshot endpoint returns the latest checkpoint plus any events emitted since that checkpoint. Clients that want every event can start from `lastAppliedRuntimeSequence` and request replay, or use the live event stream.
+The snapshot response tells the client the exact checkpoint sequence and the ordered tail of events that follow it. Clients must apply the tail in order before subscribing.
 
-### Event stream endpoint
+## Browser startup sequence
+
+The browser must establish life-sim state in this exact order:
+
+1. `GET /life-sim/{worldId}/snapshot`.
+2. Install `snapshot` as the current local projection.
+3. Apply every event in `eventLogTail` sequentially, in the order returned by the server.
+4. Record `lastAppliedLifeSimSequence = checkpointLifeSimSequence + eventLogTail.length`.
+5. Open the event stream with `afterLifeSimSequence = lastAppliedLifeSimSequence`.
+6. On reconnection, repeat from step 1; do not reuse a stale local sequence without re-fetching the snapshot.
+
+## Event stream endpoint
 
 ```text
-GET /life-sim/{worldId}/events?afterLifeSimSequence={n}&afterRuntimeSequence={m}
+GET /life-sim/{worldId}/events?afterLifeSimSequence={n}
 ```
 
 Transport may be Server-Sent Events, WebSocket, or long-polling. The contract is:
 
 - The server streams `LifeSimEvent` envelopes in `lifeSimSequence` order.
-- Each event carries `runtimeSequence` when it is caused by an operational event.
-- The server may send a `world.history_truncated` event when the runtime event journal has been trimmed and the client should not expect minute-level accuracy for the current day.
-- The client reconnects using the last received `lifeSimSequence` and `runtimeSequence`.
+- Each event carries `runtimeEventId` and `runtimeSequence` when it is caused by an applied operational event.
+- The client reconnects using the last received `lifeSimSequence`.
+- If the server returns `truncated: true` in the snapshot response, the client resets any cached historical counters for the current day and displays a truncated-history indicator.
 
-### Replay endpoint
+`afterRuntimeSequence` is intentionally omitted from the client event stream; it is an internal concern of the server-side `OperationalEventJournal`.
+
+## Replay endpoint
 
 ```text
 GET /life-sim/{worldId}/replay?fromRuntimeSequence={start}&toRuntimeSequence={end}
 ```
+
+This endpoint is exposed for diagnostics, observability, or external tools. The server-side `LifeSimEngine` itself does **not** use its own public HTTP replay endpoint as a source of truth; it consumes an internal `OperationalEventJournal` implementation.
 
 Response body:
 
@@ -73,9 +123,7 @@ interface LifeSimReplayResponse {
 }
 ```
 
-The replay endpoint is intended for server-side `LifeSimEngine` restart catch-up. Browser clients normally use the live event stream and snapshot endpoint.
-
-### Command endpoint
+## Command endpoint
 
 ```text
 POST /life-sim/{worldId}/command
@@ -87,19 +135,16 @@ Response body: `LifeSimCommandResult`
 
 ## Serial input queue
 
-The server-side `LifeSimEngine` processes all inputs through one ordered queue:
+The server-side `LifeSimEngine` processes all inputs through one FIFO queue:
 
-1. Committed operational runtime events (`DomainEvent` with `result.code === "applied"`).
+1. Applied operational runtime events (`DomainEvent` with `result.code === "applied"`).
 2. World commands (`world.*`).
 3. Schedule commands (`schedule.*`).
 4. Clock tick inputs (in real-time compressed mode).
 
-Ordering rule:
+The numbered list above defines input **kinds**, not priorities. Within the queue, inputs are processed strictly in FIFO order. Concurrent inputs are never applied in parallel; the engine is single-threaded per world.
 
-- Inputs are dequeued in the order they are received by the engine.
-- Operational events from the runtime journal already have a total order by `runtimeSequence`.
-- World/schedule commands and clock ticks are timestamped by wall-clock arrival but sequenced by the engine's own monotonic `lifeSimSequence`.
-- Concurrent inputs are never applied in parallel; the engine is single-threaded per world.
+When an applied operational event is dequeued, the engine records the current `worldClock.minuteOfDay` as the event's binding minute. Commands and clock ticks are likewise stamped with the world minute at which they are processed.
 
 ## Event envelope
 
@@ -142,22 +187,38 @@ interface LifeSimCommand<P = unknown> {
 ## Command result
 
 ```ts
+type LifeSimCommandErrorCode =
+  | "invalid_command"
+  | "invalid_day"
+  | "invalid_time"
+  | "day_not_started"
+  | "day_already_started"
+  | "day_already_ended"
+  | "end_of_day_not_reached"
+  | "advance_not_allowed_in_realtime"
+  | "invalid_schedule"
+  | "overlay_not_found"
+  | "history_truncated"
+  | "not_implemented"
+  | "internal_error";
+
 interface LifeSimCommandResult {
   commandId: string;
   status: "accepted" | "rejected";
   lifeSimSequence: number | null;
-  events: LifeSimEvent[] | null;
+  events: LifeSimEvent[];
   error: {
-    code: string;
+    code: LifeSimCommandErrorCode;
     message: string;
   } | null;
 }
 ```
 
-- `status === "accepted"` means the command passed validation and was enqueued, processed, and produced events.
+- `status === "accepted"` means the command passed validation, was enqueued, processed, persisted, and produced events.
 - `status === "rejected"` means the command failed validation before entering the queue.
 - `lifeSimSequence` is the sequence of the first event produced by the command, or `null` if rejected.
-- Repeating an accepted command by `commandId` returns the same `lifeSimSequence` and events.
+- Repeating an accepted command by `commandId` returns the same `lifeSimSequence` and `events` (which may be an empty array `[]` for no-op idempotent replays).
+- The `error.code` is a closed union, not an arbitrary string. Clients may switch on it.
 
 ## Capabilities
 
@@ -167,7 +228,7 @@ interface LifeSimCapabilities {
     startDay: boolean;
     pause: boolean;
     resume: boolean;
-    endDay: boolean;
+    endDay: boolean; // true only at configured end-of-day minute in V1
     advanceTime: boolean; // manual/dev mode only
   };
   schedule: {
@@ -181,7 +242,8 @@ interface LifeSimCapabilities {
 }
 ```
 
-- `advanceTime` is disabled in real-time mode.
+- `advanceTime` is `true` only when `clock.mode === "manual"`.
+- `endDay` is advertised as `true` only when the current virtual minute equals the configured end-of-day minute. Forced early end is not a capability in V1.
 - Capabilities are static per deployment in V1; per-user capability grants are out of scope.
 - The UI hides or disables controls for capabilities that are `false`.
 
@@ -190,9 +252,10 @@ interface LifeSimCapabilities {
 On reconnection the browser client:
 
 1. Calls `GET /life-sim/{worldId}/snapshot`.
-2. Compares its last known `lifeSimSequence` with the snapshot's checkpoint sequence.
-3. Opens the event stream from `afterLifeSimSequence = lastKnownLifeSimSequence`.
-4. If `truncated: true` is returned, the client resets any cached historical counters for the current day and displays a truncated-history indicator.
+2. Compares the returned `checkpointLifeSimSequence` with its last known sequence.
+3. Applies `eventLogTail` in order and updates `lastAppliedLifeSimSequence`.
+4. Opens the event stream from `afterLifeSimSequence = lastAppliedLifeSimSequence`.
+5. If `truncatedHistory.truncated` is `true`, the client resets any cached historical counters for the current day and displays a truncated-history indicator.
 
 ## Error handling
 
