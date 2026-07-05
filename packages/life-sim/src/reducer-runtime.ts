@@ -1,17 +1,11 @@
-import type { DomainEvent, TaskSnapshot } from "@agent-office/protocol";
-import type { ActiveAgentActivity, LifeSimEvent, LifeSimSnapshot, ScheduleOverlay } from "./types.js";
+import type { DomainEvent } from "@agent-office/protocol";
+import type { ActiveAgentActivity, LifeSimEvent, LifeSimSnapshot } from "./types.js";
 import { closeOverlaysForTask, createTaskOverlay } from "./overlay.js";
 import { buildActiveActivity } from "./schedule.js";
 
 export interface RuntimeReduceOutput {
   snapshot: LifeSimSnapshot;
   events: LifeSimEvent[];
-}
-
-function getAgentRole(snapshot: LifeSimSnapshot, agentId: string): string | null {
-  // For now base schedule fixtures know roles by convention; extend when runtime agent list is needed.
-  const entry = snapshot.baseSchedules.find((e) => e.agentId === agentId);
-  return entry?.activity === "review" ? "reviewer" : "worker";
 }
 
 export function reduceRuntimeEvent(
@@ -25,37 +19,66 @@ export function reduceRuntimeEvent(
   const events: LifeSimEvent[] = [];
   let nextSnapshot = snapshot;
 
-  const baseEvent = (type: string, payload: unknown): LifeSimEvent => ({
-    eventId: `evt-ls-${nextSequence()}`,
-    worldId: snapshot.worldId,
-    lifeSimSequence: nextSequence() - 1,
-    type,
-    occurredAt: now,
-    worldMinute: bindingMinute,
-    day: snapshot.worldClock.day,
-    causationId: runtimeEvent.eventId,
-    runtimeEventId: runtimeEvent.eventId,
-    runtimeSequence: runtimeEvent.sequence,
-    payload,
-  });
+  const baseEvent = (type: string, payload: unknown): LifeSimEvent => {
+    const seq = nextSequence();
+    return {
+      eventId: `evt-ls-${seq}`,
+      worldId: snapshot.worldId,
+      lifeSimSequence: seq,
+      type,
+      occurredAt: now,
+      worldMinute: bindingMinute,
+      day: snapshot.worldClock.day,
+      causationId: runtimeEvent.eventId,
+      runtimeEventId: runtimeEvent.eventId,
+      runtimeSequence: runtimeEvent.sequence,
+      payload,
+    };
+  };
 
   switch (runtimeEvent.type) {
     case "task.assigned": {
       const { taskId, agentId, roomId } = runtimeEvent.payload as { taskId: string; agentId: string; roomId: string };
+
+      // V1: a later task assignment for the same agent wins; close any existing task overlay first.
+      const existingTaskOverlayIds = new Set(
+        snapshot.activeOverlays
+          .filter((o) => o.agentId === agentId && o.createdBy === "task")
+          .map((o) => o.overlayId)
+      );
+      for (const overlay of snapshot.activeOverlays) {
+        if (existingTaskOverlayIds.has(overlay.overlayId)) {
+          events.push(baseEvent("schedule.overlay_ended", {
+            agentId: overlay.agentId,
+            overlayId: overlay.overlayId,
+            reason: runtimeEvent.type,
+            endedAtWorldMinute: bindingMinute,
+          }));
+        }
+      }
+      const overlaysAfterClose = snapshot.activeOverlays.filter(
+        (o) => !existingTaskOverlayIds.has(o.overlayId)
+      );
+
       const overlay = createTaskOverlay(
         snapshot,
         agentId,
         taskId,
-        getAgentRole(snapshot, agentId) === "reviewer" ? "review" : "work",
+        "work",
         roomId,
         runtimeEvent.sequence,
         bindingMinute,
         endOfDayMinute,
         bindingMinute
       );
-      nextSnapshot = { ...snapshot, activeOverlays: [...snapshot.activeOverlays, overlay] };
+      nextSnapshot = { ...snapshot, activeOverlays: [...overlaysAfterClose, overlay] };
       const oldActivity = snapshot.activeActivities.find((a) => a.agentId === agentId);
-      if (oldActivity) {
+      const newActivity = buildActiveActivity(nextSnapshot, agentId, bindingMinute, bindingMinute);
+      if (
+        oldActivity &&
+        !existingTaskOverlayIds.has(oldActivity.scheduleEntryId) &&
+        oldActivity.scheduleEntryId !== newActivity?.scheduleEntryId
+      ) {
         events.push(baseEvent("schedule.activity_interrupted", {
           agentId,
           entryId: oldActivity.scheduleEntryId,
@@ -63,8 +86,7 @@ export function reduceRuntimeEvent(
           interruptedAtWorldMinute: bindingMinute,
         }));
       }
-      const newActivity = buildActiveActivity(nextSnapshot, agentId, bindingMinute, bindingMinute);
-      if (newActivity) {
+      if (newActivity && oldActivity?.scheduleEntryId !== newActivity.scheduleEntryId) {
         events.push(baseEvent("schedule.activity_started", {
           agentId,
           entryId: newActivity.scheduleEntryId,
@@ -82,18 +104,28 @@ export function reduceRuntimeEvent(
     case "task.blocked":
     case "task.cancelled": {
       const { taskId } = runtimeEvent.payload as { taskId: string };
-      const { overlays, closedIds } = closeOverlaysForTask(snapshot, taskId, runtimeEvent.type, bindingMinute);
+      const closedOverlays = snapshot.activeOverlays.filter((o) => o.createdByTaskId === taskId);
+      const { overlays } = closeOverlaysForTask(snapshot, taskId, runtimeEvent.type, bindingMinute);
       nextSnapshot = { ...snapshot, activeOverlays: overlays };
-      for (const closedId of closedIds) {
-        const overlay = snapshot.activeOverlays.find((o) => o.overlayId === closedId)!;
+      for (const overlay of closedOverlays) {
         events.push(baseEvent("schedule.overlay_ended", {
           agentId: overlay.agentId,
-          overlayId: closedId,
+          overlayId: overlay.overlayId,
           reason: runtimeEvent.type,
           endedAtWorldMinute: bindingMinute,
         }));
       }
       nextSnapshot = { ...nextSnapshot, activeActivities: reconcileActivities(nextSnapshot, bindingMinute) };
+      for (const overlay of closedOverlays) {
+        const resumedActivity = buildActiveActivity(nextSnapshot, overlay.agentId, bindingMinute, bindingMinute);
+        if (resumedActivity && resumedActivity.scheduleEntryId !== overlay.entry.entryId) {
+          events.push(baseEvent("schedule.activity_resumed", {
+            agentId: overlay.agentId,
+            entryId: resumedActivity.scheduleEntryId,
+            resumedAtWorldMinute: bindingMinute,
+          }));
+        }
+      }
       break;
     }
 

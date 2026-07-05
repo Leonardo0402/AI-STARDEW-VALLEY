@@ -47,4 +47,39 @@ describe("runtime event handling", () => {
     expect(state.activeOverlays.some((o) => o.createdByTaskId === "t-1")).toBe(false);
     expect(state.activeActivities.find((a) => a.agentId === "worker-1")?.scheduleEntryId).toBe("worker-work-am");
   });
+
+  it("emits contiguous lifeSimSequence numbers without gaps", async () => {
+    await engine.applyRuntimeEvent(taskAssigned(7, "t-1", "worker-1", "room-execution"));
+    await engine.applyRuntimeEvent(taskCompleted(8, "t-1"));
+    const tail = engine.getSnapshot().eventLogTail;
+    const lifeSimSequences = tail.map((e) => e.lifeSimSequence);
+    for (let i = 1; i < lifeSimSequences.length; i++) {
+      expect(lifeSimSequences[i]).toBe(lifeSimSequences[i - 1] + 1);
+    }
+  });
+
+  it("creates task overlays with activity work", async () => {
+    await engine.applyRuntimeEvent(taskAssigned(7, "t-1", "worker-1", "room-execution"));
+    await engine.applyRuntimeEvent(taskAssigned(8, "t-2", "reviewer-1", "room-review"));
+    const state = engine.getSnapshot().snapshot;
+    expect(state.activeOverlays.every((o) => o.entry.activity === "work")).toBe(true);
+  });
+
+  it("emits schedule.activity_resumed when a task completes", async () => {
+    await engine.applyRuntimeEvent(taskAssigned(7, "t-1", "worker-1", "room-execution"));
+    await engine.applyRuntimeEvent(taskCompleted(8, "t-1"));
+    const tail = engine.getSnapshot().eventLogTail;
+    const resumed = tail.filter((e) => e.type === "schedule.activity_resumed");
+    expect(resumed.length).toBeGreaterThan(0);
+    expect(resumed.at(-1)?.payload).toMatchObject({ agentId: "worker-1", entryId: "worker-work-am" });
+  });
+
+  it("replaces an existing task overlay when a second task is assigned to the same agent", async () => {
+    await engine.applyRuntimeEvent(taskAssigned(7, "t-1", "worker-1", "room-execution"));
+    await engine.applyRuntimeEvent(taskAssigned(8, "t-2", "worker-1", "room-command"));
+    const state = engine.getSnapshot().snapshot;
+    expect(state.activeOverlays.some((o) => o.createdByTaskId === "t-1")).toBe(false);
+    expect(state.activeOverlays.some((o) => o.createdByTaskId === "t-2")).toBe(true);
+    expect(state.activeActivities.find((a) => a.agentId === "worker-1")?.scheduleEntryId).toBe("overlay-t-2");
+  });
 });

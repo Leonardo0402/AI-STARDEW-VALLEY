@@ -108,8 +108,13 @@ export async function createLifeSimEngine(
         currentSnapshot = {
           ...next,
           lastObservedRuntimeSequence: event.sequence,
-          lastAppliedRuntimeSequence: event.sequence,
         };
+        if (events.length > 0) {
+          currentSnapshot = {
+            ...currentSnapshot,
+            lastAppliedRuntimeSequence: event.sequence,
+          };
+        }
         appendEvents(events);
         await persist();
       });
