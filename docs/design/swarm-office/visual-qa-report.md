@@ -1,9 +1,10 @@
-# Swarm Office — Visual QA Report (Task 8)
+# Swarm Office — Visual QA Report (PR #13 P0/P1 fixes)
 
 > Generated: 2026-07-05
 > Comparison target: `high-fidelity-designs-preview.png` + `design-system.md`
 > Screenshot source: `scripts/capture-baseline-screenshots.mjs`
 > Resolutions verified: 1366×768, 1440×900, 1920×1080
+> Renderer: layered sprite renderer (default)
 
 ## Screenshot manifest
 
@@ -23,91 +24,82 @@ Output directory: `docs/design/swarm-office/baseline-screenshots/{width}x{height
 ## Method
 
 1. Started `node scripts/dev-remote-demo.mjs` (Vite + QClaw runtime on ports 5173/3456).
-2. Ran `node scripts/capture-baseline-screenshots.mjs` for all three target resolutions.
-3. Used `scripts/measure-layout.mjs` to verify stage/panel dimensions.
-4. Compared generated screenshots against `design-system.md` tokens and the approved high-fidelity preview.
+2. Confirmed the layered sprite renderer is the default presentation path (`PixelOfficeScene` defaults `useSpriteRenderer` to `true`).
+3. Ran `node scripts/capture-baseline-screenshots.mjs` for all three target resolutions.
+4. Used `scripts/measure-layout.mjs` to verify stage/panel dimensions.
+5. Compared generated screenshots against `design-system.md` tokens and the approved high-fidelity preview.
 
-## Findings and fixes
+## P0/P1 fixes verified
 
-### 1. Focus mode indicator used wrong color for pending approvals
+### 1. Layered sprite renderer is now the default application path
 
-**Finding:** In `apps/demo-office/src/App.tsx`, the Focus overlay rendered the pending-approval count with the success color (`focus-indicator__num--success`). The design system maps pending approvals to `--urgency`.
+`PixelOfficeScene` defaults `useSpriteRenderer` to `true`. The demo-office `dev` and `build` scripts run `copy-pixel-assets` first, so the V1 room, prop, agent, and effect sprites are copied to `public/assets` and served in both dev and production preview. The legacy procedural renderer remains available when `useSpriteRenderer: false` is passed explicitly.
 
-**Fix:** Changed the pending count class to `focus-indicator__num--urgency` and added the corresponding CSS rule in `apps/demo-office/src/theme.css`.
+### 2. Approval presentation state derives from `RoomView.type`
 
-### 2. List view used hardcoded colors outside the design system
+`computeAgentPresentationState()` now resolves the agent's current room through `projection.rooms.find(room => room.roomId === agent.currentRoomId)` and compares `room.type === "review" || room.type === "approval_delivery"`. Tests cover room IDs that differ from the room type.
 
-**Finding:** `apps/demo-office/src/ListView.tsx` used legacy hex values (`#111122`, `#88ccff`, `#ffcc00`, `#ff6666`, etc.) that do not match the approved tokens.
+### 3. React root is created only once
 
-**Fix:** Updated all inline styles and status-color helpers to use the exact hex equivalents of the design tokens:
-- Backgrounds: `--base-850` (#161418), `--base-800` (#1a181c)
-- Text: `--base-100` (#f2f0eb), `--base-300` (#b8b0bc), `--base-400` (#7d7682)
-- Borders: `--base-500` (#4a444e)
-- Status colors: `--info` (#7ec0c8), `--urgency` (#e6a85c), `--success` (#7db68a), `--failure` (#c96a5b)
-- Replaced Chinese-only summary labels with bilingual "Pending" / "Blocked" labels consistent with the rest of the panel.
+`bootstrap()` creates the React root once and passes it to `renderStartupError()` and `renderAppComposition()`. Retry and initial configuration-failure paths reuse the same root, eliminating duplicate-root warnings.
 
-### 3. Canvas background color did not match the app shell
+### 4. Toggling reduced motion no longer rebuilds the Pixi scene
 
-**Finding:** The PixiJS renderer background was `#1a1a2e`, while the surrounding `.app-stage` and `.app-canvas` CSS use `--base-850` (#161418). This created a visible seam when the canvas did not perfectly fill the stage.
+The scene-creation effect in `App.tsx` depends only on `view`; `reduceMotion` updates are applied through `scene.setReduceMotion()`. Tests assert that toggling Motion on/off does not call `scene.destroy()` or re-instantiate `PixelOfficeScene`.
 
-**Fix:** Set Pixi `backgroundColor` to `0x161418` in `packages/pixel-office/src/office-scene.ts`.
+### 5. Artifact cards no longer show fabricated URIs
 
-### 4. Canvas text did not follow the design-system font/size rules
+`ControlPanel.tsx` now distinguishes:
 
-**Finding:** Room labels and overlays used `fontFamily: "monospace"` and agent status text was 8 px, below the operational readability threshold and inconsistent with the design system's `--font-pixel` / `--font-ui` guidance.
+- real content → renders the content preview;
+- real URI → renders the URI;
+- `uri === null` → renders "Content unavailable";
+- no content/URI → renders "Metadata only — content not loaded." and disables View;
+- open failure → shows the error near the View button.
 
-**Fix:**
-- Room labels: 10 px `"Press Start 2P", monospace`, fill `--base-300` (#b8b0bc).
-- Agent name/status: 10 px `Inter, system-ui, sans-serif`, fills `--base-100` / `--base-300`.
-- Approval/blocked overlays: updated to `--urgency` / `--failure` token colors and readable fonts.
+The View button is disabled when the adapter does not report `ARTIFACT_OPEN` in `supportedCommands`.
 
-### 5. Debrief timeline showed chronology without outcomes
+## Findings and fixes (previous visual QA)
 
-**Finding:** `apps/demo-office/src/DebriefTimeline.tsx` displayed only time, sequence, and event type. The design brief requires Debrief mode to surface "chronology and outcomes".
+### 6. Focus mode indicator used wrong color for pending approvals
 
-**Fix:** Added outcome badges for terminal event types (`task.completed`, `task.blocked`, `task.failed`, `approval.approved`, `approval.rejected`, `artifact.delivered`, `artifact.rejected`). Badges use the existing badge color semantics (success / failure / info) and are styled in `theme.css`.
+Fixed in `App.tsx`/`theme.css`: pending count now uses `--urgency`.
 
-### 6. Unit test regression after responsive scaling change
+### 7. List view used hardcoded colors outside the design system
 
-**Finding:** `packages/pixel-office/src/__tests__/office-scene.test.ts` expected the room layer to be `app.stage.children[0]`. After adding the responsive `contentRoot` wrapper, that assertion returned the wrapper container and failed.
+Updated `ListView.tsx` to use design-token hex equivalents.
 
-**Fix:** Updated the test to access `scene.contentRoot.children[0]` (the actual `roomLayer`). Also removed the now-unused `MockApplication` import.
+### 8. Canvas background color did not match the app shell
 
-### 7. Layered sprite renderer colors were not token-aligned
+Pixi `backgroundColor` set to `0x161418` (`--base-850`).
 
-**Finding:** The Stage 4/5 layered renderers (`agent-renderer.ts`, `room-renderer.ts`, `effect-renderer.ts`, `prop-renderer.ts`) used cold/high-saturation hardcoded colors and `monospace` fonts, diverging from `design-system.md`.
+### 9. Canvas text did not follow the design-system font/size rules
 
-**Fix:**
-- Created `packages/pixel-office/src/design-tokens.ts` as a single source of truth for Pixi hex mirrors.
-- Aligned role colors: Orchestrator=`--info`, Worker=`--urgency`, Reviewer=`#b8a8d8`.
-- Aligned status colors to the same mapping used by the legacy renderer.
-- Shifted room floor colors to the warm palette (`--warm-700`, `--warm-500`, warm red/green).
-- Updated effect colors (blocked marker=`--failure`, sparkle/bell=`--urgency`).
-- Switched renderer labels to `Inter` / `"Press Start 2P"` at design-system sizes.
+Room labels use 10 px `"Press Start 2P"`; agent name/status use 10 px `Inter` with token fills.
 
-### 8. Legacy renderer drew agent body by status instead of role
+### 10. Debrief timeline showed chronology without outcomes
 
-**Finding:** In `office-scene.ts` the procedural agent square was filled with the status color, while the design system specifies role-based body color with status as an indicator/accent.
+Added outcome badges for terminal event types.
 
-**Fix:** Agent square now fills with `ROLE_COLORS[role]` and strokes with `STATUS_COLORS[status]`.
+### 11. Unit test regression after responsive scaling change
 
-### 9. Effect layer only refreshed when approvals were pending
+`office-scene.test.ts` updated to access `scene.contentRoot.children[0]` as the `roomLayer`.
 
-**Finding:** `office-scene.ts` called `effectRenderer.render()` only when `pendingApprovals.length > 0`, which meant blocked-marker pulses and working sparkles froze when no approval was active.
+### 12. Layered sprite renderer colors were not token-aligned
 
-**Fix:** `effectRenderer.render()` is now called on every update tick when the sprite renderer is active; `reduceMotion` is respected internally.
+Created `design-tokens.ts` and aligned role/status/room/effect colors and fonts.
 
-### 10. Startup / error splash used legacy palette
+### 13. Legacy renderer drew agent body by status instead of role
 
-**Finding:** `apps/demo-office/src/main.tsx` hardcoded `#1a1a2e`, `#88ccff`, `#ff6666`, and `#888` for the connecting and error screens.
+Agent square now fills with `ROLE_COLORS[role]` and strokes with `STATUS_COLORS[status]`.
 
-**Fix:** Replaced with `--base-900`, `--info`, `--failure`, and `--base-400` CSS custom properties.
+### 14. Effect layer only refreshed when approvals were pending
 
-### 11. Screenshot script error-state comment was inaccurate
+`effectRenderer.render()` is now called every tick when the sprite renderer is active; `reduceMotion` is respected internally.
 
-**Finding:** The comment for scenario 08 claimed the forced session error moved the session to `"failed" or "degraded"` and surfaced Retry/Reload.
+### 15. Startup / error splash used legacy palette
 
-**Fix:** Comment now correctly describes the runtime behavior: injected `runtime_mismatch` → `degraded` → Resynchronize.
+Replaced hardcoded colors with CSS custom properties.
 
 ## Layout verification
 
@@ -121,22 +113,27 @@ Measured via `scripts/measure-layout.mjs`:
 
 Canvas fills the stage at all three resolutions; no stretching or misalignment detected.
 
-## Remaining known limitations (accepted)
+## Remaining known limitations (accepted for V1 / PR #13)
 
-The following are within the agreed V1 scope and are not treated as regressions:
-
-- **Procedural renderer:** Rooms are still flat colored rectangles; the sprite renderer exists but is disabled by default per the V1 asset minimization constraint.
-- **Agent silhouettes:** Agents are still 32×32 squares with role conveyed by text label; full role sprites are out of V1 scope.
-- **List view density:** The list view remains a dense dashboard; only its color system was aligned.
+- **V1 pixel art is intentionally placeholder quality.** The sprites are distinguishable by role and state, but they are not final Cozy Pixel illustrations.
+- **Room label overlap.** Long room names can overlap adjacent rooms at 1366×768; this is acceptable for V1 and will be addressed in the V1.1 spacing/layout pass.
+- **Agent animation set is minimal.** V1 ships with idle/working/walk/blocked frames; approval and paused use the working/blocked frames respectively. Full state-specific frames are V1.1 scope.
+- **Scene composition.** Rooms are arranged as a connected 2×2 office, but doors, roads, lighting layers, and depth sorting improvements are reserved for V1.1.
+- **List view density.** The list view remains a dense dashboard; only its color system and structure were aligned in V1.
 
 ## Acceptance criteria status
 
-- [x] All 8 new screenshots generated at 1920×1080.
-- [x] Screenshots also generated at 1366×768 and 1440×900.
-- [x] Screenshot script runs successfully.
-- [x] Visual discrepancies documented and fixed.
+- [x] Layered sprite renderer is the default presentation path.
+- [x] Approval state derives from `RoomView.type`, not room ID string.
+- [x] React root created once; no duplicate-root warnings on startup or retry.
+- [x] Reduced-motion toggle updates the existing Pixi scene without rebuild.
+- [x] Artifact cards display truthful content states; no fabricated URI.
+- [x] All 8 screenshots regenerated with the sprite renderer at 1920×1080.
+- [x] Screenshots also regenerated at 1366×768 and 1440×900.
+- [x] Screenshot and layout scripts run successfully.
+- [x] Visual discrepancies documented and fixes applied.
 - [x] Existing remote golden-flow tests pass.
-- [x] All unit tests pass (399 / 399).
+- [x] All unit tests pass (407 / 407).
 - [x] `npm run build` succeeds.
 
 ## Commands run
