@@ -7,11 +7,16 @@ This example walks through a deterministic Day 1 in manual mode. It demonstrates
 - World ID: `world-demo-001`
 - Day: 1
 - Start minute: `480` (08:00)
+- End-of-day minute: `1110` (18:30)
 - Agents:
   - `orchestrator-1` (role: Orchestrator)
   - `worker-1` (role: Worker)
   - `reviewer-1` (role: Reviewer)
 - Clock mode: manual deterministic
+- Room entity IDs (examples):
+  - `qclaw-room-command`
+  - `qclaw-room-execution`
+  - `qclaw-room-review`
 
 ## Command sequence and emitted events
 
@@ -39,9 +44,9 @@ This example walks through a deterministic Day 1 in manual mode. It demonstrates
 For each agent, the schedule engine evaluates the base schedule at minute 480 and emits the matching arrive entry:
 
 ```json
-{ "type": "schedule.activity_started", "payload": { "agentId": "orchestrator-1", "entryId": "orch-arrive-1", "activity": "arrive", "roomId": "command", "startedAtWorldMinute": 480 } }
-{ "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "worker-arrive-1", "activity": "arrive", "roomId": "command", "startedAtWorldMinute": 480 } }
-{ "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-arrive-1", "activity": "arrive", "roomId": "command", "startedAtWorldMinute": 480 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "orchestrator-1", "entryId": "orch-arrive-1", "activity": "arrive", "roomId": "qclaw-room-command", "startedAtWorldMinute": 480 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "worker-arrive-1", "activity": "arrive", "roomId": "qclaw-room-command", "startedAtWorldMinute": 480 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-arrive-1", "activity": "arrive", "roomId": "qclaw-room-command", "startedAtWorldMinute": 480 } }
 ```
 
 ### 08:30 — Base work entries begin
@@ -52,75 +57,82 @@ At 08:30 the arrive entries end and work/review entries begin automatically as t
 
 ```json
 { "type": "schedule.activity_completed", "payload": { "agentId": "orchestrator-1", "entryId": "orch-arrive-1", "completedAtWorldMinute": 510 } }
-{ "type": "schedule.activity_started", "payload": { "agentId": "orchestrator-1", "entryId": "orch-work-am", "activity": "work", "roomId": "command", "startedAtWorldMinute": 510 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "orchestrator-1", "entryId": "orch-work-am", "activity": "work", "roomId": "qclaw-room-command", "startedAtWorldMinute": 510 } }
 
 { "type": "schedule.activity_completed", "payload": { "agentId": "worker-1", "entryId": "worker-arrive-1", "completedAtWorldMinute": 510 } }
-{ "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "worker-work-am", "activity": "work", "roomId": "execution", "startedAtWorldMinute": 510 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "worker-work-am", "activity": "work", "roomId": "qclaw-room-execution", "startedAtWorldMinute": 510 } }
 
 { "type": "schedule.activity_completed", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-arrive-1", "completedAtWorldMinute": 510 } }
-{ "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-review-am", "activity": "review", "roomId": "review", "startedAtWorldMinute": 510 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-review-am", "activity": "review", "roomId": "qclaw-room-review", "startedAtWorldMinute": 510 } }
 ```
 
 ### 09:00 — Runtime assigns a task to the Worker
 
-**Runtime event (not a life-sim command)**
+**Runtime event (applied, not a life-sim command)**
 
 ```json
 {
   "type": "task.assigned",
-  "payload": { "taskId": "t-1", "agentId": "worker-1", "roomId": "execution" }
+  "payload": { "taskId": "t-1", "agentId": "worker-1", "roomId": "qclaw-room-execution" }
 }
 ```
 
-The life-sim layer observes this event and creates a `task_override` for `worker-1` from 09:00 until end of day or task completion, whichever comes first.
+The life-sim layer observes this applied event and creates a `task_overlay` for `worker-1` from 09:00 until the configured end-of-day minute.
 
 **Life-sim events emitted**
 
 ```json
 { "type": "schedule.activity_interrupted", "payload": { "agentId": "worker-1", "entryId": "worker-work-am", "interruptedByTaskId": "t-1", "interruptedAtWorldMinute": 540 } }
-{ "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "override-t-1", "activity": "work", "roomId": "execution", "startedAtWorldMinute": 540 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "overlay-t-1", "activity": "work", "roomId": "qclaw-room-execution", "startedAtWorldMinute": 540 } }
+{ "type": "agent.location_changed", "payload": { "agentId": "worker-1", "oldRoomId": "qclaw-room-execution", "newRoomId": "qclaw-room-execution", "reason": "task_overlay" } }
 ```
 
 ### 10:30 — Worker produces artifact and approval is requested
 
-**Runtime events**
+**Runtime events (applied)**
 
 ```json
 { "type": "artifact.created", "payload": { "artifactId": "a-1", "taskId": "t-1" } }
-{ "type": "approval.requested", "payload": { "approvalId": "ap-1", "taskId": "t-1", "artifactId": "a-1" } }
+{
+  "type": "approval.requested",
+  "payload": { "approvalId": "ap-1", "taskId": "t-1", "kind": "artifact_delivery", "artifactIds": ["a-1"], "reason": "Deliverable ready for review" }
+}
 ```
 
-The life-sim layer does not change the Worker's activity; the Worker remains in `override-t-1` because the task is still active. The Reviewer receives a task override to handle the pending approval.
+The Worker remains in `overlay-t-1` because the task is still active. The deterministic reviewer policy selects `reviewer-1` (only reviewer, operational status). `reviewer-1` receives a `task_overlay` for the pending approval.
 
 **Life-sim events emitted**
 
 ```json
 { "type": "schedule.activity_interrupted", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-review-am", "interruptedByTaskId": "t-1", "interruptedAtWorldMinute": 630 } }
-{ "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "override-ap-1", "activity": "review", "roomId": "review", "startedAtWorldMinute": 630 } }
+{ "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "overlay-ap-1", "activity": "review", "roomId": "qclaw-room-review", "startedAtWorldMinute": 630 } }
+{ "type": "agent.location_changed", "payload": { "agentId": "reviewer-1", "oldRoomId": "qclaw-room-review", "newRoomId": "qclaw-room-review", "reason": "task_overlay" } }
 ```
 
 ### 11:00 — Approval approved, task completes
 
-**Runtime events**
+**Runtime events (applied)**
 
 ```json
-{ "type": "approval.resolved", "payload": { "approvalId": "ap-1", "taskId": "t-1", "decision": "approved" } }
+{ "type": "approval.resolved", "payload": { "approvalId": "ap-1", "status": "approved", "resolvedBy": "reviewer-1" } }
 { "type": "task.completed", "payload": { "taskId": "t-1" } }
 ```
 
-The life-sim layer removes both task overrides and resumes the current base entries.
+The life-sim layer ends both task overlays early and resumes the current base entries.
 
 **Life-sim events emitted**
 
 ```json
-{ "type": "schedule.activity_completed", "payload": { "agentId": "worker-1", "entryId": "override-t-1", "completedAtWorldMinute": 660 } }
+{ "type": "schedule.overlay_ended", "payload": { "agentId": "worker-1", "overlayId": "overlay-t-1", "reason": "task_completed", "endedAtWorldMinute": 660 } }
 { "type": "schedule.activity_resumed", "payload": { "agentId": "worker-1", "entryId": "worker-work-am", "resumedAtWorldMinute": 660 } }
+{ "type": "agent.location_changed", "payload": { "agentId": "worker-1", "oldRoomId": "qclaw-room-execution", "newRoomId": "qclaw-room-execution", "reason": "overlay_ended" } }
 
-{ "type": "schedule.activity_completed", "payload": { "agentId": "reviewer-1", "entryId": "override-ap-1", "completedAtWorldMinute": 660 } }
+{ "type": "schedule.overlay_ended", "payload": { "agentId": "reviewer-1", "overlayId": "overlay-ap-1", "reason": "task_completed", "endedAtWorldMinute": 660 } }
 { "type": "schedule.activity_resumed", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-review-am", "resumedAtWorldMinute": 660 } }
+{ "type": "agent.location_changed", "payload": { "agentId": "reviewer-1", "oldRoomId": "qclaw-room-review", "newRoomId": "qclaw-room-review", "reason": "overlay_ended" } }
 ```
 
-Note: `worker-work-am` is resumed even though it originally ended at 12:00. Because the interruption happened inside the entry's time window, the schedule engine treats the remaining window as resumed.
+Note: `worker-work-am` and `reviewer-review-am` are resumed even though they originally ended at 12:00. Because the interruption happened inside each entry's time window, the schedule engine treats the remaining window as resumed.
 
 ### 12:00 — Lunch break
 
@@ -141,19 +153,34 @@ Base schedule entries end and break entries begin for all agents.
 
 ### 13:00 – 17:00 — Afternoon work
 
-At 13:00 the break entries end and afternoon entries begin. At 17:00 the default schedule transitions to evening wrap-up. These transitions emit `schedule.activity_completed` / `schedule.activity_started` pairs exactly as above.
+At 13:00 the break entries end and afternoon entries begin. At 17:00 the default schedule transitions to evening wrap-up. These transitions emit `schedule.activity_completed` / `schedule.activity_started` pairs exactly as above, using the room entity IDs defined in the base schedules.
 
 ### 18:00 — Leave the office
 
 At 18:00 each agent's leave entry starts.
 
 ```json
+{ "type": "schedule.activity_completed", "payload": { "agentId": "orchestrator-1", "entryId": "orch-review-pm", "completedAtWorldMinute": 1080 } }
 { "type": "schedule.activity_started", "payload": { "agentId": "orchestrator-1", "entryId": "orch-leave", "activity": "leave", "roomId": null, "startedAtWorldMinute": 1080 } }
+
+{ "type": "schedule.activity_completed", "payload": { "agentId": "worker-1", "entryId": "worker-idle", "completedAtWorldMinute": 1080 } }
 { "type": "schedule.activity_started", "payload": { "agentId": "worker-1", "entryId": "worker-leave", "activity": "leave", "roomId": null, "startedAtWorldMinute": 1080 } }
+
+{ "type": "schedule.activity_completed", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-work-pm", "completedAtWorldMinute": 1080 } }
 { "type": "schedule.activity_started", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-leave", "activity": "leave", "roomId": null, "startedAtWorldMinute": 1080 } }
 ```
 
-### 18:30 — End of day
+### 18:30 — Leave activities complete, then end of day
+
+First, the leave entries reach their `endMinute`:
+
+```json
+{ "type": "schedule.activity_completed", "payload": { "agentId": "orchestrator-1", "entryId": "orch-leave", "completedAtWorldMinute": 1110 } }
+{ "type": "schedule.activity_completed", "payload": { "agentId": "worker-1", "entryId": "worker-leave", "completedAtWorldMinute": 1110 } }
+{ "type": "schedule.activity_completed", "payload": { "agentId": "reviewer-1", "entryId": "reviewer-leave", "completedAtWorldMinute": 1110 } }
+```
+
+Then the operator ends the day:
 
 **Operator command**
 
@@ -185,16 +212,26 @@ At world minute 630, before the approval request:
     "minuteOfDay": 630,
     "phase": "morning",
     "status": "running",
-    "speed": 0
+    "speed": 0,
+    "fractionalMinute": 0
   },
   "activeActivities": [
-    { "agentId": "orchestrator-1", "scheduleEntryId": "orch-work-am", "activity": "work", "roomId": "command", "startedAtWorldMinute": 510, "interruptedByTaskId": null },
-    { "agentId": "worker-1", "scheduleEntryId": "override-t-1", "activity": "work", "roomId": "execution", "startedAtWorldMinute": 540, "interruptedByTaskId": null },
-    { "agentId": "reviewer-1", "scheduleEntryId": "reviewer-review-am", "activity": "review", "roomId": "review", "startedAtWorldMinute": 510, "interruptedByTaskId": null }
+    { "agentId": "orchestrator-1", "scheduleEntryId": "orch-work-am", "activity": "work", "roomId": "qclaw-room-command", "startedAtWorldMinute": 510, "interruptedByTaskId": null },
+    { "agentId": "worker-1", "scheduleEntryId": "overlay-t-1", "activity": "work", "roomId": "qclaw-room-execution", "startedAtWorldMinute": 540, "interruptedByTaskId": null },
+    { "agentId": "reviewer-1", "scheduleEntryId": "reviewer-review-am", "activity": "review", "roomId": "qclaw-room-review", "startedAtWorldMinute": 510, "interruptedByTaskId": null }
   ],
-  "activeOverrides": [
-    { "overrideId": "ov-t-1", "agentId": "worker-1", "entry": { /* task_override entry */ }, "createdBy": "task", "createdAtWorldMinute": 540, "createdByTaskId": "t-1" }
-  ]
+  "activeOverlays": [
+    {
+      "overlayId": "overlay-t-1",
+      "agentId": "worker-1",
+      "entry": { /* task_overlay entry spanning 540..1110 */ },
+      "createdBy": "task",
+      "createdAtWorldMinute": 540,
+      "createdByTaskId": "t-1",
+      "createdByRuntimeSequence": 7
+    }
+  ],
+  "lastAppliedRuntimeSequence": 7
 }
 ```
 
@@ -205,21 +242,22 @@ At world minute 630, before the approval request:
   "day": 1,
   "startedAtWorldMinute": 480,
   "endedAtWorldMinute": 1110,
+  "truncated": false,
   "agentActivities": [
     {
       "agentId": "orchestrator-1",
       "activityMinutes": { "arrive": 30, "work": 450, "break": 60, "review": 60, "leave": 30 },
-      "roomsVisited": ["command", "review"]
+      "roomsVisited": ["qclaw-room-command", "qclaw-room-review"]
     },
     {
       "agentId": "worker-1",
       "activityMinutes": { "arrive": 30, "work": 450, "break": 60, "idle": 60, "leave": 30 },
-      "roomsVisited": ["command", "execution"]
+      "roomsVisited": ["qclaw-room-command", "qclaw-room-execution"]
     },
     {
       "agentId": "reviewer-1",
       "activityMinutes": { "arrive": 30, "review": 450, "work": 60, "break": 60, "leave": 30 },
-      "roomsVisited": ["command", "review"]
+      "roomsVisited": ["qclaw-room-command", "qclaw-room-review"]
     }
   ],
   "taskCounts": {
@@ -233,19 +271,19 @@ At world minute 630, before the approval request:
     "approved": 1,
     "rejected": 0
   },
-  "notableEventIds": ["evt-t-1-assigned", "evt-t-1-completed"]
+  "notableEventIds": ["evt-task-assigned-t-1", "evt-approval-requested-ap-1", "evt-approval-resolved-ap-1", "evt-task-completed-t-1"]
 }
 ```
 
-All counts are derived from committed runtime events, not from schedule activities.
+All counts are derived from committed runtime events, not from schedule activities. `truncated` is `false` because every applied runtime event was available for replay.
 
 ## Determinism check
 
-Replaying the same command sequence with the same runtime events on a fresh world must produce:
+Replaying the same command sequence with the same applied runtime events on a fresh world must produce:
 
 - the same `lifeSimSequence` ordering;
 - the same `WorldClockState` at every minute;
 - the same active activities at every minute;
 - the same `DaySummary`.
 
-No wall-clock dependency or randomness is permitted in manual mode.
+No wall-clock dependency or randomness is permitted in manual mode. Event IDs are deterministic for deterministic inputs.

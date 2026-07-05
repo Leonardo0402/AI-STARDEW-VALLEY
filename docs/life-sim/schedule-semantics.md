@@ -2,6 +2,8 @@
 
 This document defines how Agent daily schedules are expressed, validated, interrupted, and resumed. It explicitly does not grant the schedule engine authority to modify task, artifact, or approval truth.
 
+For the server/client transport boundary and the serial input queue, see `docs/life-sim/client-session-contract.md`.
+
 ## Core types
 
 ### `AgentScheduleEntry`
@@ -15,7 +17,7 @@ interface AgentScheduleEntry {
   activity: "arrive" | "work" | "review" | "break" | "social" | "idle" | "leave";
   roomId: string | null;
   priority: number;    // higher number = higher priority
-  source: "base" | "task_override" | "operator_override" | "system";
+  source: "base" | "task_overlay" | "operator_overlay" | "system";
 }
 ```
 
@@ -32,43 +34,56 @@ interface ActiveAgentActivity {
 }
 ```
 
-### `ScheduleOverride`
+### `ScheduleOverlay`
 
 ```ts
-interface ScheduleOverride {
-  overrideId: string;
+interface ScheduleOverlay {
+  overlayId: string;
   agentId: string;
   entry: AgentScheduleEntry;
   createdBy: "task" | "operator";
   createdAtWorldMinute: number;
   createdByTaskId: string | null;
+  createdByRuntimeSequence: number;
 }
 ```
 
 ## Validation rules
 
-A schedule is invalid if any of these are true:
+A schedule entry is invalid if any of these are true:
 
 - `startMinute < 0` or `endMinute > 1440`.
 - `startMinute >= endMinute`.
 - An entry crosses the day boundary (i.e., `endMinute > 1440`).
-- Two entries for the same agent overlap in time. Overlap is defined as `[startMinute, endMinute)` intersection non-empty.
+- Two base entries for the same agent overlap in time. Overlap is defined as `[startMinute, endMinute)` intersection non-empty.
 - `roomId` is non-null and does not match an existing `RoomSnapshot.roomId` in the current runtime snapshot.
 - `priority` is negative or `NaN`.
 - `activity` is not one of the allowed values.
 
 Invalid entries are rejected at write time. They are never silently corrected.
 
-## Conflict resolution
+## Effective schedule and non-destructive overlay
 
-When two entries for the same agent overlap after a runtime-driven override is applied, the deterministic resolution order is:
+The **effective schedule** for an Agent at a given world minute is the result of layering active overlays on top of the base schedule.
+
+Rules:
+
+- Base entries are never mutated, truncated, or split. They remain in the canonical base schedule forever (for that day).
+- An overlay is a separate `AgentScheduleEntry` with `source === "task_overlay"` or `"operator_overlay"`.
+- At any minute, the effective entry is selected by the overlay precedence rules below.
+- When an overlay ends, the underlying base entry automatically becomes visible again at the same minute.
+- Multiple overlays may exist for the same Agent, but only one is effective per minute.
+
+### Overlay precedence
+
+For the same Agent and minute, select the effective entry using this total order:
 
 1. `source === "system"` wins over all other sources.
 2. Higher `priority` wins.
 3. Earlier `startMinute` wins.
 4. Lexicographically smaller `entryId` wins.
 
-This ordering is total and reproducible. The loser is either truncated or split; the exact behavior depends on the override type.
+This ordering is total and reproducible across replay.
 
 ## Base schedules
 
@@ -76,69 +91,87 @@ Each Agent has a base schedule per day. The base schedule is a list of `AgentSch
 
 ### Example default base schedules
 
-These examples are defaults, not mandates. The actual schedule for a role is configurable per world.
+These examples are defaults, not mandates. Room IDs are entity IDs from the runtime snapshot, not role names. The actual schedule for a role is configurable per world.
 
 #### Orchestrator
 
-| Time | Activity | Room |
+| Time | Activity | Room (example entity ID) |
 |---|---|---|
-| 08:00–08:30 | arrive | command |
-| 08:30–12:00 | work | command |
-| 12:00–13:00 | break | null |
-| 13:00–17:00 | work | command |
-| 17:00–18:00 | review | review |
-| 18:00–18:30 | leave | null |
+| 08:00–08:30 | arrive | `qclaw-room-command` |
+| 08:30–12:00 | work | `qclaw-room-command` |
+| 12:00–13:00 | break | `null` |
+| 13:00–17:00 | work | `qclaw-room-command` |
+| 17:00–18:00 | review | `qclaw-room-review` |
+| 18:00–18:30 | leave | `null` |
 
 #### Worker
 
-| Time | Activity | Room |
+| Time | Activity | Room (example entity ID) |
 |---|---|---|
-| 08:00–08:30 | arrive | command |
-| 08:30–12:00 | work | execution |
-| 12:00–13:00 | break | null |
-| 13:00–17:00 | work | execution |
-| 17:00–18:00 | idle | null |
-| 18:00–18:30 | leave | null |
+| 08:00–08:30 | arrive | `qclaw-room-command` |
+| 08:30–12:00 | work | `qclaw-room-execution` |
+| 12:00–13:00 | break | `null` |
+| 13:00–17:00 | work | `qclaw-room-execution` |
+| 17:00–18:00 | idle | `null` |
+| 18:00–18:30 | leave | `null` |
 
 #### Reviewer
 
-| Time | Activity | Room |
+| Time | Activity | Room (example entity ID) |
 |---|---|---|
-| 08:00–08:30 | arrive | command |
-| 08:30–12:00 | review | review |
-| 12:00–13:00 | break | null |
-| 13:00–17:00 | review | review |
-| 17:00–18:00 | work | review |
-| 18:00–18:30 | leave | null |
+| 08:00–08:30 | arrive | `qclaw-room-command` |
+| 08:30–12:00 | review | `qclaw-room-review` |
+| 12:00–13:00 | break | `null` |
+| 13:00–17:00 | review | `qclaw-room-review` |
+| 17:00–18:00 | work | `qclaw-room-review` |
+| 18:00–18:30 | leave | `null` |
 
-Base schedule entries are cloned per day so that overrides do not mutate the canonical base schedule.
+Base schedule entries are cloned per day so that overlays do not mutate the canonical base schedule.
 
-## Task-driven overrides
+## Task-driven overlays
 
-When a runtime event assigns a task to an Agent, the life-sim layer creates a `task_override` entry if the Agent is not already in a compatible activity.
+When a runtime event assigns a task to an Agent, the life-sim layer creates a `task_overlay` entry if the Agent is not already in a compatible activity.
 
 Rules:
 
-- The override entry spans from the current world minute to the task's expected completion or the end of day, whichever comes first.
+- The overlay spans from the current world minute to the configured end-of-day minute. Tasks have no expected-completion field, so the overlay is provisional.
 - Its `activity` is `"work"`.
-- Its `roomId` is derived from the task's room hint or the Agent's role-default room.
+- Its `roomId` is derived from the task's `roomId` field in the runtime snapshot, or the Agent's role-default room if the task has no room.
 - Its `priority` is higher than any overlapping base entry.
 - Its `createdByTaskId` references the runtime task ID.
-- The override is removed when the task reaches a terminal or waiting state (completed, failed, blocked, or pending approval).
+- Its `createdByRuntimeSequence` records the runtime sequence of the triggering event.
+- The overlay is removed when the task reaches a terminal or waiting state (`completed`, `failed`, `blocked`, or `waiting_approval`).
+- The overlay is also removed at `world.day_ended`.
 
-If multiple tasks are assigned to the same Agent simultaneously, the latest assignment by wall-clock sequence wins, using `entryId` as tie-breaker. The earlier task override is discarded.
+If multiple tasks are assigned to the same Agent before the first overlay clears, the assignment with the higher runtime sequence wins, using `entryId` lexicographic order as a tie-breaker. The earlier task overlay is ended early.
 
-## Operator overrides
+## Reviewer selection
+
+`approval.requested` does not identify a reviewer. The deterministic V1 policy is:
+
+1. Consider Agents whose runtime role is `reviewer` and whose runtime status is operational (`idle`, `running`, etc.).
+2. Select the reviewer with the fewest active review overlays.
+3. Break ties by lexicographically smallest `agentId`.
+
+If no reviewer is available:
+
+- The approval request is recorded by the runtime in the normal way.
+- No reviewer overlay is created.
+- The task remains `waiting_approval`.
+- When a reviewer later becomes available, no retroactive overlay is created for the already-pending approval.
+
+## Operator overlays
 
 An operator may issue `schedule.override` to force an Agent into a specific entry.
 
 Rules:
 
-- The override must specify `agentId`, `startMinute`, `endMinute`, `activity`, and optionally `roomId`.
-- It is rejected if it would create an invalid schedule after conflict resolution.
-- It has `source === "operator_override"` and a configurable `priority`.
-- It may truncate or temporarily suspend base and task entries.
-- It is removed by `schedule.clear_override { agentId, entryId }` or automatically when its `endMinute` passes.
+- The command must specify `agentId`, `startMinute`, `endMinute`, `activity`, and optionally `roomId`.
+- It is rejected if it would create an invalid effective schedule after overlay precedence is applied.
+- It has `source === "operator_overlay"` and a configurable `priority`.
+- It may temporarily hide base and task entries but never mutates them.
+- It is removed by `schedule.clear_override { agentId, overlayId }` or automatically when its `endMinute` passes.
+- It is also removed at `world.day_ended`.
 
 ## Interruption and resumption
 
@@ -146,8 +179,8 @@ Rules:
 
 An Agent's current base entry is interrupted when:
 
-- a task is assigned and a `task_override` entry is created;
-- an operator override is created with higher priority and overlapping time; or
+- a task is assigned and a `task_overlay` entry is created;
+- an operator overlay is created with higher priority and overlapping time; or
 - the Agent enters a non-operational runtime status (`offline`, `failed`, `paused`).
 
 When interrupted:
@@ -163,7 +196,7 @@ When the interrupting condition ends:
 - The Agent returns to the **current** base schedule entry for the current world minute, not necessarily the original interrupted entry.
 - If the original entry has already ended, the Agent moves to the next valid entry.
 - `schedule.activity_resumed` is emitted.
-- If no base entry matches, the Agent enters `idle` in the nearest social/idle zone or in `null` room.
+- If no base entry matches, the Agent enters `idle` in the `null` room.
 
 ## Non-operational statuses
 
@@ -176,23 +209,54 @@ When the runtime reports an Agent as `offline`, `failed`, or `paused`:
 
 ## Pending approval and review activities
 
-If a runtime task is in `pending_approval`:
+If a runtime task is in `waiting_approval`:
 
 - The assigned Worker remains in `work` activity for that task until the approval is resolved, unless the Worker is explicitly reassigned.
-- The relevant Reviewer(s) receive a `task_override` with `activity === "review"` and `roomId === "review"` while the approval is pending.
-- If the approval is rejected (task becomes `blocked`), the Worker's override is removed and the Worker resumes base schedule or becomes `idle` if no base entry matches.
+- The selected Reviewer receives a `task_overlay` with `activity === "review"` and `roomId` derived from the reviewer's role-default room while the approval is pending.
+- The reviewer's overlay is removed when the approval is resolved or when the task leaves `waiting_approval`.
+- If the approval is rejected (task becomes `blocked`), the Worker's overlay is removed and the Worker resumes base schedule or becomes `idle` if no base entry matches.
 - If the approval is approved, the task completes through the Runtime; the schedule engine follows the normal task-completion resumption path.
+
+## Room precedence
+
+Three room identifiers exist for an Agent at any moment:
+
+- `operationalRoomId` — `AgentSnapshot.currentRoomId` from the latest runtime snapshot.
+- `scheduledRoomId` — the room of the Agent's current effective schedule entry.
+- `displayRoomId` — the room shown in the UI and used by the pixel-office renderer.
+
+Display precedence:
+
+1. If the Agent has an active task overlay (i.e., is actively working on a runtime-assigned task), `displayRoomId = operationalRoomId`.
+2. Otherwise, if the Agent has an active operator overlay with a non-null room, `displayRoomId = scheduledRoomId` from the operator overlay.
+3. Otherwise, `displayRoomId = scheduledRoomId` from the current base or review overlay.
+4. If no scheduled entry matches, `displayRoomId = operationalRoomId`.
+5. If `operationalRoomId` is `null`, the Agent is displayed in a fallback idle zone.
+
+Handling stale operational room values:
+
+- After a task completes, the runtime may leave `AgentSnapshot.currentRoomId` at the last task room for a short time.
+- During that window the schedule engine falls back to `scheduledRoomId` once the task overlay is removed.
+- The display precedence above ensures the Agent does not appear stuck in a task room forever.
+
+## No-schedule fallback
+
+If an Agent has no base schedule for the current day:
+
+- The engine treats the Agent as having an implicit `idle` entry from the start-of-day minute to the end-of-day minute.
+- Task overlays and operator overlays still apply normally.
+- `DaySummary` activity minutes for such an Agent include `idle` for all unscheduled time.
 
 ## Schedule commands
 
-All schedule commands are addressed to the life-sim controller.
+All schedule commands are addressed to the server-side `LifeSimEngine`.
 
 | Command | Payload | Availability |
 |---|---|---|
-| `schedule.override` | `{ agentId, entry: Partial<AgentScheduleEntry> }` | Operator capability. Rejected if resulting schedule is invalid. |
-| `schedule.clear_override` | `{ agentId, entryId }` | Operator capability. Idempotent. |
+| `schedule.override` | `{ agentId, entry: Partial<AgentScheduleEntry> }` | Operator capability. Rejected if resulting effective schedule is invalid. |
+| `schedule.clear_override` | `{ agentId, overlayId }` | Operator capability. Idempotent. |
 
-`schedule.override` may omit `entryId`; in that case a UUID is generated. If `entryId` is provided and already exists for the same agent, the existing override is replaced atomically.
+`schedule.override` may omit `entryId`; in that case a deterministic ID is generated from `(agentId, commandId)`. If `entryId` is provided and already exists for the same agent, the existing operator overlay is replaced atomically.
 
 ## Schedule events
 
@@ -202,16 +266,31 @@ All schedule commands are addressed to the life-sim controller.
 | `schedule.activity_interrupted` | `{ agentId, entryId, interruptedByTaskId, interruptedAtWorldMinute }` | A schedule entry is interrupted. |
 | `schedule.activity_resumed` | `{ agentId, entryId, resumedAtWorldMinute }` | A previously interrupted entry resumes. |
 | `schedule.activity_completed` | `{ agentId, entryId, completedAtWorldMinute }` | A schedule entry reaches its `endMinute` without interruption. |
-| `agent.location_changed` | `{ agentId, oldRoomId, newRoomId, reason }` | The Agent's derived location changes. |
+| `schedule.overlay_ended` | `{ agentId, overlayId, reason, endedAtWorldMinute }` | An overlay ends early or on schedule. |
+| `agent.location_changed` | `{ agentId, oldRoomId, newRoomId, reason }` | The Agent's display location changes. |
 
-Event ordering for the same virtual minute:
+Event ordering for the same virtual minute, after any runtime events are applied:
 
-1. Interruptions of entries that ended before this minute.
-2. Completions of entries that end at this minute.
-3. Starts of entries that begin at this minute.
+1. Existing overlays that end early at this minute (`schedule.overlay_ended`).
+2. Activity completions for entries ending at this minute.
+3. Activity starts for entries beginning at this minute.
 4. Location changes implied by the above.
 
-This ordering is deterministic across replay.
+Within each group, ordering is deterministic by `(runtimeSequence, entryId, overlayId)`.
+
+## Early overlay termination semantics
+
+A task overlay may end before its original `endMinute` when:
+
+- the task reaches `completed`, `failed`, `blocked`, or `waiting_approval`;
+- a later task assignment with a higher runtime sequence replaces it;
+- `world.day_ending` occurs.
+
+When an overlay ends early:
+
+- `schedule.overlay_ended` is emitted with the reason.
+- `schedule.activity_resumed` is emitted if the Agent transitions back to a base entry.
+- Activity minutes already accumulated under the overlay remain in `DaySummary.agentActivities`.
 
 ## Truth boundary
 
@@ -232,7 +311,7 @@ The schedule engine must **never** claim the following without a corresponding r
 
 ### Examples
 
-**Allowed:** The schedule engine moves `worker-1` to room `room-execution` at 09:00 because the base schedule says so.
+**Allowed:** The schedule engine moves `worker-1` to room `qclaw-room-execution` at 09:00 because the base schedule says so.
 
 **Not allowed:** The schedule engine marks task `t-1` as completed because `worker-1` is in the `work` activity.
 
