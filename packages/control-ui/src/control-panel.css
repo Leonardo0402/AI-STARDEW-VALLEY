@@ -1,0 +1,435 @@
+/**
+ * ControlPanel component styles for the Swarm Office redesign.
+ * Uses design tokens from apps/demo-office/src/theme.css.
+ */
+
+/* ─── Control Panel shell ─────────────────────────────────── */
+
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--base-800);
+  color: var(--base-100);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* ─── Sections ────────────────────────────────────────────── */
+
+.panel-section {
+  border-bottom: 1px solid var(--base-500);
+  padding-bottom: var(--space-md);
+}
+
+.panel-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.section-header__title {
+  color: var(--base-100);
+}
+
+/* ─── Cards ───────────────────────────────────────────────── */
+
+.card {
+  background: var(--base-700);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.card:last-child {
+  margin-bottom: 0;
+}
+
+.card--hover:hover {
+  background: var(--base-600);
+}
+
+.card-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--base-100);
+  margin-bottom: var(--space-xs);
+}
+
+.card-meta {
+  color: var(--base-400);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.card-footer {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-top: var(--space-sm);
+}
+
+/* ─── Badges ──────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 100px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.badge--idle {
+  background: var(--base-600);
+  color: var(--base-300);
+}
+
+.badge--running,
+.badge--approved {
+  background: var(--success);
+  color: var(--base-900);
+}
+
+.badge--waiting {
+  background: var(--urgency);
+  color: var(--base-900);
+}
+
+.badge--blocked,
+.badge--failed {
+  background: var(--failure);
+  color: var(--base-100);
+}
+
+.badge--paused {
+  background: var(--paused);
+  color: var(--base-100);
+}
+
+.badge--info {
+  background: var(--info);
+  color: var(--base-900);
+}
+
+.badge--count {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+/* ─── Buttons ─────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 120ms ease-out;
+}
+
+.btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  background: var(--base-600);
+  color: var(--base-400);
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--info);
+  color: var(--base-900);
+}
+
+.btn--secondary {
+  background: var(--base-600);
+  color: var(--base-100);
+}
+
+.btn--danger {
+  background: var(--failure);
+  color: var(--base-100);
+}
+
+.btn--small {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+/* ─── Inputs ──────────────────────────────────────────────── */
+
+.input {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--base-800);
+  color: var(--base-100);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  box-sizing: border-box;
+}
+
+.input::placeholder {
+  color: var(--base-400);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+.input:disabled {
+  background: var(--base-700);
+  color: var(--base-400);
+  cursor: not-allowed;
+}
+
+/* ─── Task Form ───────────────────────────────────────────── */
+
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.task-form__row {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: stretch;
+}
+
+.task-form__row .input {
+  flex: 1;
+}
+
+/* ─── Approval Drawer ─────────────────────────────────────── */
+
+.approval-drawer {
+  border-left: 4px solid var(--urgency);
+  background: var(--base-700);
+}
+
+.approval-drawer__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--base-100);
+  margin-bottom: var(--space-xs);
+}
+
+.approval-drawer__meta {
+  color: var(--base-400);
+  font-size: 11px;
+  margin-bottom: var(--space-sm);
+}
+
+.approval-drawer__actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* ─── Error Banner ────────────────────────────────────────── */
+
+.error-banner {
+  background: var(--failure-dim);
+  border-left: 3px solid var(--failure);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  font-size: 11px;
+  margin-bottom: var(--space-md);
+}
+
+.error-banner__body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.error-banner__code {
+  font-family: var(--font-mono);
+  color: var(--failure);
+  font-weight: 700;
+}
+
+.error-banner__message {
+  color: var(--base-100);
+}
+
+/* ─── Event Log ───────────────────────────────────────────── */
+
+.event-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.event-log__list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-sm);
+  background: var(--base-900);
+}
+
+.event-log__empty {
+  padding: var(--space-md);
+  color: var(--base-400);
+  text-align: center;
+  font-size: 11px;
+}
+
+.event-row__wrapper {
+  border-bottom: 1px solid var(--base-700);
+}
+
+.event-row__wrapper:last-child {
+  border-bottom: none;
+}
+
+.event-row {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--base-300);
+  cursor: pointer;
+}
+
+.event-row:hover {
+  background: var(--base-800);
+}
+
+.event-seq {
+  font-family: var(--font-mono);
+  color: var(--info);
+  min-width: 40px;
+  flex-shrink: 0;
+}
+
+.event-type {
+  color: var(--urgency);
+  min-width: 90px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.event-summary {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-time {
+  color: var(--base-400);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.event-payload {
+  margin: 0;
+  padding: var(--space-sm);
+  background: var(--base-900);
+  color: var(--base-300);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  border-top: 1px solid var(--base-700);
+}
+
+/* ─── Action error inline ─────────────────────────────────── */
+
+.action-error {
+  margin-top: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--failure-dim);
+  border: 1px solid var(--failure);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--base-100);
+}
+
+/* ─── Artifact preview ────────────────────────────────────── */
+
+.artifact-preview {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--base-900);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--base-300);
+  font-family: var(--font-mono);
+}
+
+/* ─── Status helpers ──────────────────────────────────────── */
+
+.status-blocked {
+  color: var(--failure);
+}
+
+/* ─── Responsive density ──────────────────────────────────── */
+
+@media (max-width: 1365px) {
+  .control-panel {
+    padding: var(--space-sm);
+    gap: var(--space-sm);
+  }
+
+  .panel-section {
+    padding-bottom: var(--space-sm);
+  }
+}
