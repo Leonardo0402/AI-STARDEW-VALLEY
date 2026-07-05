@@ -353,6 +353,51 @@ describe("QclawTestRuntime SSE stream", () => {
     expect(gotLiveEvent).toBe(true);
     reader.cancel();
   });
+
+  it("POST /runtime/demo/force-session-error pushes a runtime-mismatch event to live clients", async () => {
+    runtime = new QclawTestRuntime({ port: 0 });
+    await runtime.start();
+
+    const res = await fetch(`${runtime.getBaseUrl()}/runtime/events?afterSequence=0`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Wait for replay-complete
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      if (buffer.includes("event: replay-complete")) break;
+    }
+
+    // Trigger forced session error
+    const triggerRes = await fetch(`${runtime.getBaseUrl()}/runtime/demo/force-session-error`, {
+      method: "POST",
+    });
+    expect(triggerRes.status).toBe(200);
+
+    // Read the pushed event and verify mismatched runtimeId
+    buffer = "";
+    let gotForcedEvent = false;
+    const timeout = new Promise((r) => setTimeout(r, 2000));
+    const readLoop = (async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        if (buffer.includes("event: domain-event")) {
+          gotForcedEvent = true;
+          break;
+        }
+      }
+    })();
+    await Promise.race([readLoop, timeout]);
+    expect(gotForcedEvent).toBe(true);
+    expect(buffer).toContain("\"runtimeId\":\"forced-error-runtime\"");
+    expect(buffer).toContain("\"type\":\"demo.forced_error\"");
+    reader.cancel();
+  });
 });
 
 describe("QclawTestRuntime CORS", () => {

@@ -12,12 +12,12 @@
  */
 import type { FC } from "react";
 import type { SessionState, SessionDiagnostics } from "@agent-office/core";
+import { formatTime } from "@agent-office/control-ui";
 
 interface StatusStripProps {
   runtimeId: string;
   sessionState: SessionState;
   diagnostics: SessionDiagnostics;
-  lastError: string | null;
   lastEvent?: { type: string; timestamp: string } | null;
   retryable?: boolean;
   onResync: () => void;
@@ -54,12 +54,6 @@ const PILL_LABELS: Record<SessionState, string> = {
   disconnected: "disconnected",
   failed: "failed",
 };
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "--:--:--";
-  return d.toISOString().slice(11, 19);
-}
 
 function classNames(...names: (string | false | undefined)[]): string {
   return names.filter(Boolean).join(" ");

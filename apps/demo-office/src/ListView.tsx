@@ -37,17 +37,17 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
           <div style={styles.summaryNum}>{projection.artifacts.length}</div>
           <div style={styles.summaryLabel}>Artifacts</div>
         </div>
-        <div style={{ ...styles.summaryBox, borderColor: "#ffcc00" }}>
-          <div style={{ ...styles.summaryNum, color: "#ffcc00" }}>
+        <div style={{ ...styles.summaryBox, borderColor: "var(--urgency)" }}>
+          <div style={{ ...styles.summaryNum, color: "var(--urgency)" }}>
             {projection.pendingApprovals.length}
           </div>
-          <div style={styles.summaryLabel}>待审批</div>
+          <div style={styles.summaryLabel}>Pending</div>
         </div>
-        <div style={{ ...styles.summaryBox, borderColor: "#ff6666" }}>
-          <div style={{ ...styles.summaryNum, color: "#ff6666" }}>
+        <div style={{ ...styles.summaryBox, borderColor: "var(--failure)" }}>
+          <div style={{ ...styles.summaryNum, color: "var(--failure)" }}>
             {projection.blockedTasks.length}
           </div>
-          <div style={styles.summaryLabel}>阻塞</div>
+          <div style={styles.summaryLabel}>Blocked</div>
         </div>
       </div>
 
@@ -77,7 +77,7 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
                   <td style={{ ...styles.td, ...statusColor(a.status) }}>{a.status}</td>
                   <td style={styles.td}>{a.currentTaskId ?? "—"}</td>
                   <td style={styles.td}>{room?.name ?? "—"}</td>
-                  <td style={{ ...styles.td, color: "#ff6666" }}>{a.blockedReason ?? "—"}</td>
+                  <td style={{ ...styles.td, color: "var(--failure)" }}>{a.blockedReason ?? "—"}</td>
                 </tr>
               );
             })}
@@ -113,7 +113,7 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
                   <td style={styles.td}>{t.assigneeId ?? "—"}</td>
                   <td style={styles.td}>{room?.name ?? "—"}</td>
                   <td style={styles.td}>{t.approvalId ?? "—"}</td>
-                  <td style={{ ...styles.td, color: "#ff6666" }}>{t.blockedReason ?? "—"}</td>
+                  <td style={{ ...styles.td, color: "var(--failure)" }}>{t.blockedReason ?? "—"}</td>
                 </tr>
               );
             })}
@@ -209,47 +209,47 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
 // ─── 状态颜色辅助 ────────────────────────────────────────────
 function statusColor(status: string): React.CSSProperties {
   const map: Record<string, string> = {
-    idle: "#888",
-    working: "#44ff44",
-    blocked: "#ff4444",
-    paused: "#888",
-    reviewing: "#ff44ff",
-    failed: "#ff0000",
+    idle: "var(--base-400)",
+    working: "var(--success)",
+    blocked: "var(--failure)",
+    paused: "var(--base-400)",
+    reviewing: "var(--info)",
+    failed: "var(--failure)",
   };
-  return { color: map[status] ?? "#aaa" };
+  return { color: map[status] ?? "var(--base-300)" };
 }
 
 function taskStatusColor(status: string): React.CSSProperties {
   const map: Record<string, string> = {
-    running: "#44ff44",
-    blocked: "#ff4444",
-    completed: "#44aaff",
-    waiting_approval: "#ffcc00",
-    revision_required: "#ff8844",
-    failed: "#ff0000",
+    running: "var(--success)",
+    blocked: "var(--failure)",
+    completed: "var(--info)",
+    waiting_approval: "var(--urgency)",
+    revision_required: "var(--urgency)",
+    failed: "var(--failure)",
   };
-  return { color: map[status] ?? "#aaa" };
+  return { color: map[status] ?? "var(--base-300)" };
 }
 
 function artifactStatusColor(status: string): React.CSSProperties {
   const map: Record<string, string> = {
-    generated: "#aaa",
-    approved: "#44ff44",
-    revision_required: "#ff8844",
-    rejected: "#ff4444",
-    delivered: "#44aaff",
+    generated: "var(--base-300)",
+    approved: "var(--success)",
+    revision_required: "var(--urgency)",
+    rejected: "var(--failure)",
+    delivered: "var(--info)",
   };
-  return { color: map[status] ?? "#aaa" };
+  return { color: map[status] ?? "var(--base-300)" };
 }
 
 function approvalStatusColor(status: string): React.CSSProperties {
   const map: Record<string, string> = {
-    requested: "#ffcc00",
-    approved: "#44ff44",
-    rejected: "#ff4444",
-    expired: "#888",
+    requested: "var(--urgency)",
+    approved: "var(--success)",
+    rejected: "var(--failure)",
+    expired: "var(--base-400)",
   };
-  return { color: map[status] ?? "#aaa" };
+  return { color: map[status] ?? "var(--base-300)" };
 }
 
 // ─── 样式 ────────────────────────────────────────────────────
@@ -259,19 +259,19 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100%",
     overflowY: "auto",
     padding: 16,
-    backgroundColor: "#111122",
-    color: "#cccccc",
-    fontFamily: "monospace",
+    backgroundColor: "var(--base-850)",
+    color: "var(--base-100)",
+    fontFamily: "var(--font-ui), system-ui, sans-serif",
   },
   title: {
     margin: "0 0 4px 0",
     fontSize: 18,
-    color: "#88ccff",
+    color: "var(--info)",
   },
   hint: {
     margin: "0 0 16px 0",
     fontSize: 11,
-    color: "#666",
+    color: "var(--base-400)",
   },
   summaryRow: {
     display: "flex",
@@ -280,20 +280,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryBox: {
     padding: 12,
-    border: "1px solid #333",
+    border: "1px solid var(--base-500)",
     borderRadius: 4,
     minWidth: 90,
     textAlign: "center" as const,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "var(--base-800)",
   },
   summaryNum: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#ffffff",
+    color: "var(--base-100)",
   },
   summaryLabel: {
     fontSize: 10,
-    color: "#888",
+    color: "var(--base-400)",
     marginTop: 2,
   },
   section: {
@@ -302,8 +302,8 @@ const styles: Record<string, React.CSSProperties> = {
   h3: {
     margin: "0 0 8px 0",
     fontSize: 14,
-    color: "#88ccff",
-    borderBottom: "1px solid #333",
+    color: "var(--info)",
+    borderBottom: "1px solid var(--base-500)",
     paddingBottom: 4,
   },
   table: {
@@ -314,17 +314,17 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     textAlign: "left" as const,
     padding: "6px 8px",
-    borderBottom: "1px solid #444",
-    color: "#aaa",
+    borderBottom: "1px solid var(--base-500)",
+    color: "var(--base-300)",
     fontSize: 11,
     fontWeight: "bold",
   },
   tr: {
-    borderBottom: "1px solid #222",
+    borderBottom: "1px solid var(--base-700)",
   },
   td: {
     padding: "4px 8px",
-    color: "#cccccc",
+    color: "var(--base-100)",
     fontSize: 11,
     verticalAlign: "top" as const,
   },
@@ -335,23 +335,23 @@ const styles: Record<string, React.CSSProperties> = {
   },
   roomCard: {
     padding: 8,
-    border: "1px solid #333",
+    border: "1px solid var(--base-500)",
     borderRadius: 4,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "var(--base-800)",
   },
   roomName: {
     fontSize: 13,
     fontWeight: "bold",
-    color: "#ffffff",
+    color: "var(--base-100)",
   },
   roomType: {
     fontSize: 10,
-    color: "#888",
+    color: "var(--base-400)",
     marginTop: 2,
   },
   roomAgents: {
     fontSize: 10,
-    color: "#aaa",
+    color: "var(--base-300)",
     marginTop: 4,
   },
 };

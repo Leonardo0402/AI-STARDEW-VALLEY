@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { App } from "./App.js";
 import { useOfficeState, ControlPanel } from "@agent-office/control-ui";
@@ -24,8 +24,44 @@ vi.mock("@agent-office/pixel-office", () => ({
     init: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn(),
     updateProjection: vi.fn(),
+    setReduceMotion: vi.fn(),
   })),
 }));
+
+let resizeCallback: ((entries: { contentRect: { width: number } }[]) => void) | null = null;
+
+class ResizeObserverMock {
+  constructor(callback: (entries: { contentRect: { width: number } }[]) => void) {
+    resizeCallback = callback;
+  }
+  observe() {}
+  disconnect() {}
+}
+
+global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+function setBodyWidth(width: number) {
+  Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      width,
+      height: 600,
+      top: 0,
+      left: 0,
+      bottom: 600,
+      right: width,
+      x: 0,
+      y: 0,
+      toJSON() {
+        return this;
+      },
+    }),
+  });
+}
+
+function triggerResize(width: number) {
+  resizeCallback?.([{ contentRect: { width } }]);
+}
 
 const mockSession = {
   resynchronize: vi.fn().mockResolvedValue(undefined),
@@ -78,6 +114,8 @@ function renderApp(overrides: Partial<Parameters<typeof App>[0]> = {}) {
 describe("App shell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resizeCallback = null;
+    setBodyWidth(1280);
     (useOfficeState as Mock).mockReturnValue(baseState);
   });
 
@@ -105,19 +143,43 @@ describe("App shell", () => {
     renderApp();
     expect(document.querySelector("canvas")).toBeInTheDocument();
     expect(screen.queryByText("Dashboard 视图（传统列表）")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "列表视图" }));
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
     expect(document.querySelector("canvas")).not.toBeInTheDocument();
     expect(screen.getByText("Dashboard 视图（传统列表）")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "像素空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pixel" }));
     expect(document.querySelector("canvas")).toBeInTheDocument();
   });
 
-  it("focus mode hides the full stage and shows focus indicator", () => {
+  it("focus mode keeps the canvas visible, dims the stage, and shows the ambient overlay", () => {
     renderApp();
     fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
     expect(screen.getByText("Focus Mode")).toBeInTheDocument();
+    expect(document.querySelector("canvas")).toBeInTheDocument();
+    expect(document.querySelector(".app-stage")?.classList.contains("app-stage--dimmed")).toBe(true);
+  });
+
+  it("focus mode still allows switching to list view", () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
     expect(document.querySelector("canvas")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dashboard 视图（传统列表）")).not.toBeInTheDocument();
+    expect(screen.getByText("Dashboard 视图（传统列表）")).toBeInTheDocument();
+    expect(screen.getByText("Focus Mode")).toBeInTheDocument();
+  });
+
+  it("debrief mode replaces the canvas with the DebriefTimeline", () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Debrief" }));
+    expect(document.querySelector("canvas")).not.toBeInTheDocument();
+    expect(screen.getByTestId("debrief-timeline")).toBeInTheDocument();
+  });
+
+  it("list view remains available in debrief mode", () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Debrief" }));
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.getByText("Dashboard 视图（传统列表）")).toBeInTheDocument();
+    expect(screen.queryByTestId("debrief-timeline")).not.toBeInTheDocument();
   });
 
   it("passes retryable and onRetry through to the status strip", () => {
@@ -132,5 +194,84 @@ describe("App shell", () => {
     const retryBtn = screen.getByRole("button", { name: /Retry/i });
     fireEvent.click(retryBtn);
     expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("auto-switches to list view when the body becomes narrow and restores when wide", async () => {
+    renderApp();
+    expect(document.querySelector("canvas")).toBeInTheDocument();
+
+    await act(async () => {
+      triggerResize(900);
+    });
+    expect(document.querySelector("canvas")).not.toBeInTheDocument();
+    expect(screen.getByText("Dashboard 视图（传统列表）")).toBeInTheDocument();
+
+    await act(async () => {
+      triggerResize(1280);
+    });
+    expect(document.querySelector("canvas")).toBeInTheDocument();
+  });
+
+  it("remembers a manually chosen view and restores it when returning to wide", async () => {
+    renderApp();
+    await act(async () => {
+      triggerResize(900);
+    });
+    expect(document.querySelector("canvas")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    await act(async () => {
+      triggerResize(1280);
+    });
+    expect(document.querySelector("canvas")).not.toBeInTheDocument();
+    expect(screen.getByText("Dashboard 视图（传统列表）")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pixel" }));
+    await act(async () => {
+      triggerResize(900);
+    });
+    await act(async () => {
+      triggerResize(1280);
+    });
+    expect(document.querySelector("canvas")).toBeInTheDocument();
+  });
+
+  it("renders the canvas with an aria-label", () => {
+    renderApp();
+    const canvas = document.querySelector("canvas");
+    expect(canvas).toHaveAttribute("aria-label", "Pixel office map showing agent rooms and tasks");
+  });
+
+  it("supports arrow-key navigation between mode tabs", () => {
+    renderApp();
+    const tabs = ["Command", "Focus", "Debrief"].map((name) =>
+      screen.getByRole("tab", { name })
+    );
+
+    tabs[0].focus();
+    fireEvent.keyDown(screen.getByRole("tablist", { name: "Experience mode" }), {
+      key: "ArrowRight",
+    });
+    expect(tabs[1]).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole("tablist", { name: "Experience mode" }), {
+      key: "ArrowRight",
+    });
+    expect(tabs[2]).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole("tablist", { name: "Experience mode" }), {
+      key: "ArrowLeft",
+    });
+    expect(tabs[1]).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole("tablist", { name: "Experience mode" }), {
+      key: "End",
+    });
+    expect(tabs[2]).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole("tablist", { name: "Experience mode" }), {
+      key: "Home",
+    });
+    expect(tabs[0]).toHaveFocus();
   });
 });

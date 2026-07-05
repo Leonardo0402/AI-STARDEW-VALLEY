@@ -1,4 +1,4 @@
-import type { FC } from "react";
+import { useRef, type FC, type KeyboardEvent } from "react";
 import type { ApprovalView } from "@agent-office/protocol";
 import { Card } from "./Card.js";
 
@@ -17,11 +17,20 @@ export const ApprovalDrawer: FC<ApprovalDrawerProps> = ({
   approveDisabled = false,
   rejectDisabled = false,
 }) => {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
   if (approvals.length === 0) return null;
 
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      titleRef.current?.focus();
+      e.preventDefault();
+    }
+  };
+
   return (
-    <div className="panel-section">
-      <h3 className="approval-drawer__title">
+    <div className="panel-section approval-drawer__container" onKeyDown={handleKeyDown}>
+      <h3 className="approval-drawer__title" ref={titleRef} tabIndex={-1}>
         Pending Approval <span className="badge badge--count">{approvals.length}</span>
       </h3>
       {approvals.map((approval) => (
@@ -33,6 +42,7 @@ export const ApprovalDrawer: FC<ApprovalDrawerProps> = ({
           <div className="approval-drawer__actions">
             <button
               className="btn btn--primary btn--small"
+              aria-label={`Approve approval ${approval.approvalId}`}
               onClick={() => onApprove(approval.approvalId)}
               disabled={approveDisabled}
             >
@@ -40,6 +50,7 @@ export const ApprovalDrawer: FC<ApprovalDrawerProps> = ({
             </button>
             <button
               className="btn btn--danger btn--small"
+              aria-label={`Reject approval ${approval.approvalId}`}
               onClick={() => onReject(approval.approvalId)}
               disabled={rejectDisabled}
             >

@@ -20,3 +20,4 @@ export { SectionHeader } from "./components/SectionHeader.js";
 export { ApprovalDrawer } from "./components/ApprovalDrawer.js";
 export { TaskForm } from "./components/TaskForm.js";
 export { ErrorBanner } from "./components/ErrorBanner.js";
+export { formatTime } from "./components/format-time.js";

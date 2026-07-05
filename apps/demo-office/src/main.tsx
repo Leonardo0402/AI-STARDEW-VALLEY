@@ -20,10 +20,18 @@ function renderStartupError(err: unknown): void {
   const root = createRoot(document.getElementById("root")!);
   root.render(
     <React.StrictMode>
-      <div style={{ padding: 24, fontFamily: "monospace", color: "#ff6666", background: "#1a1a2e", minHeight: "100vh" }}>
+      <div
+        style={{
+          padding: 24,
+          fontFamily: "var(--font-mono), monospace",
+          color: "var(--failure)",
+          background: "var(--base-900)",
+          minHeight: "100vh",
+        }}
+      >
         <h2>demo-office startup error</h2>
         <pre>{err instanceof Error ? err.message : String(err)}</pre>
-        <p style={{ color: "#888", marginTop: 16 }}>
+        <p style={{ color: "var(--base-400)", marginTop: 16 }}>
           Check your <code>.env</code> or Vite environment variables.
           See <code>.env.example</code> for required values.
         </p>
@@ -99,9 +107,9 @@ async function bootstrap(): Promise<void> {
           justifyContent: "center",
           width: "100vw",
           height: "100vh",
-          backgroundColor: "#1a1a2e",
-          color: "#88ccff",
-          fontFamily: "monospace",
+          backgroundColor: "var(--base-900)",
+          color: "var(--info)",
+          fontFamily: "var(--font-mono), monospace",
           fontSize: 14,
         }}
       >

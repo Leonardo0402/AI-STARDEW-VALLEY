@@ -11,7 +11,16 @@
  * │                                       │                  │
  * └──────────────────────────────────────┴──────────────────┘
  */
-import { useState, useEffect, useRef, useMemo, type FC, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  type FC,
+  type ReactNode,
+  type KeyboardEvent,
+} from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
 import type { AdapterCapabilities } from "@agent-office/protocol";
 import {
@@ -21,6 +30,7 @@ import {
 } from "@agent-office/control-ui";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
+import { DebriefTimeline } from "./DebriefTimeline.js";
 import { StatusStrip } from "./StatusStrip.js";
 
 interface AppProps {
@@ -68,13 +78,16 @@ export const App: FC<AppProps> = ({
   const [reduceMotion, setReduceMotion] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PixelOfficeScene | null>(null);
+  const appBodyRef = useRef<HTMLDivElement>(null);
+  const modeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const lastManualViewRef = useRef<ViewMode>("pixel");
 
   // 初始化 PixelOfficeScene
   useEffect(() => {
     if (view !== "pixel" || !canvasRef.current) return;
     if (sceneRef.current) return;
 
-    const scene = new PixelOfficeScene(canvasRef.current);
+    const scene = new PixelOfficeScene(canvasRef.current, { reduceMotion });
     sceneRef.current = scene;
     scene.init(canvasRef.current).catch((err) => {
       console.error("[App] PixelOfficeScene 初始化失败：", err);
@@ -84,7 +97,69 @@ export const App: FC<AppProps> = ({
       scene.destroy();
       sceneRef.current = null;
     };
-  }, [view]);
+  }, [view, reduceMotion]);
+
+  // 将 reduceMotion 变更同步到已存在的场景
+  useEffect(() => {
+    sceneRef.current?.setReduceMotion?.(reduceMotion);
+  }, [reduceMotion]);
+
+  // 响应式：窄于 1024 px 自动切换到列表视图，恢复时还原上次手动选择的视图
+  useEffect(() => {
+    const el = appBodyRef.current;
+    if (!el) return;
+
+    let wasNarrow = el.getBoundingClientRect().width < 1024;
+    const update = (width: number) => {
+      const narrow = width < 1024;
+      if (narrow && !wasNarrow) {
+        setView("list");
+      } else if (!narrow && wasNarrow) {
+        setView(lastManualViewRef.current);
+      }
+      wasNarrow = narrow;
+    };
+
+    update(el.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect?.width ?? window.innerWidth;
+        update(width);
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+
+    const onResize = () => update(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const setManualView = useCallback((next: ViewMode) => {
+    lastManualViewRef.current = next;
+    setView(next);
+  }, []);
+
+  const handleModeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const buttons = modeButtonRefs.current.filter(Boolean) as HTMLButtonElement[];
+    const index = buttons.findIndex((b) => b === document.activeElement);
+    if (index === -1) return;
+
+    if (e.key === "ArrowRight") {
+      buttons[(index + 1) % buttons.length].focus();
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft") {
+      buttons[(index - 1 + buttons.length) % buttons.length].focus();
+      e.preventDefault();
+    } else if (e.key === "Home") {
+      buttons[0].focus();
+      e.preventDefault();
+    } else if (e.key === "End") {
+      buttons[buttons.length - 1].focus();
+      e.preventDefault();
+    }
+  };
 
   // 当 projection 变化时更新场景
   useEffect(() => {
@@ -99,7 +174,8 @@ export const App: FC<AppProps> = ({
     return { type: event.type, timestamp: event.occurredAt };
   }, [eventLog]);
 
-  const showFullView = experienceMode !== "focus";
+  const isFocus = experienceMode === "focus";
+  const isDebrief = experienceMode === "debrief";
 
   return (
     <div className={`app-shell ${reduceMotion ? "reduce-motion" : ""}`}>
@@ -107,7 +183,6 @@ export const App: FC<AppProps> = ({
         runtimeId={runtimeId}
         sessionState={sessionState}
         diagnostics={diagnostics}
-        lastError={errors.length > 0 ? errors[errors.length - 1] : null}
         lastEvent={lastEvent}
         retryable={retryable}
         onRetry={onRetry}
@@ -127,10 +202,16 @@ export const App: FC<AppProps> = ({
           <span>Swarm Office</span>
         </div>
 
-        <div className="mode-switcher" role="tablist" aria-label="Experience mode">
-          {EXPERIENCE_MODES.map((m) => (
+        <div
+          className="mode-switcher"
+          role="tablist"
+          aria-label="Experience mode"
+          onKeyDown={handleModeKeyDown}
+        >
+          {EXPERIENCE_MODES.map((m, i) => (
             <button
               key={m}
+              ref={(el) => (modeButtonRefs.current[i] = el)}
               className={`mode-switcher__btn ${experienceMode === m ? "mode-switcher__btn--active" : ""}`}
               role="tab"
               aria-selected={experienceMode === m}
@@ -145,16 +226,16 @@ export const App: FC<AppProps> = ({
           <button
             className={`icon-btn ${view === "pixel" ? "icon-btn--active" : ""}`}
             aria-pressed={view === "pixel"}
-            onClick={() => setView("pixel")}
+            onClick={() => setManualView("pixel")}
           >
-            像素空间
+            Pixel
           </button>
           <button
             className={`icon-btn ${view === "list" ? "icon-btn--active" : ""}`}
             aria-pressed={view === "list"}
-            onClick={() => setView("list")}
+            onClick={() => setManualView("list")}
           >
-            列表视图
+            List
           </button>
           <button
             className={`icon-btn ${reduceMotion ? "icon-btn--active" : ""}`}
@@ -166,22 +247,26 @@ export const App: FC<AppProps> = ({
         </div>
       </header>
 
-      <div className="app-body">
-        <div className="app-stage">
-          {showFullView ? (
+      <div className="app-body" ref={appBodyRef}>
+        <div className={`app-stage ${isFocus ? "app-stage--dimmed" : ""}`}>
+          {isDebrief ? (
             view === "pixel" ? (
-              <canvas
-                ref={canvasRef}
-                className="app-canvas"
-                width={800}
-                height={600}
-              />
+              <DebriefTimeline events={eventLog} />
             ) : (
               <ListView projection={projection} />
             )
+          ) : view === "pixel" ? (
+            <canvas
+              ref={canvasRef}
+              className="app-canvas"
+              width={800}
+              height={600}
+              aria-label="Pixel office map showing agent rooms and tasks"
+            />
           ) : (
-            <FocusModeIndicator projection={projection} />
+            <ListView projection={projection} />
           )}
+          {isFocus && <FocusModeIndicator projection={projection} />}
         </div>
 
         <div className="app-panel">
@@ -191,7 +276,6 @@ export const App: FC<AppProps> = ({
             eventLog={eventLog}
             errors={errors}
             mode={experienceMode}
-            onModeChange={setExperienceMode}
             onSendCommand={sendCommand}
             capabilities={capabilities}
           />
@@ -214,28 +298,28 @@ const FocusModeIndicator: FC<{ projection: ReturnType<typeof useOfficeState>["pr
   return (
     <div className="focus-indicator">
       <h2 className="focus-indicator__title">Focus Mode</h2>
-      <p className="focus-indicator__hint">Agent 在后台继续工作，事件静默积压。</p>
+      <p className="focus-indicator__hint">Agents continue working in the background; events queue quietly.</p>
       <div className="focus-indicator__stats">
         <div className="focus-indicator__stat">
-          <span className="focus-indicator__num" style={{ color: "var(--success)" }}>
+          <span className="focus-indicator__num focus-indicator__num--urgency">
             {pending}
           </span>
-          <span className="focus-indicator__label">待审批</span>
+          <span className="focus-indicator__label">Pending</span>
         </div>
         <div className="focus-indicator__stat">
-          <span className="focus-indicator__num" style={{ color: "var(--failure)" }}>
+          <span className="focus-indicator__num focus-indicator__num--failure">
             {blocked}
           </span>
-          <span className="focus-indicator__label">阻塞任务</span>
+          <span className="focus-indicator__label">Blocked</span>
         </div>
         <div className="focus-indicator__stat">
-          <span className="focus-indicator__num" style={{ color: "var(--info)" }}>
+          <span className="focus-indicator__num focus-indicator__num--info">
             {artifacts}
           </span>
-          <span className="focus-indicator__label">产物</span>
+          <span className="focus-indicator__label">Artifacts</span>
         </div>
       </div>
-      <p className="focus-indicator__hint">切换到 Command 或 Debrief 模式查看详情。</p>
+      <p className="focus-indicator__hint">Switch to Command or Debrief for details.</p>
     </div>
   );
 };

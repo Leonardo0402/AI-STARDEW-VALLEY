@@ -118,7 +118,6 @@ function renderPanel(
     eventLog: [baseEvent],
     errors: [],
     mode: "command" as ExperienceMode,
-    onModeChange: vi.fn(),
     onSendCommand: vi.fn().mockResolvedValue(undefined),
     capabilities,
     ...overrides,
@@ -338,7 +337,18 @@ describe("ControlPanel", () => {
         },
       ],
     };
-    rerender(<ControlPanel {...({ projection, eventLog: [baseEvent], errors: [], mode: "command", onModeChange: vi.fn(), onSendCommand: vi.fn(), capabilities } as React.ComponentProps<typeof ControlPanel>)} />);
+    rerender(
+      <ControlPanel
+        {...({
+          projection,
+          eventLog: [baseEvent],
+          errors: [],
+          mode: "command",
+          onSendCommand: vi.fn(),
+          capabilities,
+        } as React.ComponentProps<typeof ControlPanel>)}
+      />
+    );
     expect(screen.getByRole("heading", { name: /Pending Approval/i })).toBeInTheDocument();
   });
 
@@ -357,5 +367,132 @@ describe("ControlPanel", () => {
     expect(labels).toContain("created");
     expect(labels).toContain("generated v2");
     labels.forEach((label) => expect(label).not.toBe(""));
+  });
+
+  it("focus panel only surfaces pending approvals and blocked states", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      agents: [
+        ...baseProjection.agents,
+        {
+          agentId: "agent-4",
+          name: "Blocked-Agent",
+          role: "worker",
+          status: "blocked",
+          currentTaskId: null,
+          currentRoomId: "room-2",
+          blockedReason: "Adapter timeout",
+        },
+      ],
+      blockedTasks: [
+        {
+          taskId: "task-3",
+          title: "Blocked task",
+          description: "Blocked",
+          status: "blocked",
+          priority: "high",
+          assigneeId: "agent-2",
+          roomId: "room-2",
+          artifactIds: [],
+          approvalId: null,
+          blockedReason: "Missing dependency",
+        },
+      ],
+      pendingApprovals: [
+        {
+          approvalId: "approval-1",
+          taskId: "task-1",
+          kind: "artifact_delivery",
+          status: "requested",
+          requestedBy: "agent-2",
+          reason: "Deliver Q3 report",
+        },
+      ],
+    };
+    const { props } = renderPanel({ mode: "focus", projection });
+
+    expect(screen.getByRole("heading", { name: /Pending Approval/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Blocked Agents/i })).toBeInTheDocument();
+    expect(screen.getByText("Blocked-Agent")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Blocked Tasks/i })).toBeInTheDocument();
+    expect(screen.getByText("Blocked task")).toBeInTheDocument();
+
+    expect(screen.queryByRole("heading", { name: /^Create Task$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Agents$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Tasks$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Event Log$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Artifacts$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Approve/i }));
+    expect(props.onSendCommand).toHaveBeenCalledWith(
+      CommandType.APPROVAL_ACCEPT,
+      { approvalId: "approval-1" },
+      "approval-1"
+    );
+  });
+
+  it("debrief panel displays session summary, artifacts and event timeline", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      tasks: [
+        ...baseProjection.tasks,
+        {
+          taskId: "task-3",
+          title: "Completed task",
+          description: "Done",
+          status: "completed",
+          priority: "normal",
+          assigneeId: "agent-2",
+          roomId: "room-2",
+          artifactIds: [],
+          approvalId: null,
+          blockedReason: null,
+        },
+      ],
+      approvals: [
+        {
+          approvalId: "approval-2",
+          taskId: "task-1",
+          kind: "artifact_delivery",
+          status: "approved",
+          requestedBy: "agent-2",
+          reason: "Deliver Q3 report",
+        },
+      ],
+      artifacts: [
+        ...baseProjection.artifacts,
+        {
+          artifactId: "art-2",
+          taskId: "task-3",
+          producerAgentId: "agent-2",
+          type: "document",
+          title: "delivered.md",
+          status: "delivered",
+          version: 1,
+          reviewResult: null,
+        },
+      ],
+    };
+    const eventLog: DomainEvent[] = [
+      {
+        ...baseEvent,
+        type: "task.completed",
+        occurredAt: "2026-07-05T12:05:00.000Z",
+        payload: { taskId: "task-3" },
+      },
+    ];
+    renderPanel({ mode: "debrief", projection, eventLog });
+
+    expect(screen.getByRole("heading", { name: /Session Summary/i })).toBeInTheDocument();
+    expect(screen.getByText(/Completed task/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Artifacts/i })).toBeInTheDocument();
+    expect(screen.getByText("delivered.md")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Decisions/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Event Timeline/i })).toBeInTheDocument();
+    expect(screen.getByText(/task.completed/)).toBeInTheDocument();
+
+    expect(screen.queryByRole("heading", { name: /^Create Task$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Agents$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Tasks$/i })).not.toBeInTheDocument();
   });
 });

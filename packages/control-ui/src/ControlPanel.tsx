@@ -11,7 +11,6 @@ import type {
   AdapterCapabilities,
   AgentView,
   TaskView,
-  ArtifactView,
 } from "@agent-office/protocol";
 import { CommandType } from "@agent-office/protocol";
 import { EventLogViewer } from "./EventLogViewer.js";
@@ -21,6 +20,9 @@ import { SectionHeader } from "./components/SectionHeader.js";
 import { ApprovalDrawer } from "./components/ApprovalDrawer.js";
 import { TaskForm } from "./components/TaskForm.js";
 import { ErrorBanner } from "./components/ErrorBanner.js";
+import { FocusPanel } from "./FocusPanel.js";
+import { DebriefPanel } from "./DebriefPanel.js";
+import { artifactStatusIntent } from "./components/intents.js";
 import "./control-panel.css";
 
 export type ExperienceMode = "command" | "focus" | "debrief";
@@ -30,7 +32,6 @@ interface ControlPanelProps {
   eventLog: DomainEvent[];
   errors: string[];
   mode: ExperienceMode;
-  onModeChange: (mode: ExperienceMode) => void;
   onSendCommand: (
     commandType: string,
     payload: unknown,
@@ -44,6 +45,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   projection,
   eventLog,
   errors,
+  mode,
   onSendCommand,
   capabilities,
 }) => {
@@ -132,7 +134,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   };
 
   const idleWorkers = projection.agents.filter(
-    (a) => a.role === "worker" && a.status === "idle"
+    (a) => a.role === "worker" && a.status === "idle" && !a.blockedReason
   );
 
   return (
@@ -153,152 +155,168 @@ export const ControlPanel: FC<ControlPanelProps> = ({
         </div>
       )}
 
-      <ApprovalDrawer
-        approvals={projection.pendingApprovals}
-        onApprove={handleAcceptApproval}
-        onReject={handleRejectApproval}
-        approveDisabled={!isSupported(CommandType.APPROVAL_ACCEPT)}
-        rejectDisabled={!isSupported(CommandType.APPROVAL_REJECT)}
-      />
-
-      <div className="panel-section">
-        <SectionHeader title="Create Task" />
-        <TaskForm onCreate={handleCreateTask} disabled={!isSupported(CommandType.TASK_CREATE)} />
-        {actionErrors["create-task"] && (
-          <div className="action-error">{actionErrors["create-task"]}</div>
-        )}
-      </div>
-
-      <div className="panel-section">
-        <SectionHeader title="Agents" count={projection.agents.length} countIntent="idle" />
-        {projection.agents.map((agent) => (
-          <Card key={agent.agentId}>
-            <div className="card-row">
-              <div>
-                <div className="card-title">{agent.name}</div>
-                <div className="card-meta">
-                  {agent.role}
-                  {agent.currentTaskId ? ` · ${agent.currentTaskId}` : " · no task"}
-                  {agent.blockedReason ? ` · ${agent.blockedReason}` : ""}
-                </div>
-              </div>
-              <Badge intent={agentStatusIntent(agent.status)}>{agent.status}</Badge>
-            </div>
-            <div className="card-footer">
-              <button
-                className="btn btn--secondary btn--small"
-                onClick={() => handlePauseAgent(agent.agentId)}
-                disabled={
-                  agent.status === "paused" ||
-                  agent.status === "offline" ||
-                  !isSupported(CommandType.AGENT_PAUSE)
-                }
-                title={isSupported(CommandType.AGENT_PAUSE) ? undefined : "Unsupported by adapter"}
-              >
-                Pause
-              </button>
-              <button
-                className="btn btn--secondary btn--small"
-                onClick={() => handleResumeAgent(agent.agentId)}
-                disabled={
-                  agent.status !== "paused" || !isSupported(CommandType.AGENT_RESUME)
-                }
-                title={isSupported(CommandType.AGENT_RESUME) ? undefined : "Unsupported by adapter"}
-              >
-                Resume
-              </button>
-            </div>
-            {(actionErrors[`pause-${agent.agentId}`] || actionErrors[`resume-${agent.agentId}`]) && (
-              <div className="action-error">
-                {actionErrors[`pause-${agent.agentId}`] ?? actionErrors[`resume-${agent.agentId}`]}
-              </div>
-            )}
-          </Card>
-        ))}
-      </div>
-
-      <div className="panel-section">
-        <SectionHeader title="Tasks" count={projection.tasks.length} countIntent="info" />
-        {projection.tasks.map((task) => (
-          <Card key={task.taskId}>
-            <div className="card-row">
-              <div>
-                <div className="card-title">{task.title}</div>
-                <div className="card-meta">
-                  {task.taskId} · {task.assigneeId ?? "unassigned"} · {task.priority}
-                  {task.blockedReason ? ` · ${task.blockedReason}` : ""}
-                </div>
-              </div>
-              <Badge intent={taskStatusIntent(task.status)}>{task.status}</Badge>
-            </div>
-            {task.status === "created" && idleWorkers.length > 0 && isSupported(CommandType.TASK_ASSIGN) && (
-              <div className="card-footer">
-                {idleWorkers.map((a) => (
-                  <button
-                    key={a.agentId}
-                    className="btn btn--primary btn--small"
-                    onClick={() => handleAssignTask(task.taskId, a.agentId)}
-                  >
-                    Assign to {a.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {actionErrors[`assign-${task.taskId}`] && (
-              <div className="action-error">{actionErrors[`assign-${task.taskId}`]}</div>
-            )}
-          </Card>
-        ))}
-      </div>
-
-      {projection.artifacts.length > 0 && (
-        <div className="panel-section">
-          <SectionHeader
-            title="Artifacts"
-            count={projection.artifacts.length}
-            countIntent="approved"
+      {mode === "command" && (
+        <>
+          <ApprovalDrawer
+            approvals={projection.pendingApprovals}
+            onApprove={handleAcceptApproval}
+            onReject={handleRejectApproval}
+            approveDisabled={!isSupported(CommandType.APPROVAL_ACCEPT)}
+            rejectDisabled={!isSupported(CommandType.APPROVAL_REJECT)}
           />
-          {projection.artifacts.map((art) => (
-            <Card key={art.artifactId}>
-              <div className="card-row">
-                <div>
-                  <div className="card-title">{art.title}</div>
-                  <div className="card-meta">
-                    {art.artifactId} · {art.type}
-                    {art.reviewResult
-                      ? ` · ${art.reviewResult.verdict}: ${art.reviewResult.comment}`
-                      : ""}
+
+          <div className="panel-section">
+            <SectionHeader title="Create Task" />
+            <TaskForm onCreate={handleCreateTask} disabled={!isSupported(CommandType.TASK_CREATE)} />
+            {actionErrors["create-task"] && (
+              <div className="action-error">{actionErrors["create-task"]}</div>
+            )}
+          </div>
+
+          <div className="panel-section">
+            <SectionHeader title="Agents" count={projection.agents.length} countIntent="idle" />
+            {projection.agents.map((agent) => (
+              <Card key={agent.agentId}>
+                <div className="card-row">
+                  <div>
+                    <div className="card-title">{agent.name}</div>
+                    <div className="card-meta">
+                      {agent.role}
+                      {agent.currentTaskId ? ` · ${agent.currentTaskId}` : " · no task"}
+                      {agent.blockedReason ? ` · ${agent.blockedReason}` : ""}
+                    </div>
                   </div>
+                  <Badge intent={agentStatusIntent(agent.status)}>{agent.status}</Badge>
                 </div>
-                <Badge intent={artifactStatusIntent(art.status)}>
-                  {art.status} v{art.version}
-                </Badge>
-              </div>
-              <div className="card-footer">
-                <button
-                  className="btn btn--secondary btn--small"
-                  onClick={() => handleOpenArtifact(art.artifactId)}
-                  disabled={!isSupported(CommandType.ARTIFACT_OPEN)}
-                  title={isSupported(CommandType.ARTIFACT_OPEN) ? undefined : "Unsupported by adapter"}
-                >
-                  View
-                </button>
-              </div>
-              {selectedArtifact === art.artifactId && (
-                <div className="artifact-preview">
-                  <div>Artifact URI: {art.artifactId}</div>
-                  <div>（Mock 内容 — 实际内容需通过 URI 获取）</div>
+                <div className="card-footer">
+                  <button
+                    className="btn btn--secondary btn--small"
+                    onClick={() => handlePauseAgent(agent.agentId)}
+                    disabled={
+                      agent.status === "paused" ||
+                      agent.status === "offline" ||
+                      !isSupported(CommandType.AGENT_PAUSE)
+                    }
+                    title={isSupported(CommandType.AGENT_PAUSE) ? undefined : "Unsupported by adapter"}
+                  >
+                    Pause
+                  </button>
+                  <button
+                    className="btn btn--secondary btn--small"
+                    onClick={() => handleResumeAgent(agent.agentId)}
+                    disabled={
+                      agent.status !== "paused" || !isSupported(CommandType.AGENT_RESUME)
+                    }
+                    title={isSupported(CommandType.AGENT_RESUME) ? undefined : "Unsupported by adapter"}
+                  >
+                    Resume
+                  </button>
                 </div>
-              )}
-              {actionErrors[`open-${art.artifactId}`] && (
-                <div className="action-error">{actionErrors[`open-${art.artifactId}`]}</div>
-              )}
-            </Card>
-          ))}
-        </div>
+                {(actionErrors[`pause-${agent.agentId}`] || actionErrors[`resume-${agent.agentId}`]) && (
+                  <div className="action-error">
+                    {actionErrors[`pause-${agent.agentId}`] ?? actionErrors[`resume-${agent.agentId}`]}
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+
+          <div className="panel-section">
+            <SectionHeader title="Tasks" count={projection.tasks.length} countIntent="info" />
+            {projection.tasks.map((task) => (
+              <Card key={task.taskId}>
+                <div className="card-row">
+                  <div>
+                    <div className="card-title">{task.title}</div>
+                    <div className="card-meta">
+                      {task.taskId} · {task.assigneeId ?? "unassigned"} · {task.priority}
+                      {task.blockedReason ? ` · ${task.blockedReason}` : ""}
+                    </div>
+                  </div>
+                  <Badge intent={taskStatusIntent(task.status)}>{task.status}</Badge>
+                </div>
+                {task.status === "created" && idleWorkers.length > 0 && isSupported(CommandType.TASK_ASSIGN) && (
+                  <div className="card-footer">
+                    {idleWorkers.map((a) => (
+                      <button
+                        key={a.agentId}
+                        className="btn btn--primary btn--small"
+                        onClick={() => handleAssignTask(task.taskId, a.agentId)}
+                      >
+                        Assign to {a.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {actionErrors[`assign-${task.taskId}`] && (
+                  <div className="action-error">{actionErrors[`assign-${task.taskId}`]}</div>
+                )}
+              </Card>
+            ))}
+          </div>
+
+          {projection.artifacts.length > 0 && (
+            <div className="panel-section">
+              <SectionHeader
+                title="Artifacts"
+                count={projection.artifacts.length}
+                countIntent="approved"
+              />
+              {projection.artifacts.map((art) => (
+                <Card key={art.artifactId}>
+                  <div className="card-row">
+                    <div>
+                      <div className="card-title">{art.title}</div>
+                      <div className="card-meta">
+                        {art.artifactId} · {art.type}
+                        {art.reviewResult
+                          ? ` · ${art.reviewResult.verdict}: ${art.reviewResult.comment}`
+                          : ""}
+                      </div>
+                    </div>
+                    <Badge intent={artifactStatusIntent(art.status)}>
+                      {art.status} v{art.version}
+                    </Badge>
+                  </div>
+                  <div className="card-footer">
+                    <button
+                      className="btn btn--secondary btn--small"
+                      onClick={() => handleOpenArtifact(art.artifactId)}
+                      disabled={!isSupported(CommandType.ARTIFACT_OPEN)}
+                      title={isSupported(CommandType.ARTIFACT_OPEN) ? undefined : "Unsupported by adapter"}
+                    >
+                      View
+                    </button>
+                  </div>
+                  {selectedArtifact === art.artifactId && (
+                    <div className="artifact-preview">
+                      <div>Artifact URI: {art.artifactId}</div>
+                      <div>（Mock 内容 — 实际内容需通过 URI 获取）</div>
+                    </div>
+                  )}
+                  {actionErrors[`open-${art.artifactId}`] && (
+                    <div className="action-error">{actionErrors[`open-${art.artifactId}`]}</div>
+                  )}
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <EventLogViewer events={eventLog} />
+        </>
       )}
 
-      <EventLogViewer events={eventLog} />
+      {mode === "focus" && (
+        <FocusPanel
+          projection={projection}
+          onApprove={handleAcceptApproval}
+          onReject={handleRejectApproval}
+          approveDisabled={!isSupported(CommandType.APPROVAL_ACCEPT)}
+          rejectDisabled={!isSupported(CommandType.APPROVAL_REJECT)}
+        />
+      )}
+
+      {mode === "debrief" && <DebriefPanel projection={projection} eventLog={eventLog} />}
     </div>
   );
 };
@@ -369,22 +387,3 @@ function taskStatusIntent(status: TaskView["status"]): BadgeIntent {
   }
 }
 
-function artifactStatusIntent(status: ArtifactView["status"]): BadgeIntent {
-  switch (status) {
-    case "draft":
-      return "idle";
-    case "generated":
-      return "info";
-    case "under_review":
-    case "revision_required":
-      return "waiting";
-    case "approved":
-      return "approved";
-    case "rejected":
-      return "failed";
-    case "delivered":
-      return "running";
-    default:
-      return "info";
-  }
-}

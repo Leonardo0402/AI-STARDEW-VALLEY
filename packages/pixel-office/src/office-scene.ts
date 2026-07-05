@@ -6,18 +6,26 @@
  * - 不在 PixiJS Sprite 中保存 Task 真相状态
  * - 角色移动是 Presentation State，不阻塞 Runtime
  * - 角色位置由 Agent 的 currentRoomId 决定，动画只负责平滑过渡
+ *
+ * Stage 4 改造：
+ * - 新增 useSpriteRenderer 选项，开启后使用分层渲染器（room / prop / agent / effect）。
+ * - 默认关闭，保留原有的单体程序化渲染器作为 fallback。
  */
-import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
+import { Application, Container, Graphics, Text, TextStyle, Ticker } from "pixi.js";
 import type {
   OfficeProjection,
   AgentView,
   RoomView,
-  TaskView,
-  ArtifactView,
-  ApprovalView,
 } from "@agent-office/protocol";
+import { AgentRenderer } from "./renderer/agent-renderer.js";
+import { EffectRenderer } from "./renderer/effect-renderer.js";
+import { PropRenderer } from "./renderer/prop-renderer.js";
+import { RoomRenderer } from "./renderer/room-renderer.js";
+import { ROLE_COLORS, STATUS_COLORS, ROOM_COLORS } from "./design-tokens.js";
+import { createLayoutFromRoomViews, type RoomLayout } from "./layout.js";
+import { AssetLoader } from "./asset-loader.js";
 
-interface AgentSprite {
+interface LegacyAgentSprite {
   container: Container;
   nameText: Text;
   statusText: Text;
@@ -28,80 +36,157 @@ interface AgentSprite {
   currentY: number;
 }
 
-const ROOM_COLORS: Record<string, number> = {
-  command: 0x2a3a5a,
-  execution: 0x2a5a3a,
-  review: 0x5a3a2a,
-  approval_delivery: 0x5a2a5a,
-};
-
-const STATUS_COLORS: Record<string, number> = {
-  idle: 0x888888,
-  planning: 0x4488ff,
-  working: 0x44ff44,
-  waiting: 0xffaa44,
-  reviewing: 0xff44ff,
-  blocked: 0xff4444,
-  paused: 0x666666,
-  failed: 0xff0000,
-  offline: 0x333333,
-};
+export interface PixelOfficeSceneOptions {
+  /** 开启 Stage 4 分层精灵渲染器；默认 false，使用单体程序化渲染器。 */
+  useSpriteRenderer?: boolean;
+  /** 禁用连续动画（行走帧、脉冲等）。 */
+  reduceMotion?: boolean;
+}
 
 export class PixelOfficeScene {
   private app: Application;
+  private contentRoot: Container;
   private roomLayer: Container;
+  private propLayer: Container;
   private agentLayer: Container;
   private overlayLayer: Container;
-  private agentSprites: Map<string, AgentSprite> = new Map();
+  private agentSprites: Map<string, LegacyAgentSprite> = new Map();
   private currentProjection: OfficeProjection | null = null;
+  private currentLayout: RoomLayout | null = null;
   private destroyed = false;
   private initialized = false;
+  private resizeObserver: ResizeObserver | null = null;
 
-  constructor(canvas: HTMLCanvasElement) {
+  private useSpriteRenderer: boolean;
+  private reduceMotion: boolean;
+  private roomRenderer?: RoomRenderer;
+  private propRenderer?: PropRenderer;
+  private agentRenderer?: AgentRenderer;
+  private effectRenderer?: EffectRenderer;
+  private assetLoader?: AssetLoader;
+
+  constructor(canvas: HTMLCanvasElement, options: PixelOfficeSceneOptions = {}) {
+    this.useSpriteRenderer = options.useSpriteRenderer ?? false;
+    this.reduceMotion = options.reduceMotion ?? false;
     this.app = new Application();
+    this.contentRoot = new Container();
     this.roomLayer = new Container();
+    this.propLayer = new Container();
     this.agentLayer = new Container();
     this.overlayLayer = new Container();
+    this.contentRoot.addChild(this.roomLayer);
+    this.contentRoot.addChild(this.propLayer);
+    this.contentRoot.addChild(this.agentLayer);
+    this.contentRoot.addChild(this.overlayLayer);
+  }
+
+  setReduceMotion(value: boolean): void {
+    this.reduceMotion = value;
+    this.agentRenderer?.setReduceMotion(value);
+    this.effectRenderer?.setReduceMotion(value);
   }
 
   async init(canvas: HTMLCanvasElement): Promise<void> {
     if (this.destroyed) return;
     await this.app.init({
       canvas,
-      width: 800,
-      height: 600,
-      backgroundColor: 0x1a1a2e,
+      width: canvas.clientWidth || 800,
+      height: canvas.clientHeight || 600,
+      backgroundColor: 0x161418,
       antialias: false,
+      autoDensity: true,
+      resolution: window.devicePixelRatio || 1,
     });
     if (this.destroyed) {
       // 在 init 期间被 destroy 了
-      try { this.app.destroy(true); } catch { /* ignore */ }
+      try { this.app.destroy({ removeView: false }); } catch { /* ignore */ }
       return;
     }
 
-    this.app.stage.addChild(this.roomLayer);
-    this.app.stage.addChild(this.agentLayer);
-    this.app.stage.addChild(this.overlayLayer);
+    this.app.stage.addChild(this.contentRoot);
+
+    // Responsive: scale the 800×600 design content to fit the stage while
+    // preserving aspect ratio, and re-center when the parent resizes.
+    const parent = canvas.parentElement;
+    if (parent) {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const rect = entries[0]?.contentRect ?? parent.getBoundingClientRect();
+        this.fit(rect.width, rect.height);
+      });
+      this.resizeObserver.observe(parent);
+      this.fit(parent.clientWidth, parent.clientHeight);
+    }
+
+    if (this.useSpriteRenderer) {
+      this.assetLoader = new AssetLoader(this.resolveAssetBasePath());
+      try {
+        await this.assetLoader.loadAll();
+      } catch {
+        // 加载失败时继续：各渲染器内部会回退到程序化绘制
+      }
+      this.roomRenderer = new RoomRenderer(this.roomLayer, this.assetLoader);
+      this.propRenderer = new PropRenderer(this.propLayer, this.assetLoader);
+      this.agentRenderer = new AgentRenderer(this.agentLayer, this.assetLoader, this.reduceMotion);
+      this.effectRenderer = new EffectRenderer(this.overlayLayer, this.assetLoader, this.reduceMotion);
+    }
 
     // 启动渲染循环
-    this.app.ticker.add(() => this.update());
+    this.app.ticker.add((ticker) => this.update(ticker));
     this.initialized = true;
+  }
+
+  private resolveAssetBasePath(): string {
+    // In the browser, assets are served from the host's /assets/ directory
+    // (copied from packages/pixel-office/assets by the demo-office build).
+    if (typeof location !== "undefined") {
+      return new URL("assets/", location.href).href;
+    }
+    return "";
   }
 
   /** 更新场景 — 只消费 OfficeProjection */
   updateProjection(projection: OfficeProjection): void {
     if (!this.initialized) return;
     this.currentProjection = projection;
-    this.renderRooms(projection.rooms);
-    this.renderAgents(projection.agents, projection.rooms);
-    this.renderOverlays(projection);
+
+    if (this.useSpriteRenderer && this.roomRenderer && this.propRenderer && this.agentRenderer && this.effectRenderer) {
+      const layout = createLayoutFromRoomViews(projection.rooms);
+      this.currentLayout = layout;
+      this.roomRenderer.render(layout);
+      this.propRenderer.render(layout);
+      this.agentRenderer.render(projection.agents, layout, projection);
+      this.effectRenderer.render(projection, layout);
+    } else {
+      this.renderRooms(projection.rooms);
+      this.renderAgents(projection.agents, projection.rooms);
+      this.renderOverlays(projection);
+    }
+  }
+
+  private fit(width: number, height: number): void {
+    if (this.destroyed || !this.app.renderer) return;
+    this.app.renderer.resize(width, height);
+
+    const designWidth = 800;
+    const designHeight = 600;
+    const scale = Math.min(width / designWidth, height / designHeight);
+    this.contentRoot.scale.set(scale);
+    this.contentRoot.position.set(
+      (width - designWidth * scale) / 2,
+      (height - designHeight * scale) / 2
+    );
   }
 
   destroy(): void {
     this.destroyed = true;
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
     if (this.initialized) {
       try {
-        this.app.destroy(true);
+        // Keep the <canvas> element in the DOM so React can unmount/reuse it.
+        this.app.destroy({ removeView: false });
       } catch {
         // PixiJS destroy 可能抛错（如 StrictMode 双调用），忽略
       }
@@ -124,9 +209,9 @@ export class PixelOfficeScene {
       const label = new Text({
         text: room.name,
         style: new TextStyle({
-          fontSize: 14,
-          fill: 0xcccccc,
-          fontFamily: "monospace",
+          fontSize: 10,
+          fill: 0xb8b0bc,
+          fontFamily: '"Press Start 2P", monospace',
         }),
       });
       label.x = room.bounds.x + 8;
@@ -157,18 +242,20 @@ export class PixelOfficeScene {
     }
   }
 
-  private createAgentSprite(agent: AgentView): AgentSprite {
+  private createAgentSprite(agent: AgentView): LegacyAgentSprite {
     const container = new Container();
 
     // 角色方块 (32x32 像素块)
     const body = new Graphics();
-    body.rect(-16, -16, 32, 32).fill({ color: this.getStatusColor(agent.status) });
-    body.stroke({ color: 0xffffff, width: 1 });
+    body
+      .rect(-16, -16, 32, 32)
+      .fill({ color: this.getRoleColor(agent.role) })
+      .stroke({ color: this.getStatusColor(agent.status), width: 2 });
 
     // 名字
     const nameText = new Text({
       text: agent.name,
-      style: new TextStyle({ fontSize: 10, fill: 0xffffff, fontFamily: "monospace" }),
+      style: new TextStyle({ fontSize: 10, fill: 0xf2f0eb, fontFamily: 'Inter, system-ui, sans-serif' }),
     });
     nameText.anchor.set(0.5, 0);
     nameText.y = 18;
@@ -176,10 +263,10 @@ export class PixelOfficeScene {
     // 状态
     const statusText = new Text({
       text: agent.status,
-      style: new TextStyle({ fontSize: 8, fill: 0xaaaaaa, fontFamily: "monospace" }),
+      style: new TextStyle({ fontSize: 10, fill: 0xb8b0bc, fontFamily: 'Inter, system-ui, sans-serif' }),
     });
     statusText.anchor.set(0.5, 0);
-    statusText.y = 30;
+    statusText.y = 32;
 
     container.addChild(body);
     container.addChild(nameText);
@@ -198,7 +285,7 @@ export class PixelOfficeScene {
   }
 
   private updateAgentSprite(
-    sprite: AgentSprite,
+    sprite: LegacyAgentSprite,
     agent: AgentView,
     rooms: RoomView[]
   ): void {
@@ -213,8 +300,8 @@ export class PixelOfficeScene {
     body.clear();
     body
       .rect(-16, -16, 32, 32)
-      .fill({ color: this.getStatusColor(agent.status) })
-      .stroke({ color: 0xffffff, width: 1 });
+      .fill({ color: this.getRoleColor(agent.role) })
+      .stroke({ color: this.getStatusColor(agent.status), width: 2 });
 
     // 根据 currentRoomId 定位
     if (agent.currentRoomId) {
@@ -259,12 +346,12 @@ export class PixelOfficeScene {
       const circle = new Graphics();
       circle
         .circle(room.bounds.x + room.bounds.width / 2, room.bounds.y + 20, 8 + pulse * 4)
-        .fill({ color: 0xffff00, alpha: 0.3 + pulse * 0.4 })
-        .stroke({ color: 0xffff00, width: 2 });
+        .fill({ color: 0xe6a85c, alpha: 0.3 + pulse * 0.4 })
+        .stroke({ color: 0xe6a85c, width: 2 });
 
       const label = new Text({
         text: "审批!",
-        style: new TextStyle({ fontSize: 10, fill: 0xffff00, fontFamily: "monospace" }),
+        style: new TextStyle({ fontSize: 10, fill: 0xe6a85c, fontFamily: '"Press Start 2P", monospace' }),
       });
       label.anchor.set(0.5, 0.5);
       label.x = room.bounds.x + room.bounds.width / 2;
@@ -282,7 +369,7 @@ export class PixelOfficeScene {
 
       const label = new Text({
         text: `⚠ ${task.blockedReason?.slice(0, 30) ?? "blocked"}`,
-        style: new TextStyle({ fontSize: 9, fill: 0xff4444, fontFamily: "monospace" }),
+        style: new TextStyle({ fontSize: 10, fill: 0xc96a5b, fontFamily: 'Inter, system-ui, sans-serif' }),
       });
       label.x = room.bounds.x + 8;
       label.y = room.bounds.y + room.bounds.height - 20;
@@ -291,12 +378,26 @@ export class PixelOfficeScene {
     }
   }
 
-  private getStatusColor(status: string): number {
-    return STATUS_COLORS[status] ?? 0x888888;
+  private getRoleColor(role: string): number {
+    return ROLE_COLORS[role] ?? 0xb8b0bc; // --base-300 fallback
   }
 
-  private update(): void {
+  private getStatusColor(status: string): number {
+    return STATUS_COLORS[status] ?? 0x7d7682; // --base-400 fallback
+  }
+
+  private update(ticker: Ticker): void {
     if (this.destroyed) return;
+
+    if (this.useSpriteRenderer && this.agentRenderer) {
+      this.agentRenderer.tick();
+
+      // 持续刷新效果层（blocked/working/approval）；reduceMotion 在 renderer 内部控制脉冲
+      if (this.currentProjection && this.currentLayout) {
+        this.effectRenderer?.render(this.currentProjection, this.currentLayout, ticker.deltaMS);
+      }
+      return;
+    }
 
     // 平滑移动 agent 到目标位置
     for (const sprite of this.agentSprites.values()) {

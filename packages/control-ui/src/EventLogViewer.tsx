@@ -10,6 +10,7 @@ import { useState, type FC } from "react";
 import type { DomainEvent } from "@agent-office/protocol";
 import { EventType } from "@agent-office/protocol";
 import { SectionHeader } from "./components/SectionHeader.js";
+import { formatTime } from "./components/format-time.js";
 
 interface EventLogViewerProps {
   events: DomainEvent[];
@@ -63,14 +64,6 @@ export const EventLogViewer: FC<EventLogViewerProps> = ({ events }) => {
     </div>
   );
 };
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString();
-  } catch {
-    return iso;
-  }
-}
 
 function eventSummary(event: DomainEvent): string {
   const p = event.payload as Record<string, unknown>;

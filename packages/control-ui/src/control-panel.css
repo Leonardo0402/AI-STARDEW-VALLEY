@@ -275,6 +275,12 @@
   gap: var(--space-sm);
 }
 
+.approval-drawer__container:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 /* ─── Error Banner ────────────────────────────────────────── */
 
 .error-banner {
@@ -419,6 +425,67 @@
 
 .status-blocked {
   color: var(--failure);
+}
+
+/* ─── Focus & Debrief summaries ───────────────────────────── */
+
+.focus-summary,
+.debrief-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+}
+
+.focus-summary__item,
+.debrief-summary__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  background: var(--base-700);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-md);
+}
+
+.focus-summary__num,
+.debrief-summary__num {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--base-100);
+}
+
+.focus-summary__num--urgency {
+  color: var(--urgency);
+}
+
+.focus-summary__num--failure {
+  color: var(--failure);
+}
+
+.focus-summary__num--success {
+  color: var(--success);
+}
+
+.focus-summary__label,
+.debrief-summary__label {
+  font-size: 10px;
+  color: var(--base-400);
+}
+
+.debrief-summary__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.debrief-summary__row {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--base-800);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--base-300);
 }
 
 /* ─── Responsive density ──────────────────────────────────── */
