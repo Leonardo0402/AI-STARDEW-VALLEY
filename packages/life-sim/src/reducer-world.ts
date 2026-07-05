@@ -12,48 +12,12 @@ import type {
 import { computePhase } from "./clock.js";
 import { transitionToMinute } from "./schedule.js";
 
-const PHASE_BOUNDARIES = [360, 720, 1080, 1260];
-
 function installBaseSchedules(
   snapshot: LifeSimSnapshot,
   baseSchedules: AgentScheduleEntry[]
 ): LifeSimSnapshot {
+  if (snapshot.baseSchedules.length > 0) return snapshot;
   return { ...snapshot, baseSchedules };
-}
-
-function buildPhaseChangedEvents(
-  fromMinute: number,
-  toMinute: number,
-  day: number,
-  worldId: string,
-  causationId: string,
-  nextSequence: () => number,
-  now: string
-): LifeSimEvent[] {
-  const events: LifeSimEvent[] = [];
-  for (const boundary of PHASE_BOUNDARIES) {
-    if (fromMinute < boundary && boundary <= toMinute) {
-      const seq = nextSequence();
-      events.push({
-        eventId: `evt-phase-${seq}`,
-        worldId,
-        lifeSimSequence: seq,
-        type: "world.phase_changed",
-        occurredAt: now,
-        worldMinute: boundary,
-        day,
-        causationId,
-        runtimeEventId: null,
-        runtimeSequence: null,
-        payload: {
-          oldPhase: computePhase(boundary - 1),
-          newPhase: computePhase(boundary),
-          minute: boundary,
-        },
-      });
-    }
-  }
-  return events;
 }
 
 export interface WorldReduceOutput {
@@ -161,21 +125,20 @@ export function reduceWorldCommand(
       if (delta <= 0) {
         return rejected("end_of_day_not_reached", "Already at end of day");
       }
+      const scheduleResult = transitionToMinute(
+        snapshot,
+        targetMinute,
+        nextSequence,
+        now,
+        command.commandId
+      );
       const nextClock = {
         ...clock,
         minuteOfDay: targetMinute,
         phase: computePhase(targetMinute),
         updatedAt: now,
       };
-      const events = buildPhaseChangedEvents(
-        clock.minuteOfDay,
-        targetMinute,
-        clock.day,
-        snapshot.worldId,
-        command.commandId,
-        nextSequence,
-        now
-      );
+      const events = [...scheduleResult.events];
       const baseSeq = nextSequence();
       events.push({
         eventId: `evt-advance-${baseSeq}`,
@@ -190,19 +153,11 @@ export function reduceWorldCommand(
         runtimeSequence: null,
         payload: { oldMinute: clock.minuteOfDay, newMinute: targetMinute, day: clock.day },
       });
-      const snapshotWithClock = { ...snapshot, worldClock: nextClock };
-      const scheduleResult = transitionToMinute(
-        snapshotWithClock,
-        targetMinute,
-        nextSequence,
-        now,
-        command.commandId
-      );
       const nextSnapshot: LifeSimSnapshot = {
-        ...snapshotWithClock,
+        ...snapshot,
+        worldClock: nextClock,
         activeActivities: scheduleResult.snapshot.activeActivities,
       };
-      events.push(...scheduleResult.events);
       return {
         snapshot: nextSnapshot,
         events,
@@ -277,21 +232,20 @@ export function reduceWorldCommand(
       if (delta <= 0) {
         return rejected("end_of_day_not_reached", "Already at end of day");
       }
+      const scheduleResult = transitionToMinute(
+        snapshot,
+        targetMinute,
+        nextSequence,
+        now,
+        command.commandId
+      );
       const nextClock = {
         ...clock,
         minuteOfDay: targetMinute,
         phase: computePhase(targetMinute),
         updatedAt: now,
       };
-      const events = buildPhaseChangedEvents(
-        clock.minuteOfDay,
-        targetMinute,
-        clock.day,
-        snapshot.worldId,
-        command.commandId,
-        nextSequence,
-        now
-      );
+      const events = [...scheduleResult.events];
       const baseSeq = nextSequence();
       events.push({
         eventId: `evt-run-to-eod-${baseSeq}`,
@@ -306,7 +260,11 @@ export function reduceWorldCommand(
         runtimeSequence: null,
         payload: { oldMinute: clock.minuteOfDay, newMinute: targetMinute, day: clock.day },
       });
-      const nextSnapshot: LifeSimSnapshot = { ...snapshot, worldClock: nextClock };
+      const nextSnapshot: LifeSimSnapshot = {
+        ...snapshot,
+        worldClock: nextClock,
+        activeActivities: scheduleResult.snapshot.activeActivities,
+      };
       return {
         snapshot: nextSnapshot,
         events,

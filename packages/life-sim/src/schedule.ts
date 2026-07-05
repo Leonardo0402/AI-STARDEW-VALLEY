@@ -1,3 +1,4 @@
+import { computePhase, PHASE_BOUNDARIES } from "./clock.js";
 import type { ActiveAgentActivity, AgentScheduleEntry, LifeSimEvent, LifeSimSnapshot } from "./types.js";
 
 export function findEffectiveEntry(
@@ -5,33 +6,29 @@ export function findEffectiveEntry(
   agentId: string,
   minute: number
 ): AgentScheduleEntry | null {
-  const overlays = snapshot.activeOverlays
-    .filter((o) => o.agentId === agentId && o.entry.startMinute <= minute && o.entry.endMinute > minute)
-    .sort((a, b) => b.entry.priority - a.entry.priority);
-  if (overlays.length > 0) return overlays[0].entry;
-  const base = snapshot.baseSchedules.filter(
-    (e) => e.agentId === agentId && e.startMinute <= minute && e.endMinute > minute
-  );
-  return base.length > 0 ? base[0] : null;
-}
-
-export function buildActiveActivity(
-  snapshot: LifeSimSnapshot,
-  agentId: string,
-  minute: number,
-  startedAtWorldMinute: number,
-  interruptedByTaskId: string | null = null
-): ActiveAgentActivity | null {
-  const entry = findEffectiveEntry(snapshot, agentId, minute);
-  if (!entry) return null;
-  return {
-    agentId,
-    scheduleEntryId: entry.entryId,
-    activity: entry.activity,
-    roomId: entry.roomId,
-    startedAtWorldMinute,
-    interruptedByTaskId,
-  };
+  const candidates: AgentScheduleEntry[] = [];
+  for (const entry of snapshot.baseSchedules) {
+    if (entry.agentId === agentId && entry.startMinute <= minute && entry.endMinute > minute) {
+      candidates.push(entry);
+    }
+  }
+  for (const overlay of snapshot.activeOverlays) {
+    if (
+      overlay.agentId === agentId &&
+      overlay.entry.startMinute <= minute &&
+      overlay.entry.endMinute > minute
+    ) {
+      candidates.push(overlay.entry);
+    }
+  }
+  candidates.sort((a, b) => {
+    if (a.source === "system" && b.source !== "system") return -1;
+    if (b.source === "system" && a.source !== "system") return 1;
+    if (a.priority !== b.priority) return b.priority - a.priority;
+    if (a.startMinute !== b.startMinute) return a.startMinute - b.startMinute;
+    return a.entryId.localeCompare(b.entryId);
+  });
+  return candidates[0] ?? null;
 }
 
 export interface TransitionResult {
@@ -47,60 +44,133 @@ export function transitionToMinute(
   causationId: string
 ): TransitionResult {
   const events: LifeSimEvent[] = [];
-  let nextSnapshot = snapshot;
   const currentMinute = snapshot.worldClock.minuteOfDay;
-  // End any base entries whose endMinute <= nextMinute
-  for (const activity of snapshot.activeActivities) {
-    const entry = findEffectiveEntry(snapshot, activity.agentId, currentMinute);
-    if (entry && entry.endMinute <= nextMinute) {
-      const seq = nextSequence();
-      events.push({
-        eventId: `evt-completed-${seq}`,
-        worldId: snapshot.worldId,
-        lifeSimSequence: seq,
-        type: "schedule.activity_completed",
-        occurredAt: now,
-        worldMinute: entry.endMinute,
-        day: snapshot.worldClock.day,
-        causationId,
-        runtimeEventId: null,
-        runtimeSequence: null,
-        payload: { agentId: activity.agentId, entryId: entry.entryId, completedAtWorldMinute: entry.endMinute },
-      });
-    }
-  }
-  // Start new effective entries
-  const activeAgents = new Set(snapshot.activeActivities.map((a) => a.agentId));
-  const agentIds = new Set(snapshot.baseSchedules.map((e) => e.agentId));
+  const day = snapshot.worldClock.day;
+
+  const makeEvent = (type: string, worldMinute: number, payload: unknown): LifeSimEvent => {
+    const seq = nextSequence();
+    return {
+      eventId: `evt-${type}-${seq}`,
+      worldId: snapshot.worldId,
+      lifeSimSequence: seq,
+      type,
+      occurredAt: now,
+      worldMinute,
+      day,
+      causationId,
+      runtimeEventId: null,
+      runtimeSequence: null,
+      payload,
+    };
+  };
+
+  const agentIds = Array.from(
+    new Set([
+      ...snapshot.baseSchedules.map((e) => e.agentId),
+      ...snapshot.activeOverlays.map((o) => o.agentId),
+    ])
+  ).sort();
+
+  const previousActivities = new Map(snapshot.activeActivities.map((a) => [a.agentId, a]));
+  const previousEntries = new Map<string, AgentScheduleEntry | null>();
+  const entryStartedAt = new Map<string, number>();
   for (const agentId of agentIds) {
-    if (activeAgents.has(agentId)) continue;
-    const entry = findEffectiveEntry(snapshot, agentId, nextMinute);
-    if (entry && entry.startMinute <= nextMinute) {
-      const seq = nextSequence();
-      events.push({
-        eventId: `evt-started-${seq}`,
-        worldId: snapshot.worldId,
-        lifeSimSequence: seq,
-        type: "schedule.activity_started",
-        occurredAt: now,
-        worldMinute: nextMinute,
-        day: snapshot.worldClock.day,
-        causationId,
-        runtimeEventId: null,
-        runtimeSequence: null,
-        payload: {
-          agentId,
-          entryId: entry.entryId,
-          activity: entry.activity,
-          roomId: entry.roomId,
-          startedAtWorldMinute: nextMinute,
-        },
-      });
+    if (currentMinute === nextMinute) {
+      previousEntries.set(agentId, null);
+    } else {
+      const entry = findEffectiveEntry(snapshot, agentId, currentMinute);
+      previousEntries.set(agentId, entry);
+      const previousActivity = previousActivities.get(agentId);
+      if (entry && previousActivity && previousActivity.scheduleEntryId === entry.entryId) {
+        entryStartedAt.set(agentId, previousActivity.startedAtWorldMinute);
+      } else if (entry) {
+        entryStartedAt.set(agentId, currentMinute);
+      }
     }
   }
-  const newActivities = Array.from(agentIds)
-    .map((agentId) => buildActiveActivity(snapshot, agentId, nextMinute, nextMinute))
-    .filter((a): a is ActiveAgentActivity => a !== null);
-  nextSnapshot = { ...snapshot, activeActivities: newActivities };
-  return { snapshot: nextSnapshot, events };
+
+  const startMinute = currentMinute === nextMinute ? nextMinute : currentMinute + 1;
+
+  for (let m = startMinute; m <= nextMinute; m++) {
+    // 2. Existing overlays that end early at minute m (handled by runtime/overlay commands).
+
+    // 3. Activity completions for entries ending at minute m.
+    for (const agentId of agentIds) {
+      const prev = previousEntries.get(agentId);
+      if (prev && prev.endMinute === m) {
+        events.push(
+          makeEvent("schedule.activity_completed", m, {
+            agentId,
+            entryId: prev.entryId,
+            completedAtWorldMinute: m,
+          })
+        );
+      }
+    }
+
+    // 4. Phase changes if minute m crosses a phase boundary.
+    if (PHASE_BOUNDARIES.includes(m)) {
+      events.push(
+        makeEvent("world.phase_changed", m, {
+          oldPhase: computePhase(m - 1),
+          newPhase: computePhase(m),
+          minute: m,
+        })
+      );
+    }
+
+    // 5. Activity starts for entries beginning at minute m.
+    // 6. Location changes implied by the above, only when the room actually changes.
+    for (const agentId of agentIds) {
+      const prev = previousEntries.get(agentId);
+      const nextEntry = findEffectiveEntry(snapshot, agentId, m);
+
+      if (nextEntry && nextEntry.startMinute === m && (!prev || prev.entryId !== nextEntry.entryId)) {
+        entryStartedAt.set(agentId, m);
+        events.push(
+          makeEvent("schedule.activity_started", m, {
+            agentId,
+            entryId: nextEntry.entryId,
+            activity: nextEntry.activity,
+            roomId: nextEntry.roomId,
+            startedAtWorldMinute: m,
+          })
+        );
+      }
+
+      const oldRoomId = prev?.roomId ?? null;
+      const newRoomId = nextEntry?.roomId ?? null;
+      if (oldRoomId !== newRoomId) {
+        events.push(
+          makeEvent("agent.location_changed", m, {
+            agentId,
+            oldRoomId,
+            newRoomId,
+            reason: "schedule_transition",
+          })
+        );
+      }
+
+      previousEntries.set(agentId, nextEntry);
+    }
+  }
+
+  const newActivities: ActiveAgentActivity[] = [];
+  for (const agentId of agentIds) {
+    const entry = findEffectiveEntry(snapshot, agentId, nextMinute);
+    if (!entry) continue;
+
+    const startedAtWorldMinute = entryStartedAt.get(agentId) ?? nextMinute;
+
+    newActivities.push({
+      agentId,
+      scheduleEntryId: entry.entryId,
+      activity: entry.activity,
+      roomId: entry.roomId,
+      startedAtWorldMinute,
+      interruptedByTaskId: null,
+    });
+  }
+
+  return { snapshot: { ...snapshot, activeActivities: newActivities }, events };
 }
