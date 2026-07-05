@@ -12,6 +12,7 @@ import type {
 } from "./types.js";
 import { createEmptySnapshot, InMemoryLifeSimStore } from "./store.js";
 import { reduceWorldCommand } from "./reducer-world.js";
+import { reduceRuntimeEvent } from "./reducer-runtime.js";
 
 export interface LifeSimEngineOptions {
   store?: LifeSimStore;
@@ -93,13 +94,38 @@ export async function createLifeSimEngine(
       schedule: { override: false, clearOverride: false },
       clock: { mode: "manual", maxSpeed: 0 },
     }),
-    applyRuntimeEvent: async (_event: DomainEvent) => {
-      // placeholder for Task 5
-      throw new Error("not implemented");
+    applyRuntimeEvent: (event: DomainEvent) => {
+      const promise = queueTail.then(async () => {
+        const bindingMinute = currentSnapshot.worldClock.minuteOfDay;
+        const { snapshot: next, events } = reduceRuntimeEvent(
+          currentSnapshot,
+          event,
+          config.endOfDayMinute,
+          bindingMinute,
+          () => nextLifeSimSequence++,
+          now()
+        );
+        currentSnapshot = {
+          ...next,
+          lastObservedRuntimeSequence: event.sequence,
+          lastAppliedRuntimeSequence: event.sequence,
+        };
+        appendEvents(events);
+        await persist();
+      });
+      queueTail = promise.catch(() => undefined);
+      return promise;
     },
-    observeRuntimeSequence: async (_sequence: number) => {
-      // placeholder for Task 5
-      throw new Error("not implemented");
+    observeRuntimeSequence: (sequence: number) => {
+      const promise = queueTail.then(async () => {
+        currentSnapshot = {
+          ...currentSnapshot,
+          lastObservedRuntimeSequence: Math.max(currentSnapshot.lastObservedRuntimeSequence, sequence),
+        };
+        await persist();
+      });
+      queueTail = promise.catch(() => undefined);
+      return promise;
     },
     onLifeSimEvent: (listener) => {
       listeners.add(listener);
