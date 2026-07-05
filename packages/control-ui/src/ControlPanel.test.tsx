@@ -336,6 +336,9 @@ describe("ControlPanel", () => {
 
   it("shows metadata-only state when artifact has no content or URI", () => {
     renderPanel();
+    const viewBtn = screen.getByRole("button", { name: /View/i });
+    expect(viewBtn).toBeDisabled();
+    expect(viewBtn).toHaveAttribute("title", "Metadata only — content not loaded.");
     expect(screen.getByText(/Metadata only/i)).toBeInTheDocument();
   });
 

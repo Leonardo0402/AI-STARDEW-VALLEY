@@ -49,7 +49,6 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   onSendCommand,
   capabilities,
 }) => {
-  const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
 
@@ -121,9 +120,8 @@ export const ControlPanel: FC<ControlPanelProps> = ({
         onSendCommand(CommandType.ARTIFACT_OPEN, { artifactId }, artifactId)
       );
     } catch {
-      // Error is already recorded in actionErrors; keep the artifact selected so the failure is visible.
+      // Error is already recorded in actionErrors; swallow so it doesn't become unhandled.
     }
-    setSelectedArtifact(artifactId);
   };
 
   const allErrorMessages: string[] = [
@@ -267,6 +265,9 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 countIntent="approved"
               />
               {projection.artifacts.map((art) => {
+                // NOTE: art.status is intentionally not used for content-state classification.
+                // The current ArtifactStatus union has no explicit content_unavailable/load_failed
+                // values; we use art.uri === null and actionErrors for those states instead.
                 const artifactOpenSupported = isSupported(CommandType.ARTIFACT_OPEN);
                 const hasContent = Boolean(art.content);
                 const hasUri = Boolean(art.uri);
@@ -298,7 +299,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                           !artifactOpenSupported
                             ? "Unsupported by adapter"
                             : !hasContent && !hasUri
-                              ? "No content or URI available"
+                              ? "Metadata only — content not loaded."
                               : undefined
                         }
                       >
