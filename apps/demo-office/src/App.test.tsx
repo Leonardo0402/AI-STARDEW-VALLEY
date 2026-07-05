@@ -68,7 +68,6 @@ function renderApp(overrides: Partial<Parameters<typeof App>[0]> = {}) {
       store={mockStore as any}
       gateway={mockGateway as any}
       runtimeId="runtime-001"
-      mode="mock"
       capabilities={{ supportedCommands: Object.values({}), supportedEvents: [], features: { snapshot: true, sse: false, websocket: false, commandExecution: true, softMapping: false, hardOrchestration: false } } as any}
       demoControls={<div data-testid="demo-controls">DemoControls</div>}
       {...overrides}
@@ -119,5 +118,19 @@ describe("App shell", () => {
     expect(screen.getByText("Focus Mode")).toBeInTheDocument();
     expect(document.querySelector("canvas")).not.toBeInTheDocument();
     expect(screen.queryByText("Dashboard 视图（传统列表）")).not.toBeInTheDocument();
+  });
+
+  it("passes retryable and onRetry through to the status strip", () => {
+    const onRetry = vi.fn();
+    (useOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      sessionState: "failed",
+      diagnostics: { ...baseState.diagnostics, state: "failed" },
+    });
+
+    renderApp({ retryable: true, onRetry });
+    const retryBtn = screen.getByRole("button", { name: /Retry/i });
+    fireEvent.click(retryBtn);
+    expect(onRetry).toHaveBeenCalled();
   });
 });

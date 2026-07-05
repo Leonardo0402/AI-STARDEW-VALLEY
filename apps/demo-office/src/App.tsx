@@ -22,19 +22,21 @@ import {
 import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
 import { StatusStrip } from "./StatusStrip.js";
-import type { DemoRuntimeMode } from "./runtime/types.js";
 
 interface AppProps {
   session: RuntimeSession;
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
-  mode: DemoRuntimeMode;
   /** Adapter capabilities — used to disable unsupported command buttons. */
   capabilities?: AdapterCapabilities;
   /** 演示层专用控件（如 DemoControls），由装配层 main.tsx 注入。
    *  App 本身不依赖任何 Mock 专用类型。 */
   demoControls?: ReactNode;
+  /** Whether the Runtime Composition can be rebuilt without a full page reload. */
+  retryable?: boolean;
+  /** Called when the user chooses Retry from the status strip. */
+  onRetry?: () => void;
 }
 
 type ViewMode = "pixel" | "list";
@@ -50,9 +52,10 @@ export const App: FC<AppProps> = ({
   store,
   gateway,
   runtimeId,
-  mode,
   capabilities,
   demoControls,
+  retryable = false,
+  onRetry,
 }) => {
   const { projection, eventLog, errors, sessionState, diagnostics, sendCommand } = useOfficeState(
     session,
@@ -101,13 +104,13 @@ export const App: FC<AppProps> = ({
   return (
     <div className={`app-shell ${reduceMotion ? "reduce-motion" : ""}`}>
       <StatusStrip
-        mode={mode}
         runtimeId={runtimeId}
         sessionState={sessionState}
         diagnostics={diagnostics}
         lastError={errors.length > 0 ? errors[errors.length - 1] : null}
         lastEvent={lastEvent}
-        retryable={false}
+        retryable={retryable}
+        onRetry={onRetry}
         onResync={() => {
           session.resynchronize().catch((err) =>
             console.error("[App] resync failed:", err)

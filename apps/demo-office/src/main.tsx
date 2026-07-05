@@ -2,8 +2,10 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { readConfigFromEnv, ConfigError } from "./runtime/config.js";
 import { createRuntime } from "./runtime/create-runtime.js";
+import { rebuildRuntime } from "./runtime/rebuild-runtime.js";
 import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
 import type { DemoRuntimeConfig } from "./runtime/types.js";
+import type { RuntimeComposition } from "./runtime/types.js";
 import { App } from "./App.js";
 import { DemoControls } from "./DemoControls.js";
 import "./theme.css";
@@ -30,6 +32,38 @@ function renderStartupError(err: unknown): void {
   );
 }
 
+function renderAppComposition(
+  root: ReturnType<typeof createRoot>,
+  config: DemoRuntimeConfig,
+  composition: RuntimeComposition,
+  onRetry: () => void
+): void {
+  const session = composition.session;
+  const store = composition.store;
+  const gateway = composition.gateway;
+  const mockAdapter = config.mode === "mock" ? (composition.adapter as MockRuntimeAdapter) : null;
+  const adapterCapabilities = composition.adapter.getCapabilities();
+
+  root.render(
+    <React.StrictMode>
+      <App
+        session={session}
+        store={store}
+        gateway={gateway}
+        runtimeId={config.runtimeId}
+        capabilities={adapterCapabilities}
+        demoControls={
+          mockAdapter ? (
+            <DemoControls adapter={mockAdapter} store={store} session={session} />
+          ) : null
+        }
+        retryable={true}
+        onRetry={onRetry}
+      />
+    </React.StrictMode>
+  );
+}
+
 // Wait for session.connect() before reading adapter capabilities.
 // HttpSseRuntimeAdapter fetches capabilities from the runtime; calling
 // getCapabilities() before connect() throws because they are not cached yet.
@@ -42,9 +76,19 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  const composition = createRuntime(config);
-  const { mode, runtimeId } = config;
   const root = createRoot(document.getElementById("root")!);
+  let composition = createRuntime(config);
+
+  async function handleRetry(): Promise<void> {
+    try {
+      composition = await rebuildRuntime(config, composition, (next) => {
+        renderAppComposition(root, config, next, handleRetry);
+      });
+    } catch (err) {
+      console.error("[demo-office] Runtime retry failed:", err);
+      renderStartupError(err);
+    }
+  }
 
   root.render(
     <React.StrictMode>
@@ -61,7 +105,7 @@ async function bootstrap(): Promise<void> {
           fontSize: 14,
         }}
       >
-        Connecting to {mode === "mock" ? "Mock Runtime" : runtimeId}...
+        Connecting to {config.mode === "mock" ? "Mock Runtime" : config.runtimeId}...
       </div>
     </React.StrictMode>
   );
@@ -74,29 +118,7 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  const session = composition.session;
-  const store = composition.store;
-  const gateway = composition.gateway;
-  const mockAdapter = mode === "mock" ? (composition.adapter as MockRuntimeAdapter) : null;
-  const adapterCapabilities = composition.adapter.getCapabilities();
-
-  root.render(
-    <React.StrictMode>
-      <App
-        session={session}
-        store={store}
-        gateway={gateway}
-        runtimeId={runtimeId}
-        mode={mode}
-        capabilities={adapterCapabilities}
-        demoControls={
-          mockAdapter ? (
-            <DemoControls adapter={mockAdapter} store={store} session={session} />
-          ) : null
-        }
-      />
-    </React.StrictMode>
-  );
+  renderAppComposition(root, config, composition, handleRetry);
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {

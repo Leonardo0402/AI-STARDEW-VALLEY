@@ -6,7 +6,9 @@
 :root {
   /* Color */
   --base-900: #131014;
+  --base-850: #161418;
   --base-800: #1a181c;
+  --base-750: #231f26;
   --base-700: #25222a;
   --base-600: #322e36;
   --base-500: #4a444e;
@@ -74,7 +76,7 @@
   height: var(--status-height);
   padding: 0 var(--space-md);
   background: var(--base-900);
-  border-bottom: 1px solid #231f26;
+  border-bottom: 1px solid var(--base-750);
   font-size: 11px;
   color: var(--base-400);
 }
@@ -310,7 +312,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #161418;
+  background: var(--base-850);
   overflow: hidden;
 }
 

@@ -6,7 +6,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { StatusStrip } from "./StatusStrip.js";
 import type { SessionState, SessionDiagnostics } from "@agent-office/core";
-import type { DemoRuntimeMode } from "./runtime/types.js";
 
 const baseDiagnostics: SessionDiagnostics = {
   state: "connected" as SessionState,
@@ -21,7 +20,6 @@ const baseDiagnostics: SessionDiagnostics = {
 
 function renderStrip(props: Partial<Parameters<typeof StatusStrip>[0]> = {}) {
   const defaults: Parameters<typeof StatusStrip>[0] = {
-    mode: "mock" as DemoRuntimeMode,
     runtimeId: "qclaw-swarm-runtime-001",
     sessionState: "connected" as SessionState,
     diagnostics: baseDiagnostics,
@@ -73,6 +71,7 @@ describe("StatusStrip", () => {
   it("shows Reload for failed state when not retryable", () => {
     const onReload = vi.fn();
     renderStrip({ sessionState: "failed", retryable: false, onReload });
+    expect(screen.getByText("failed")).toBeInTheDocument();
     const reloadBtn = screen.getByRole("button", { name: /Reload/i });
     fireEvent.click(reloadBtn);
     expect(onReload).toHaveBeenCalled();

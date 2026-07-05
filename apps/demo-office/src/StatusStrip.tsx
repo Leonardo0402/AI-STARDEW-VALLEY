@@ -12,10 +12,8 @@
  */
 import type { FC } from "react";
 import type { SessionState, SessionDiagnostics } from "@agent-office/core";
-import type { DemoRuntimeMode } from "./runtime/types.js";
 
 interface StatusStripProps {
-  mode: DemoRuntimeMode;
   runtimeId: string;
   sessionState: SessionState;
   diagnostics: SessionDiagnostics;
@@ -54,7 +52,7 @@ const PILL_LABELS: Record<SessionState, string> = {
   resynchronizing: "resyncing",
   degraded: "degraded",
   disconnected: "disconnected",
-  failed: "error",
+  failed: "failed",
 };
 
 function formatTime(iso: string): string {
