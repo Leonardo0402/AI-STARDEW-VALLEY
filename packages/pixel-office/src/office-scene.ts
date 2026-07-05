@@ -9,7 +9,7 @@
  *
  * Stage 4 改造：
  * - 新增 useSpriteRenderer 选项，开启后使用分层渲染器（room / prop / agent / effect）。
- * - 默认关闭，保留原有的单体程序化渲染器作为 fallback。
+ * - 默认开启；保留原有的单体程序化渲染器作为显式关闭时的 fallback。
  */
 import { Application, Container, Graphics, Text, TextStyle, Ticker } from "pixi.js";
 import type {
@@ -37,7 +37,7 @@ interface LegacyAgentSprite {
 }
 
 export interface PixelOfficeSceneOptions {
-  /** 开启 Stage 4 分层精灵渲染器；默认 false，使用单体程序化渲染器。 */
+  /** 开启 Stage 4 分层精灵渲染器；默认 true。传 false 回退到单体程序化渲染器。 */
   useSpriteRenderer?: boolean;
   /** 禁用连续动画（行走帧、脉冲等）。 */
   reduceMotion?: boolean;
@@ -66,7 +66,7 @@ export class PixelOfficeScene {
   private assetLoader?: AssetLoader;
 
   constructor(canvas: HTMLCanvasElement, options: PixelOfficeSceneOptions = {}) {
-    this.useSpriteRenderer = options.useSpriteRenderer ?? false;
+    this.useSpriteRenderer = options.useSpriteRenderer ?? true;
     this.reduceMotion = options.reduceMotion ?? false;
     this.app = new Application();
     this.contentRoot = new Container();

@@ -31,7 +31,7 @@ const baseProjection: OfficeProjection = {
   errors: [],
 };
 
-describe("PixelOfficeScene procedural fallback", () => {
+describe("PixelOfficeScene renderer selection", () => {
   let canvas: HTMLCanvasElement;
 
   beforeEach(() => {
@@ -43,10 +43,16 @@ describe("PixelOfficeScene procedural fallback", () => {
     vi.clearAllMocks();
   });
 
-  it("defaults to the procedural renderer and can be initialized", async () => {
+  it("defaults to the layered sprite renderer and can be initialized", async () => {
     const scene = new PixelOfficeScene(canvas);
     await scene.init(canvas);
-    expect(scene).toBeDefined();
+
+    expect((scene as unknown as { useSpriteRenderer: boolean }).useSpriteRenderer).toBe(true);
+    expect((scene as unknown as { roomRenderer?: unknown }).roomRenderer).toBeDefined();
+    expect((scene as unknown as { propRenderer?: unknown }).propRenderer).toBeDefined();
+    expect((scene as unknown as { agentRenderer?: unknown }).agentRenderer).toBeDefined();
+    expect((scene as unknown as { effectRenderer?: unknown }).effectRenderer).toBeDefined();
+
     scene.destroy();
   });
 
