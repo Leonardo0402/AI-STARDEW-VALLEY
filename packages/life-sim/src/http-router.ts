@@ -64,7 +64,10 @@ export function createLifeSimRouter(engine: LifeSimEngine): LifeSimRouter {
     }
 
     const snapshot = engine.getSnapshot();
-    const lastKnownSequence = snapshot.checkpointLifeSimSequence + snapshot.eventLogTail.length;
+    const lastKnownSequence = Math.max(
+      snapshot.checkpointLifeSimSequence,
+      ...snapshot.eventLogTail.map((e) => e.lifeSimSequence)
+    );
     if (afterLifeSimSequence > lastKnownSequence) {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
