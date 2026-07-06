@@ -24,15 +24,16 @@ export interface LifeSimClient {
 }
 
 export type LifeSimSessionState =
-  | "connecting"
-  | "syncing"
+  | "idle"
+  | "bootstrapping"
   | "live"
-  | "reset_required"
-  | "error"
-  | "closed";
+  | "reconnecting"
+  | "error";
 
 export interface LifeSimProjection {
-  worldId: string;
-  snapshot: LifeSimSnapshot;
-  lastAppliedLifeSimSequence: number;
+  worldClock: LifeSimSnapshot["worldClock"];
+  activeActivities: LifeSimSnapshot["activeActivities"];
+  activeOverlays: LifeSimSnapshot["activeOverlays"];
+  completedDaySummaries: LifeSimSnapshot["completedDaySummaries"];
+  truncatedHistory: LifeSimSnapshot["truncatedHistory"];
 }
