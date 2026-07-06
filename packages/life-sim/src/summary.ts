@@ -10,10 +10,6 @@ export function computeDaySummary(
   const taskCounts = { created: 0, completed: 0, blocked: 0, failed: 0 };
   const approvalCounts = { requested: 0, approved: 0, rejected: 0 };
   const notableEventIds: string[] = [];
-  for (const event of snapshot.completedDaySummaries.flatMap((s) => s.notableEventIds)) {
-    // summary of prior days; ignore
-    void event;
-  }
   return {
     summary: {
       day,
