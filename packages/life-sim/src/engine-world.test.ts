@@ -170,7 +170,7 @@ describe("world commands", () => {
     await engine.execute(makeCommand("world.start_day", {}));
     expect(engine.getCapabilities().world).toEqual({
       startDay: false,
-      pause: true,
+      pause: false,
       resume: false,
       endDay: false,
       advanceTime: true,
@@ -179,7 +179,7 @@ describe("world commands", () => {
     await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
     expect(engine.getCapabilities().world).toEqual({
       startDay: false,
-      pause: true,
+      pause: false,
       resume: false,
       endDay: true,
       advanceTime: true,
@@ -194,6 +194,23 @@ describe("world commands", () => {
       advanceTime: false,
     });
     expect(engine.getCapabilities().clock).toEqual({ mode: "manual", maxSpeed: 0 });
+  });
+
+  it("never advertises pause or resume capabilities in Phase 1", async () => {
+    expect(engine.getCapabilities().world.pause).toBe(false);
+    expect(engine.getCapabilities().world.resume).toBe(false);
+
+    await engine.execute(makeCommand("world.start_day", {}));
+    expect(engine.getCapabilities().world.pause).toBe(false);
+    expect(engine.getCapabilities().world.resume).toBe(false);
+
+    await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
+    expect(engine.getCapabilities().world.pause).toBe(false);
+    expect(engine.getCapabilities().world.resume).toBe(false);
+
+    await engine.execute(makeCommand("world.end_day", {}));
+    expect(engine.getCapabilities().world.pause).toBe(false);
+    expect(engine.getCapabilities().world.resume).toBe(false);
   });
 
   it("emits phase_changed events for large advances crossing boundaries", async () => {

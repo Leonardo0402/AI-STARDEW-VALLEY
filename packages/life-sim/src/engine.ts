@@ -84,8 +84,9 @@ export async function createLifeSimEngine(
     getCapabilities: (): LifeSimCapabilities => ({
       world: {
         startDay: currentSnapshot.worldClock.status === "not_started",
-        pause: currentSnapshot.worldClock.status === "running",
-        resume: currentSnapshot.worldClock.status === "paused",
+        // Phase 1 is manual-only; pause/resume commands are not implemented yet.
+        pause: false,
+        resume: false,
         endDay:
           (currentSnapshot.worldClock.status === "running" || currentSnapshot.worldClock.status === "paused") &&
           currentSnapshot.worldClock.minuteOfDay === config.endOfDayMinute,
