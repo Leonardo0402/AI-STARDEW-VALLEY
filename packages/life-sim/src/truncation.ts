@@ -1,6 +1,15 @@
 import type { RuntimeSnapshot } from "@agent-office/protocol";
 import type { LifeSimSnapshot, ScheduleOverlay } from "./types.js";
 
+/**
+ * Phase 1 skeleton for truncation recovery.
+ *
+ * `reconcileOverlays` is a pure helper that closes stale overlays and rebuilds
+ * active ones from a RuntimeSnapshot. It is NOT wired into LifeSimEngine in
+ * Phase 1, so production truncation recovery is not yet implemented. The
+ * function is exported only for testing and as a foundation for Phase 2 work.
+ */
+
 const TERMINAL_OVERLAY_STATUSES = new Set(["completed", "failed", "blocked", "cancelled"]);
 const ACTIVE_OVERLAY_STATUSES = new Set(["assigned", "planning", "running", "reviewing", "revision_required"]);
 
