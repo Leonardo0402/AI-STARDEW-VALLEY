@@ -29,18 +29,12 @@ export function computeDaySummary(
   };
 }
 
-function aggregateAgentActivities(snapshot: LifeSimSnapshot, day: number) {
-  const byAgent = new Map<string, { activityMinutes: Record<string, number>; rooms: Set<string> }>();
+function aggregateAgentActivities(_snapshot: LifeSimSnapshot, _day: number) {
   // TODO(phase-2): aggregate minute-by-minute activity from the event log.
-  // Phase 1 keeps the summary skeleton; the Golden Flow test asserts shape only.
-  for (const event of [] as LifeSimEvent[]) {
-    void event;
-    void day;
-    void snapshot;
-  }
-  return Array.from(byAgent.entries()).map(([agentId, data]) => ({
-    agentId,
-    activityMinutes: data.activityMinutes,
-    roomsVisited: Array.from(data.rooms),
-  }));
+  // Phase 1 keeps the summary skeleton empty; the Golden Flow test asserts shape only.
+  return [] as Array<{
+    agentId: string;
+    activityMinutes: Record<string, number>;
+    roomsVisited: string[];
+  }>;
 }

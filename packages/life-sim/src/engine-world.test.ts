@@ -73,6 +73,16 @@ describe("world commands", () => {
     expect(result.error?.code).toBe("day_already_started");
   });
 
+  it("records a DaySummary skeleton with empty agent activities in Phase 1", async () => {
+    await engine.execute(makeCommand("world.start_day", {}));
+    await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
+    await engine.execute(makeCommand("world.end_day", {}));
+    const summary = engine.getSnapshot().snapshot.completedDaySummaries[0];
+    expect(summary.agentActivities).toEqual([]);
+    expect(summary.taskCounts).toEqual({ created: 0, completed: 0, blocked: 0, failed: 0 });
+    expect(summary.approvalCounts).toEqual({ requested: 0, approved: 0, rejected: 0 });
+  });
+
   it("end_day records summary, resets clock and emits day lifecycle events", async () => {
     await engine.execute(makeCommand("world.start_day", {}));
     await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
