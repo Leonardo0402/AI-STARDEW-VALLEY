@@ -28,6 +28,7 @@ export class LifeSimSession {
   private subscription: { close(): void } | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
+  private stopped = false;
   private initialDelayMs: number;
   private maxDelayMs: number;
   private maxAttempts: number;
@@ -45,6 +46,7 @@ export class LifeSimSession {
     if (this.state === "live" || this.state === "bootstrapping") {
       return;
     }
+    this.stopped = false;
     try {
       await this.bootstrap();
     } catch (err) {
@@ -54,6 +56,7 @@ export class LifeSimSession {
   }
 
   stop(): void {
+    this.stopped = true;
     this.clearReconnect();
     this.closeSubscription();
     this.setState("idle");
@@ -140,14 +143,16 @@ export class LifeSimSession {
   private async bootstrap(): Promise<void> {
     this.setState("bootstrapping");
     const response = await this.client.getSnapshot();
+    if (this.stopped) {
+      return;
+    }
     let snapshot = structuredClone(response.snapshot);
     let expected = response.checkpointLifeSimSequence + 1;
     let lastSeq = response.checkpointLifeSimSequence;
     for (const event of response.eventLogTail) {
       if (event.lifeSimSequence !== expected) {
-        throw new Error(
-          `Tail continuity gap: expected ${expected}, got ${event.lifeSimSequence}`
-        );
+        this.scheduleReconnect();
+        return;
       }
       snapshot = applyLifeSimEvent(snapshot, event);
       lastSeq = event.lifeSimSequence;
@@ -321,7 +326,7 @@ function applyLifeSimEvent(
     case "schedule.overlay_created": {
       const overlay = (event.payload as { overlay?: LifeSimSnapshot["activeOverlays"][number] }).overlay;
       if (overlay) {
-        next.activeOverlays.push(overlay);
+        next.activeOverlays.push(structuredClone(overlay));
       }
       break;
     }
@@ -348,7 +353,7 @@ function applyLifeSimEvent(
       next.completedDaySummaries = next.completedDaySummaries.filter(
         (s) => s.day !== payload.day
       );
-      next.completedDaySummaries.push(payload.summary);
+      next.completedDaySummaries.push(structuredClone(payload.summary));
       break;
     }
   }

@@ -185,7 +185,7 @@ describe("LifeSimSession", () => {
     );
   });
 
-  it("re-bootstraps after a tail continuity gap", async () => {
+  it("re-bootstraps after a tail continuity gap without rejecting start", async () => {
     vi.useFakeTimers();
     const bad = makeSnapshotResponse([
       makeEvent(5, "world.day_started", {
@@ -205,13 +205,41 @@ describe("LifeSimSession", () => {
       .fn()
       .mockResolvedValueOnce(bad)
       .mockResolvedValueOnce(good);
+    const states: LifeSimSessionState[] = [];
+    session.onStateChange((state) => states.push(state));
 
-    await expect(session.start()).rejects.toThrow("Tail continuity gap");
+    await expect(session.start()).resolves.toBeUndefined();
+    expect(states).toContain("reconnecting");
+
     await vi.advanceTimersByTimeAsync(100);
     await vi.runAllTimersAsync();
 
     expect(client.getSnapshot).toHaveBeenCalledTimes(2);
     expect(session.getProjection().worldClock.day).toBe(2);
+  });
+
+  it("stop during bootstrap aborts in-flight start and leaves no subscription", async () => {
+    let resolveSnapshot: (value: LifeSimSnapshotResponse) => void;
+    const snapshotPromise = new Promise<LifeSimSnapshotResponse>((resolve) => {
+      resolveSnapshot = resolve;
+    });
+    client.getSnapshot = vi.fn().mockResolvedValueOnce(snapshotPromise);
+
+    const states: LifeSimSessionState[] = [];
+    session.onStateChange((state) => states.push(state));
+
+    const startPromise = session.start();
+
+    expect(states).toContain("bootstrapping");
+
+    session.stop();
+
+    resolveSnapshot!(makeSnapshotResponse());
+    await startPromise;
+
+    expect(client.subscriptions).toHaveLength(0);
+    expect(states).not.toContain("live");
+    expect(states[states.length - 1]).toBe("idle");
   });
 
   it("re-bootstraps after a live event gap", async () => {
