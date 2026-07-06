@@ -2,11 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
 import { RuntimeSession, SnapshotStore, CommandGateway } from "@agent-office/core";
 import { CommandType } from "@agent-office/protocol";
-import type { OfficeCommand } from "@agent-office/protocol";
-import { createLifeSimServer } from "@agent-office/life-sim";
+import type { OfficeCommand, ApprovalSnapshot } from "@agent-office/protocol";
+import { createLifeSimServer, sampleDay1Schedules } from "@agent-office/life-sim";
 import type { LifeSimCommand, LifeSimEngineConfig, DaySummary } from "@agent-office/life-sim";
 import { HttpLifeSimClient } from "@agent-office/control-ui/life-sim";
-import { sampleDay1Schedules } from "../../../packages/life-sim/src/__fixtures__/schedules.js";
 
 const RUNTIME_ID = "mock-runtime-001";
 
@@ -42,8 +41,15 @@ function makeOfficeCommand(commandType: string, payload: unknown, targetId: stri
   };
 }
 
-async function flushMacrotasks(ms = 100): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function waitForRequestedApproval(store: SnapshotStore, maxAttempts = 100, intervalMs = 50): Promise<ApprovalSnapshot> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const approval = store.getSnapshot().approvals.find((a) => a.status === "requested");
+    if (approval) {
+      return approval;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("Timed out waiting for requested approval");
 }
 
 class NoOpEventSource {
@@ -109,10 +115,8 @@ describe("LifeSim end-to-end integration", () => {
 
     // Inject mock runtime events through the connected mock runtime
     adapter.playNormalFlow();
-    await flushMacrotasks();
 
-    const pendingApproval = store.getSnapshot().approvals.find((a) => a.status === "requested");
-    expect(pendingApproval).toBeDefined();
+    const pendingApproval = await waitForRequestedApproval(store);
 
     const approveResult = await gateway.execute(
       makeOfficeCommand(CommandType.APPROVAL_ACCEPT, { approvalId: pendingApproval!.approvalId }, pendingApproval!.approvalId)
