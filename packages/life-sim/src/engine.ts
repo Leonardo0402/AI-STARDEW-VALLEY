@@ -31,20 +31,15 @@ export async function createLifeSimEngine(
     baseSchedules: config.baseSchedules ?? [],
   };
   const eventLogTail = loaded?.eventLogTail ?? [];
-  const commandResults = loaded?.commandResults ?? new Map<string, LifeSimCommandResult>();
+  let commandResults = loaded?.commandResults ?? new Map<string, LifeSimCommandResult>();
   let currentSnapshot = snapshot;
   let currentTail = eventLogTail;
   let nextLifeSimSequence = Math.max(snapshot.checkpointLifeSimSequence, ...eventLogTail.map((e) => e.lifeSimSequence)) + 1;
   const listeners = new Set<(event: LifeSimEvent) => void>();
   let queueTail: Promise<unknown> = Promise.resolve();
 
-  const persist = async (): Promise<void> => {
-    await store.save(currentSnapshot, currentTail, commandResults);
-  };
-
-  const appendEvents = (events: LifeSimEvent[]): void => {
+  const notifyListeners = (events: LifeSimEvent[]): void => {
     for (const event of events) {
-      currentTail.push(event);
       for (const listener of listeners) {
         listener(event);
       }
@@ -61,10 +56,15 @@ export async function createLifeSimEngine(
       () => nextLifeSimSequence++,
       now()
     );
-    currentSnapshot = next;
-    appendEvents(events);
-    commandResults.set(command.commandId, result);
-    await persist();
+    const stagedSnapshot = next;
+    const stagedTail = [...currentTail, ...events];
+    const stagedCommandResults = new Map(commandResults);
+    stagedCommandResults.set(command.commandId, result);
+    await store.save(stagedSnapshot, stagedTail, stagedCommandResults);
+    currentSnapshot = stagedSnapshot;
+    currentTail = stagedTail;
+    commandResults = stagedCommandResults;
+    notifyListeners(events);
     return result;
   };
 
@@ -79,7 +79,7 @@ export async function createLifeSimEngine(
       schemaVersion: currentSnapshot.schemaVersion,
       checkpointLifeSimSequence: currentSnapshot.checkpointLifeSimSequence,
       snapshot: structuredClone(currentSnapshot),
-      eventLogTail: [...currentTail],
+      eventLogTail: structuredClone(currentTail),
     }),
     getCapabilities: (): LifeSimCapabilities => ({
       world: {
@@ -112,29 +112,33 @@ export async function createLifeSimEngine(
           () => nextLifeSimSequence++,
           now()
         );
-        currentSnapshot = {
+        let stagedSnapshot: LifeSimSnapshot = {
           ...next,
           lastObservedRuntimeSequence: event.sequence,
         };
         if (events.length > 0) {
-          currentSnapshot = {
-            ...currentSnapshot,
+          stagedSnapshot = {
+            ...stagedSnapshot,
             lastAppliedRuntimeSequence: event.sequence,
           };
         }
-        appendEvents(events);
-        await persist();
+        const stagedTail = [...currentTail, ...events];
+        await store.save(stagedSnapshot, stagedTail, commandResults);
+        currentSnapshot = stagedSnapshot;
+        currentTail = stagedTail;
+        notifyListeners(events);
       });
       queueTail = promise.catch(() => undefined);
       return promise;
     },
     observeRuntimeSequence: (sequence: number) => {
       const promise = queueTail.then(async () => {
-        currentSnapshot = {
+        const stagedSnapshot: LifeSimSnapshot = {
           ...currentSnapshot,
           lastObservedRuntimeSequence: Math.max(currentSnapshot.lastObservedRuntimeSequence, sequence),
         };
-        await persist();
+        await store.save(stagedSnapshot, currentTail, commandResults);
+        currentSnapshot = stagedSnapshot;
       });
       queueTail = promise.catch(() => undefined);
       return promise;

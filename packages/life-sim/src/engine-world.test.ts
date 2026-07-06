@@ -25,6 +25,26 @@ function makeCommand(type: string, payload: unknown): LifeSimCommand {
   };
 }
 
+class FailingStore extends InMemoryLifeSimStore {
+  private failNext = false;
+
+  failOnNextCall(): void {
+    this.failNext = true;
+  }
+
+  async save(
+    snapshot: Parameters<InMemoryLifeSimStore["save"]>[0],
+    eventLogTail: Parameters<InMemoryLifeSimStore["save"]>[1],
+    commandResults: Parameters<InMemoryLifeSimStore["save"]>[2]
+  ): Promise<void> {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error("save failed");
+    }
+    return super.save(snapshot, eventLogTail, commandResults);
+  }
+}
+
 async function createEngineWithSpeed(speed: number) {
   const store = new InMemoryLifeSimStore();
   const snapshot = createEmptySnapshot(config, fixedNow());
@@ -64,6 +84,16 @@ describe("world commands", () => {
     const fresh = engine.getSnapshot().snapshot;
     expect(fresh.worldClock.day).toBe(1);
     expect(fresh.activeActivities).toHaveLength(0);
+  });
+
+  it("getSnapshot returns a deep copy of the event log tail", async () => {
+    await engine.execute(makeCommand("world.start_day", {}));
+    const tail = engine.getSnapshot().eventLogTail;
+    (tail[0].payload as { day: number }).day = 999;
+    tail.push({ ...tail[0], eventId: "injected" } as (typeof tail)[number]);
+    const fresh = engine.getSnapshot().eventLogTail;
+    expect((fresh[0].payload as { day: number }).day).toBe(1);
+    expect(fresh).toHaveLength(1);
   });
 
   it("rejects start_day when a day is already started", async () => {
@@ -251,5 +281,35 @@ describe("world commands", () => {
     expect(result.events[0].payload).toEqual({ oldPhase: "morning", newPhase: "afternoon", minute: 720 });
     expect(result.events[1].payload).toEqual({ oldPhase: "afternoon", newPhase: "evening", minute: 1080 });
     expect(result.events[2].payload).toEqual({ oldMinute: 480, newMinute: 1110, day: 1 });
+  });
+
+  it("execute(world.start_day) does not notify listeners or advance state when save fails", async () => {
+    const store = new FailingStore();
+    store.failOnNextCall();
+    const engineWithFailingStore = await createLifeSimEngine(config, { now: fixedNow, store });
+    const beforeCheckpoint = engineWithFailingStore.getSnapshot().checkpointLifeSimSequence;
+    let listenerCalled = false;
+    engineWithFailingStore.onLifeSimEvent(() => {
+      listenerCalled = true;
+    });
+
+    await expect(engineWithFailingStore.execute(makeCommand("world.start_day", {}))).rejects.toThrow("save failed");
+
+    expect(listenerCalled).toBe(false);
+    expect(engineWithFailingStore.getSnapshot().snapshot.worldClock.status).toBe("not_started");
+    expect(engineWithFailingStore.getSnapshot().snapshot.checkpointLifeSimSequence).toBe(beforeCheckpoint);
+  });
+
+  it("execute(world.start_day) does not pollute commandResults when save fails", async () => {
+    const store = new FailingStore();
+    store.failOnNextCall();
+    const engineWithFailingStore = await createLifeSimEngine(config, { now: fixedNow, store });
+    const command = makeCommand("world.start_day", {});
+
+    await expect(engineWithFailingStore.execute(command)).rejects.toThrow("save failed");
+
+    const result = await engineWithFailingStore.execute(command);
+    expect(result.status).toBe("accepted");
+    expect((await store.load())?.commandResults.has(command.commandId)).toBe(true);
   });
 });
