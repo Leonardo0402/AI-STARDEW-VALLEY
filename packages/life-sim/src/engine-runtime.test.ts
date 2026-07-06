@@ -82,4 +82,27 @@ describe("runtime event handling", () => {
     expect(state.activeOverlays.some((o) => o.createdByTaskId === "t-2")).toBe(true);
     expect(state.activeActivities.find((a) => a.agentId === "worker-1")?.scheduleEntryId).toBe("overlay-t-2");
   });
+
+  it("preserves startedAtWorldMinute for activities whose schedule entry does not change", async () => {
+    // worker-1 gets a task overlay at minute 510.
+    await engine.applyRuntimeEvent(taskAssigned(7, "t-1", "worker-1", "room-execution"));
+    // Advance to 600; worker-1's overlay remains active with its original start minute.
+    await engine.execute(makeCommand("world.advance_time", { minutes: 90 }));
+    const beforeIntervention = engine.getSnapshot().snapshot;
+    const workerActivityBefore = beforeIntervention.activeActivities.find((a) => a.agentId === "worker-1");
+    expect(workerActivityBefore?.scheduleEntryId).toBe("overlay-t-1");
+    expect(workerActivityBefore?.startedAtWorldMinute).toBe(510);
+
+    // Assign a task to reviewer-1 at minute 600; this rebuilds activities for all agents.
+    await engine.applyRuntimeEvent(taskAssigned(8, "t-2", "reviewer-1", "room-review"));
+    const afterIntervention = engine.getSnapshot().snapshot;
+
+    const workerActivityAfter = afterIntervention.activeActivities.find((a) => a.agentId === "worker-1");
+    expect(workerActivityAfter?.scheduleEntryId).toBe("overlay-t-1");
+    expect(workerActivityAfter?.startedAtWorldMinute).toBe(510);
+
+    const reviewerActivityAfter = afterIntervention.activeActivities.find((a) => a.agentId === "reviewer-1");
+    expect(reviewerActivityAfter?.scheduleEntryId).toBe("overlay-t-2");
+    expect(reviewerActivityAfter?.startedAtWorldMinute).toBe(600);
+  });
 });

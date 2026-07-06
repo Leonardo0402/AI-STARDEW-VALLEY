@@ -142,7 +142,16 @@ function reconcileActivities(snapshot: LifeSimSnapshot, minute: number): ActiveA
     ...snapshot.baseSchedules.map((e) => e.agentId),
     ...snapshot.activeOverlays.map((o) => o.agentId),
   ]);
+  const previousByAgent = new Map(snapshot.activeActivities.map((a) => [a.agentId, a]));
   return Array.from(agentIds)
-    .map((agentId) => buildActiveActivity(snapshot, agentId, minute, minute))
+    .map((agentId) => {
+      const previous = previousByAgent.get(agentId);
+      const next = buildActiveActivity(snapshot, agentId, minute, minute);
+      if (!next) return null;
+      if (previous && previous.scheduleEntryId === next.scheduleEntryId) {
+        return { ...next, startedAtWorldMinute: previous.startedAtWorldMinute };
+      }
+      return next;
+    })
     .filter((a): a is ActiveAgentActivity => a !== null);
 }
