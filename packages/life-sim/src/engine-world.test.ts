@@ -162,7 +162,7 @@ describe("world commands", () => {
 
   it("recomputes capabilities after accepted commands", async () => {
     expect(engine.getCapabilities()).toEqual({
-      world: { startDay: true, pause: false, resume: false, endDay: false, advanceTime: false },
+      world: { startDay: true, pause: false, resume: false, endDay: false, advanceTime: false, runToEndOfDay: false },
       schedule: { override: false, clearOverride: false },
       clock: { mode: "manual", maxSpeed: 0 },
     });
@@ -174,6 +174,7 @@ describe("world commands", () => {
       resume: false,
       endDay: false,
       advanceTime: true,
+      runToEndOfDay: true,
     });
 
     await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
@@ -183,6 +184,7 @@ describe("world commands", () => {
       resume: false,
       endDay: true,
       advanceTime: true,
+      runToEndOfDay: false,
     });
 
     await engine.execute(makeCommand("world.end_day", {}));
@@ -192,6 +194,7 @@ describe("world commands", () => {
       resume: false,
       endDay: false,
       advanceTime: false,
+      runToEndOfDay: false,
     });
     expect(engine.getCapabilities().clock).toEqual({ mode: "manual", maxSpeed: 0 });
   });
@@ -211,6 +214,19 @@ describe("world commands", () => {
     await engine.execute(makeCommand("world.end_day", {}));
     expect(engine.getCapabilities().world.pause).toBe(false);
     expect(engine.getCapabilities().world.resume).toBe(false);
+  });
+
+  it("advertises runToEndOfDay only when a day is running and not at EOD", async () => {
+    expect(engine.getCapabilities().world.runToEndOfDay).toBe(false);
+
+    await engine.execute(makeCommand("world.start_day", {}));
+    expect(engine.getCapabilities().world.runToEndOfDay).toBe(true);
+
+    await engine.execute(makeCommand("world.advance_time", { minutes: 9999 }));
+    expect(engine.getCapabilities().world.runToEndOfDay).toBe(false);
+
+    await engine.execute(makeCommand("world.end_day", {}));
+    expect(engine.getCapabilities().world.runToEndOfDay).toBe(false);
   });
 
   it("emits phase_changed events for large advances crossing boundaries", async () => {

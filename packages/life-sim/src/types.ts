@@ -154,6 +154,7 @@ export interface LifeSimCapabilities {
     resume: boolean;
     endDay: boolean;
     advanceTime: boolean;
+    runToEndOfDay: boolean;
   };
   schedule: {
     override: boolean;
