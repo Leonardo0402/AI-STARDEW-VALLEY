@@ -49,6 +49,23 @@ describe("world commands", () => {
     expect(engine.getSnapshot().snapshot.worldClock.day).toBe(1);
   });
 
+  it("getSnapshot returns a deep copy of the current snapshot", async () => {
+    await engine.execute(makeCommand("world.start_day", {}));
+    const snapshot = engine.getSnapshot().snapshot;
+    snapshot.worldClock.day = 999;
+    snapshot.activeActivities.push({
+      agentId: "x",
+      scheduleEntryId: "injected",
+      activity: "idle",
+      roomId: null,
+      startedAtWorldMinute: 0,
+      interruptedByTaskId: null,
+    });
+    const fresh = engine.getSnapshot().snapshot;
+    expect(fresh.worldClock.day).toBe(1);
+    expect(fresh.activeActivities).toHaveLength(0);
+  });
+
   it("rejects start_day when a day is already started", async () => {
     await engine.execute(makeCommand("world.start_day", {}));
     const result = await engine.execute(makeCommand("world.start_day", { day: 5 }));

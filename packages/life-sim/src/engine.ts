@@ -78,7 +78,7 @@ export async function createLifeSimEngine(
       worldId: currentSnapshot.worldId,
       schemaVersion: currentSnapshot.schemaVersion,
       checkpointLifeSimSequence: currentSnapshot.checkpointLifeSimSequence,
-      snapshot: currentSnapshot,
+      snapshot: structuredClone(currentSnapshot),
       eventLogTail: [...currentTail],
     }),
     getCapabilities: (): LifeSimCapabilities => ({
