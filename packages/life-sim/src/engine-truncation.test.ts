@@ -67,4 +67,47 @@ describe("truncation recovery", () => {
     const { snapshot } = reconcileOverlays(engine.getSnapshot().snapshot, runtimeSnapshot, config.endOfDayMinute);
     expect(snapshot.activeOverlays.some((o) => o.createdByTaskId === "t-1")).toBe(false);
   });
+
+  it("creates overlays with placeholder createdByRuntimeSequence in Phase 1", async () => {
+    const engine = await createLifeSimEngine(config, { store: new InMemoryLifeSimStore() });
+    await engine.execute(makeCommand("world.start_day", {}));
+    await engine.execute(makeCommand("world.advance_time", { minutes: 30 }));
+    const runtimeSnapshot: RuntimeSnapshot = {
+      runtimeId: "runtime-1",
+      snapshotId: "snap-1",
+      sequence: 10,
+      schemaVersion: "1.0",
+      createdAt: "2026-07-05T08:00:00Z",
+      lastEventId: "evt-10",
+      agents: [],
+      tasks: [
+        {
+          taskId: "t-1",
+          runtimeId: "runtime-1",
+          title: "Task 1",
+          description: "",
+          status: "assigned",
+          priority: "normal",
+          parentTaskId: null,
+          assigneeId: "worker-1",
+          roomId: "room-execution",
+          dependencyIds: [],
+          artifactIds: [],
+          approvalId: null,
+          createdAt: "2026-07-05T08:00:00Z",
+          startedAt: "2026-07-05T08:00:00Z",
+          completedAt: null,
+          blockedReason: null,
+        },
+      ],
+      artifacts: [],
+      approvals: [],
+      rooms: [],
+    };
+    const { reconcileOverlays } = await import("./truncation.js");
+    const { created } = reconcileOverlays(engine.getSnapshot().snapshot, runtimeSnapshot, config.endOfDayMinute);
+    expect(created).toHaveLength(1);
+    expect(created[0].createdByRuntimeSequence).toBe(0);
+    expect(created[0].createdByTaskId).toBe("t-1");
+  });
 });

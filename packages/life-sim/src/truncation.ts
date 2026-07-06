@@ -42,7 +42,9 @@ export function reconcileOverlays(
         createdBy: "task",
         createdAtWorldMinute: snapshot.worldClock.minuteOfDay,
         createdByTaskId: task.taskId,
-        createdByRuntimeSequence: task.runtimeId ? 0 : 0,
+        // TODO(phase-2): use the runtime snapshot/event sequence that caused this overlay.
+        // Phase 1 stores a skeleton placeholder because truncation recovery is not yet wired.
+        createdByRuntimeSequence: 0,
         originalStartMinute: null,
       };
       created.push(overlay);
