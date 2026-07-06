@@ -9,7 +9,7 @@ import type {
 export interface LifeSimStreamObserver {
   onEvent(event: LifeSimEvent): void;
   onState?(
-    state: "opening" | "ready" | "reset_required" | "error" | "closed"
+    state: "opening" | "ready" | "reset_required" | "closed"
   ): void;
   onError?(error: { code: string; message: string; recoverable: boolean }): void;
 }

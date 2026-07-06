@@ -65,7 +65,7 @@ export class HttpLifeSimClient implements LifeSimClient {
     const url = joinUrl(this.baseUrl, `/life-sim/${this.worldId}/snapshot`);
     const resp = await this.fetchImpl(url);
     if (!resp.ok) {
-      throw new Error(`Snapshot fetch failed: HTTP ${resp.status}`);
+      throw new Error(`Snapshot fetch failed: HTTP ${resp.status}: ${resp.statusText}`);
     }
     return (await resp.json()) as LifeSimSnapshotResponse;
   }
@@ -78,7 +78,7 @@ export class HttpLifeSimClient implements LifeSimClient {
       body: JSON.stringify(command),
     });
     if (!resp.ok) {
-      throw new Error(`Command execution failed: HTTP ${resp.status}`);
+      throw new Error(`Command execution failed: HTTP ${resp.status}: ${resp.statusText}`);
     }
     return (await resp.json()) as LifeSimCommandResult;
   }
@@ -125,6 +125,7 @@ export class HttpLifeSimClient implements LifeSimClient {
     es.addEventListener("reset_required", handleReset);
 
     es.onerror = () => {
+      es.close();
       observer.onError?.({
         code: "network_error",
         message: "SSE connection error",
@@ -134,6 +135,9 @@ export class HttpLifeSimClient implements LifeSimClient {
 
     return {
       close: () => {
+        es.removeEventListener("life-sim-event", handleEvent);
+        es.removeEventListener("reset", handleReset);
+        es.removeEventListener("reset_required", handleReset);
         es.close();
         observer.onState?.("closed");
       },

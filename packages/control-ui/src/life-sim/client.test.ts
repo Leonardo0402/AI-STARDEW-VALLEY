@@ -183,6 +183,26 @@ describe("HttpLifeSimClient", () => {
     expect(result).toEqual(baseCommandResult);
   });
 
+  it("getSnapshot includes status text in HTTP error message", async () => {
+    const fetchImpl = mockFetch(
+      new Response("Not Found", { status: 404, statusText: "Not Found" })
+    );
+    const client = makeClient({ fetch: fetchImpl });
+
+    await expect(client.getSnapshot()).rejects.toThrow("Snapshot fetch failed: HTTP 404: Not Found");
+  });
+
+  it("execute includes status text in HTTP error message", async () => {
+    const fetchImpl = mockFetch(
+      new Response("Bad Request", { status: 400, statusText: "Bad Request" })
+    );
+    const client = makeClient({ fetch: fetchImpl });
+
+    await expect(client.execute(baseCommand)).rejects.toThrow(
+      "Command execution failed: HTTP 400: Bad Request"
+    );
+  });
+
   it("subscribe opens an EventSource to the events endpoint", () => {
     const client = makeClient();
 
@@ -226,7 +246,7 @@ describe("HttpLifeSimClient", () => {
     sub.close();
   });
 
-  it("subscribe calls onError when the SSE connection drops", () => {
+  it("subscribe closes EventSource and calls onError when the SSE connection drops", () => {
     const client = makeClient();
     const observer: LifeSimStreamObserver = {
       onEvent: vi.fn(),
@@ -237,6 +257,7 @@ describe("HttpLifeSimClient", () => {
     const es = FakeEventSource.instances[0];
     es.simulateError();
 
+    expect(es.readyState).toBe(FakeEventSource.CLOSED);
     expect(observer.onError).toHaveBeenCalledTimes(1);
     expect(observer.onError).toHaveBeenCalledWith(
       expect.objectContaining({ code: "network_error", recoverable: true })
