@@ -160,14 +160,25 @@ function computeNextTransition(
   if (candidate) return candidate;
 
   for (const agentId of agentIds) {
-    const future = snapshot.baseSchedules
-      .filter(
-        (entry) => entry.agentId === agentId && entry.startMinute > minute
-      )
-      .sort(
-        (a, b) =>
-          a.startMinute - b.startMinute || a.entryId.localeCompare(b.entryId)
-      )[0];
+    const futures: Array<{ entryId: string; startMinute: number }> = [];
+    for (const entry of snapshot.baseSchedules) {
+      if (entry.agentId === agentId && entry.startMinute > minute) {
+        futures.push({ entryId: entry.entryId, startMinute: entry.startMinute });
+      }
+    }
+    for (const overlay of snapshot.activeOverlays) {
+      if (overlay.agentId === agentId && overlay.entry.startMinute > minute) {
+        futures.push({
+          entryId: overlay.entry.entryId,
+          startMinute: overlay.entry.startMinute,
+        });
+      }
+    }
+    futures.sort((a, b) => {
+      if (a.startMinute !== b.startMinute) return a.startMinute - b.startMinute;
+      return a.entryId.localeCompare(b.entryId);
+    });
+    const future = futures[0];
     if (future) {
       if (
         !candidate ||

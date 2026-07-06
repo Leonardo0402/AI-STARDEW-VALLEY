@@ -142,9 +142,9 @@ describe("LifeSimSession", () => {
 
     expect(client.getSnapshot).toHaveBeenCalledTimes(1);
     const projection = session.getProjection();
-    expect(projection.worldClock.day).toBe(1);
-    expect(projection.activeActivities).toEqual([]);
-    expect(projection.truncatedHistory.truncated).toBe(false);
+    expect(projection.world.day).toBe(1);
+    expect(projection.agents).toEqual([]);
+    expect(projection.truncated).toBe(false);
     expect(session.isTruncated()).toBe(false);
   });
 
@@ -159,8 +159,8 @@ describe("LifeSimSession", () => {
 
     await session.start();
 
-    expect(session.getProjection().worldClock.day).toBe(2);
-    expect(session.getProjection().worldClock.status).toBe("running");
+    expect(session.getProjection().world.day).toBe(2);
+    expect(session.getProjection().world.status).toBe("running");
     expect(client.subscriptions[0].afterLifeSimSequence).toBe(4);
   });
 
@@ -177,10 +177,10 @@ describe("LifeSimSession", () => {
       })
     );
 
-    expect(session.getProjection().worldClock.day).toBe(2);
+    expect(session.getProjection().world.day).toBe(2);
     expect(listener).toHaveBeenCalledWith(
       expect.objectContaining({
-        worldClock: expect.objectContaining({ day: 2 }),
+        world: expect.objectContaining({ day: 2 }),
       })
     );
   });
@@ -215,7 +215,7 @@ describe("LifeSimSession", () => {
     await vi.runAllTimersAsync();
 
     expect(client.getSnapshot).toHaveBeenCalledTimes(2);
-    expect(session.getProjection().worldClock.day).toBe(2);
+    expect(session.getProjection().world.day).toBe(2);
   });
 
   it("stop during bootstrap aborts in-flight start and leaves no subscription", async () => {
@@ -269,7 +269,7 @@ describe("LifeSimSession", () => {
     await vi.runAllTimersAsync();
 
     expect(client.getSnapshot).toHaveBeenCalledTimes(2);
-    expect(session.getProjection().worldClock.day).toBe(2);
+    expect(session.getProjection().world.day).toBe(2);
   });
 
   it("execute forwards command and surfaces rejected results", async () => {
@@ -309,7 +309,7 @@ describe("LifeSimSession", () => {
     await session.start();
 
     expect(session.isTruncated()).toBe(true);
-    expect(session.getProjection().truncatedHistory.truncated).toBe(true);
+    expect(session.getProjection().truncated).toBe(true);
   });
 
   it("reset_required transitions session to error", async () => {

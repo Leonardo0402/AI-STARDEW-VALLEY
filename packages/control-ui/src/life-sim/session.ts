@@ -9,8 +9,8 @@ import type {
   LifeSimClient,
   LifeSimStreamObserver,
   LifeSimSessionState,
-  LifeSimProjection,
 } from "./types.js";
+import { projectLifeSim, type LifeSimProjection } from "./projection.js";
 
 export interface LifeSimSessionOptions {
   reconnect?: {
@@ -66,14 +66,7 @@ export class LifeSimSession {
     if (!this.localSnapshot) {
       throw new Error("Session has not been started");
     }
-    const snapshot = structuredClone(this.localSnapshot);
-    return {
-      worldClock: snapshot.worldClock,
-      activeActivities: snapshot.activeActivities,
-      activeOverlays: snapshot.activeOverlays,
-      completedDaySummaries: snapshot.completedDaySummaries,
-      truncatedHistory: snapshot.truncatedHistory,
-    };
+    return projectLifeSim(this.localSnapshot, this.getCapabilities());
   }
 
   getCapabilities(): LifeSimCapabilities {

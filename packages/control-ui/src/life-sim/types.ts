@@ -3,7 +3,6 @@ import type {
   LifeSimSnapshotResponse,
   LifeSimCommand,
   LifeSimCommandResult,
-  LifeSimSnapshot,
 } from "@agent-office/life-sim";
 
 export interface LifeSimStreamObserver {
@@ -30,10 +29,3 @@ export type LifeSimSessionState =
   | "reconnecting"
   | "error";
 
-export interface LifeSimProjection {
-  worldClock: LifeSimSnapshot["worldClock"];
-  activeActivities: LifeSimSnapshot["activeActivities"];
-  activeOverlays: LifeSimSnapshot["activeOverlays"];
-  completedDaySummaries: LifeSimSnapshot["completedDaySummaries"];
-  truncatedHistory: LifeSimSnapshot["truncatedHistory"];
-}

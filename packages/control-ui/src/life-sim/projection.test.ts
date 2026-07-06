@@ -201,6 +201,59 @@ describe("projectLifeSim", () => {
     });
   });
 
+  test("falls back to effective base/overlay entry when there is no active activity", () => {
+    const baseEntry = makeBaseEntry({
+      entryId: "base-1",
+      agentId: "agent-1",
+      startMinute: 540,
+      endMinute: 720,
+    });
+    const overlay = makeOverlay(
+      {},
+      {
+        entryId: "overlay-1",
+        agentId: "agent-2",
+        startMinute: 600,
+        endMinute: 660,
+        activity: "review",
+        roomId: "room-review",
+      }
+    );
+    const snapshot = makeSnapshot({
+      worldClock: { ...makeSnapshot().worldClock, minuteOfDay: 600 },
+      baseSchedules: [baseEntry],
+      activeActivities: [],
+      activeOverlays: [overlay],
+    });
+
+    const projection = projectLifeSim(snapshot, defaultCapabilities);
+
+    const agent1 = projection.agents.find((a) => a.agentId === "agent-1");
+    const agent2 = projection.agents.find((a) => a.agentId === "agent-2");
+
+    expect(agent1).toEqual<AgentLifeSimView>({
+      agentId: "agent-1",
+      currentActivity: "work",
+      currentRoomId: "room-execution",
+      currentEntryId: "base-1",
+      nextEntryId: null,
+      nextEntryAtMinute: null,
+      isOverridden: false,
+      overrideReason: null,
+    });
+
+    expect(agent2).toEqual<AgentLifeSimView>({
+      agentId: "agent-2",
+      currentActivity: "review",
+      currentRoomId: "room-review",
+      currentEntryId: "overlay-1",
+      nextEntryId: null,
+      nextEntryAtMinute: null,
+      isOverridden: true,
+      overrideReason: "task",
+    });
+  });
+
   test("computes nextEntryId and nextEntryAtMinute per agent", () => {
     const baseEntry = makeBaseEntry({
       entryId: "base-1",
@@ -300,6 +353,34 @@ describe("projectLifeSim", () => {
     expect(projection.nextTransition).toEqual({
       agentId: "agent-1",
       entryId: "future-1",
+      atMinute: 700,
+    });
+  });
+
+  test("falls back to active overlay future start when no base schedule entry is active", () => {
+    const overlay = makeOverlay(
+      {},
+      {
+        entryId: "overlay-1",
+        agentId: "agent-1",
+        startMinute: 700,
+        endMinute: 800,
+        activity: "review",
+        roomId: "room-review",
+      }
+    );
+    const snapshot = makeSnapshot({
+      worldClock: { ...makeSnapshot().worldClock, minuteOfDay: 600 },
+      baseSchedules: [],
+      activeActivities: [],
+      activeOverlays: [overlay],
+    });
+
+    const projection = projectLifeSim(snapshot, defaultCapabilities);
+
+    expect(projection.nextTransition).toEqual({
+      agentId: "agent-1",
+      entryId: "overlay-1",
       atMinute: 700,
     });
   });
