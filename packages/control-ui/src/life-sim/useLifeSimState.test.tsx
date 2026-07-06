@@ -108,7 +108,7 @@ describe("useLifeSimState", () => {
   let session: MockSession;
 
   beforeEach(() => {
-    session = new MockSession(makeProjection({ world: { ...makeProjection().world, day: 1 } }));
+    session = new MockSession(makeProjection());
   });
 
   it("returns the initial projection, idle state, and no errors", () => {

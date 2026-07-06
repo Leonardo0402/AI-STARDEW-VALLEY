@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { LifeSimCommand, LifeSimCommandResult } from "@agent-office/life-sim";
-import { LifeSimSession } from "./session.js";
+import type { LifeSimSession } from "./session.js";
 import type { LifeSimProjection } from "./projection.js";
 import type { LifeSimSessionState } from "./types.js";
 
