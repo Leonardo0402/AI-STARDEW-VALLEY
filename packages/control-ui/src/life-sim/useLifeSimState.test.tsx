@@ -63,6 +63,8 @@ class MockSession {
 
   getProjection = () => this.projection;
 
+  getState = () => this.state;
+
   onProjectionChange = (listener: (projection: LifeSimProjection) => void) => {
     this.projectionListeners.add(listener);
     return () => {

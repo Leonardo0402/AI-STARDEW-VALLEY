@@ -62,6 +62,10 @@ export class LifeSimSession {
     this.setState("idle");
   }
 
+  getState(): LifeSimSessionState {
+    return this.state;
+  }
+
   getProjection(): LifeSimProjection {
     if (!this.localSnapshot) {
       throw new Error("Session has not been started");

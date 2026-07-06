@@ -15,7 +15,7 @@ export function useLifeSimState(session: LifeSimSession): UseLifeSimStateResult 
   const [projection, setProjection] = useState<LifeSimProjection>(() =>
     session.getProjection()
   );
-  const [state, setState] = useState<LifeSimSessionState>("idle");
+  const [state, setState] = useState<LifeSimSessionState>(() => session.getState());
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {

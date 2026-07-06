@@ -148,6 +148,16 @@ describe("LifeSimSession", () => {
     expect(session.isTruncated()).toBe(false);
   });
 
+  it("getState reflects the current session state", async () => {
+    expect(session.getState()).toBe("idle");
+
+    await session.start();
+    expect(session.getState()).toBe("live");
+
+    session.stop();
+    expect(session.getState()).toBe("idle");
+  });
+
   it("applies event log tail in order", async () => {
     client.snapshotResponse = makeSnapshotResponse([
       makeEvent(4, "world.day_started", {
