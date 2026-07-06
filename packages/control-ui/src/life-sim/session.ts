@@ -24,6 +24,8 @@ export class LifeSimSession {
   private client: LifeSimClient;
   private state: LifeSimSessionState = "idle";
   private localSnapshot: LifeSimSnapshot | null = null;
+  private startOfDayMinute: number = 0;
+  private endOfDayMinute: number = 1439;
   private lastAppliedLifeSimSequence: number | null = null;
   private subscription: { close(): void } | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,14 +81,17 @@ export class LifeSimSession {
     }
     const clock = this.localSnapshot.worldClock;
     const isRunning = clock.status === "running";
+    const canActOnDay = isRunning && clock.minuteOfDay < this.endOfDayMinute;
     return {
       world: {
         startDay: clock.status === "not_started",
         pause: false,
         resume: false,
-        endDay: false,
-        advanceTime: isRunning && clock.speed === 0 && clock.minuteOfDay < 1439,
-        runToEndOfDay: isRunning && clock.minuteOfDay < 1439,
+        endDay:
+          (clock.status === "running" || clock.status === "paused") &&
+          clock.minuteOfDay === this.endOfDayMinute,
+        advanceTime: canActOnDay && clock.speed === 0,
+        runToEndOfDay: canActOnDay,
       },
       schedule: { override: false, clearOverride: false },
       clock: { mode: "manual", maxSpeed: 0 },
@@ -143,6 +148,8 @@ export class LifeSimSession {
     if (this.stopped) {
       return;
     }
+    this.startOfDayMinute = response.startOfDayMinute;
+    this.endOfDayMinute = response.endOfDayMinute;
     let snapshot = structuredClone(response.snapshot);
     let expected = response.checkpointLifeSimSequence + 1;
     let lastSeq = response.checkpointLifeSimSequence;

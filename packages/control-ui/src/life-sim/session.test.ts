@@ -38,6 +38,8 @@ function makeSnapshotResponse(tail: LifeSimEvent[] = []): LifeSimSnapshotRespons
     worldId: baseSnapshot.worldId,
     schemaVersion: baseSnapshot.schemaVersion,
     checkpointLifeSimSequence: baseSnapshot.checkpointLifeSimSequence,
+    startOfDayMinute: 480,
+    endOfDayMinute: 1110,
     snapshot: structuredClone(baseSnapshot),
     eventLogTail: structuredClone(tail),
   };

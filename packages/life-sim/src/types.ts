@@ -143,6 +143,8 @@ export interface LifeSimSnapshotResponse {
   worldId: string;
   schemaVersion: string;
   checkpointLifeSimSequence: number;
+  startOfDayMinute: number;
+  endOfDayMinute: number;
   snapshot: LifeSimSnapshot;
   eventLogTail: LifeSimEvent[];
 }

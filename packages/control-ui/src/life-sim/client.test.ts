@@ -13,6 +13,8 @@ const baseSnapshot: LifeSimSnapshotResponse = {
   worldId: "world-1",
   schemaVersion: "1",
   checkpointLifeSimSequence: 3,
+  startOfDayMinute: 480,
+  endOfDayMinute: 1110,
   snapshot: {
     worldId: "world-1",
     schemaVersion: "1",
