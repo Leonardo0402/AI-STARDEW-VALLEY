@@ -16,6 +16,7 @@
     "@agent-office/adapter-http-sse": "1.0.0",
     "@agent-office/pixel-office": "1.0.0",
     "@agent-office/control-ui": "1.0.0",
+    "@agent-office/life-sim": "1.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "pixi.js": "^8.5.0"

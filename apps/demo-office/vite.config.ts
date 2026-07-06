@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { createLifeSimDevPlugin } from "./src/life-sim-server.js";
 
 /**
  * Vite 配置 — demo-office 应用。
@@ -7,8 +8,10 @@ import react from "@vitejs/plugin-react";
  * 由于所有 workspace 包都以源码形式消费（main 指向 src/index.ts），
  * Vite 直接编译 TS 源码，无需预构建。
  */
+const WORLD_ID = "default";
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), createLifeSimDevPlugin(WORLD_ID)],
   server: {
     port: 5173,
     open: true,
@@ -22,6 +25,7 @@ export default defineConfig({
       "@agent-office/adapter-http-sse",
       "@agent-office/pixel-office",
       "@agent-office/control-ui",
+      "@agent-office/life-sim",
     ],
   },
 });

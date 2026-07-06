@@ -21,6 +21,7 @@ export function readConfigFromEnv(env: Record<string, string | undefined>): Demo
   const rawMode = env.VITE_RUNTIME_MODE;
   const explicitRuntimeId = env.VITE_RUNTIME_ID;
   const baseUrl = env.VITE_RUNTIME_BASE_URL;
+  const lifeSimBaseUrl = env.VITE_LIFE_SIM_BASE_URL ?? "/life-sim";
 
   // Determine mode — default to "mock" when not set
   let mode: DemoRuntimeMode;
@@ -55,5 +56,5 @@ export function readConfigFromEnv(env: Record<string, string | undefined>): Demo
     );
   }
 
-  return { mode, runtimeId, baseUrl };
+  return { mode, runtimeId, baseUrl, lifeSimBaseUrl };
 }

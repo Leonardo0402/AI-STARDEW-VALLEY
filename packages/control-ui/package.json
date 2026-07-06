@@ -4,6 +4,16 @@
   "type": "module",
   "main": "./src/index.tsx",
   "types": "./src/index.tsx",
+  "exports": {
+    ".": {
+      "default": "./src/index.tsx",
+      "types": "./src/index.tsx"
+    },
+    "./life-sim": {
+      "default": "./src/life-sim/index.ts",
+      "types": "./src/life-sim/index.ts"
+    }
+  },
   "scripts": {
     "build": "tsc --noEmit"
   },

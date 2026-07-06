@@ -11,7 +11,9 @@
     { "path": "../../packages/protocol" },
     { "path": "../../packages/core" },
     { "path": "../../packages/adapters/mock" },
+    { "path": "../../packages/adapters/http-sse" },
     { "path": "../../packages/pixel-office" },
-    { "path": "../../packages/control-ui" }
+    { "path": "../../packages/control-ui" },
+    { "path": "../../packages/life-sim" }
   ]
 }

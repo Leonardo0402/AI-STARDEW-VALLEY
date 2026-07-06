@@ -12,6 +12,8 @@ export interface DemoRuntimeConfig {
   runtimeId: string;
   /** Required when mode === "http-sse". */
   baseUrl?: string;
+  /** Base URL for the LifeSim HTTP client. Defaults to `/life-sim` so the Vite dev proxy can handle it. */
+  lifeSimBaseUrl: string;
 }
 
 /**

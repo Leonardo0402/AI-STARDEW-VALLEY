@@ -31,6 +31,7 @@ describe("Remote golden-flow smoke test (http-sse mode)", () => {
       mode: "http-sse",
       runtimeId: "qclaw-swarm-runtime-001",
       baseUrl: runtime.getBaseUrl(),
+      lifeSimBaseUrl: "/life-sim",
     });
     dispose = comp.dispose;
 
@@ -77,6 +78,7 @@ describe("Remote golden-flow smoke test (http-sse mode)", () => {
       mode: "http-sse",
       runtimeId: "qclaw-swarm-runtime-001",
       baseUrl: runtime.getBaseUrl(),
+      lifeSimBaseUrl: "/life-sim",
     });
     dispose = comp.dispose;
 
@@ -101,6 +103,7 @@ describe("Remote golden-flow smoke test (http-sse mode)", () => {
       mode: "http-sse",
       runtimeId: "qclaw-swarm-runtime-001",
       baseUrl: "http://localhost:1", // don't actually connect
+      lifeSimBaseUrl: "/life-sim",
     });
     dispose = comp.dispose;
 
