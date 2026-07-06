@@ -21,6 +21,7 @@ export function createEmptySnapshot(
 ): LifeSimSnapshot {
   const worldClock: WorldClockState = {
     worldId: config.worldId,
+    // day 0 is the "no day started" sentinel; the first valid day is 1.
     day: 0,
     dayOfWeek: 1,
     minuteOfDay: config.startOfDayMinute,
