@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useRef } from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
 import { useOfficeState, type OfficeState } from "@agent-office/control-ui";
 import {
@@ -26,6 +26,7 @@ export function useComposedOfficeState(
 ): ComposedOfficeState {
   const office = useOfficeState(session, store, gateway, runtimeId);
   const lifeSim = useLifeSimState(lifeSimSession);
+  const seqRef = useRef(0);
 
   const projection = useMemo(
     () => composeProjections(office.projection, lifeSim.projection),
@@ -35,9 +36,9 @@ export function useComposedOfficeState(
   const sendLifeSimCommand = useCallback(
     async (commandType: string, payload: unknown): Promise<void> => {
       const command: LifeSimCommand = {
-        commandId: `life-sim-cmd-${Date.now()}`,
+        commandId: `life-sim-cmd-${++seqRef.current}`,
         commandType,
-        timestamp: new Date().toISOString(),
+        timestamp: "1970-01-01T00:00:00.000Z",
         source: "user",
         actorId: "user-1",
         worldId,

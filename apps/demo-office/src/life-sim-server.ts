@@ -1,24 +1,32 @@
 import type { Plugin } from "vite";
 import { loadEnv } from "vite";
 import type { RuntimeAdapter } from "@agent-office/protocol";
+import type { RuntimeSession } from "@agent-office/core";
 import type {
   LifeSimEngine,
   LifeSimEngineConfig,
   RuntimeLifeSimBridge,
 } from "@agent-office/life-sim";
 
+interface BridgeHandles {
+  bridge: RuntimeLifeSimBridge;
+  session: RuntimeSession;
+  adapter: RuntimeAdapter;
+}
+
 /**
  * Create a Vite dev-server plugin that hosts an in-process LifeSimEngine
  * under `/life-sim/{worldId}/*`.
- *
- * The engine is bridged to the office runtime so that runtime events
- * (task assignments, agent status changes, etc.) feed into the life-sim
- * schedule overlay logic.
  *
  * All workspace package imports are deferred to `configureServer` so that
  * Vite's config loader (which cannot resolve `.js` extension remapping for
  * source-direct workspace packages) does not try to load them while parsing
  * `vite.config.ts`.
+ *
+ * In `http-sse` mode the engine is bridged to the remote office runtime so
+ * that runtime events feed into the life-sim schedule overlay logic. In
+ * `mock` mode there is no shared runtime process; the dev plugin still hosts
+ * the LifeSimEngine router, but the engine runs manual-only.
  */
 export function createLifeSimDevPlugin(worldId: string): Plugin {
   return {
@@ -44,7 +52,18 @@ export function createLifeSimDevPlugin(worldId: string): Plugin {
 
       const engine = await createEngine(config);
       const router = await createRouter(engine);
-      const bridge = await createRuntimeBridge(mode, runtimeId, baseUrl, engine);
+
+      let handles: BridgeHandles | null = null;
+      if (mode === "http-sse") {
+        if (!baseUrl) {
+          throw new Error(
+            "VITE_RUNTIME_BASE_URL is required when VITE_RUNTIME_MODE=http-sse"
+          );
+        }
+        handles = await createRuntimeBridge(runtimeId, baseUrl, engine);
+      }
+      // Mock mode has no shared runtime process; the LifeSimEngine router is
+      // still hosted by the dev plugin, but the engine runs manual-only.
 
       server.middlewares.use(`/life-sim/${worldId}`, (req, res, next) => {
         if (!req.url) {
@@ -56,7 +75,9 @@ export function createLifeSimDevPlugin(worldId: string): Plugin {
       });
 
       server.httpServer?.on("close", () => {
-        bridge?.disconnect();
+        handles?.bridge.disconnect();
+        void handles?.session.disconnect();
+        void handles?.adapter.disconnect();
         router.destroy();
       });
     },
@@ -76,67 +97,23 @@ async function createRouter(engine: LifeSimEngine) {
 }
 
 async function createRuntimeBridge(
-  mode: "mock" | "http-sse",
   runtimeId: string,
-  baseUrl: string | undefined,
+  baseUrl: string,
   engine: LifeSimEngine
-): Promise<RuntimeLifeSimBridge | null> {
-  const [{ MockRuntimeAdapter }, { HttpSseRuntimeAdapter }, { RuntimeSession, SnapshotStore, CommandGateway }, { RuntimeLifeSimBridge, createLifeSimRouter }] =
+): Promise<BridgeHandles> {
+  const [{ HttpSseRuntimeAdapter }, { RuntimeSession, SnapshotStore, CommandGateway }, { RuntimeLifeSimBridge }] =
     await Promise.all([
-      import("@agent-office/adapter-mock"),
       import("@agent-office/adapter-http-sse"),
       import("@agent-office/core"),
       import("@agent-office/life-sim"),
     ]);
 
-  if (mode === "mock") {
-    const adapter = new MockRuntimeAdapter({ eventDelayMs: 250 });
-    return startBridge(
-      adapter,
-      runtimeId,
-      engine,
-      RuntimeSession,
-      SnapshotStore,
-      CommandGateway,
-      RuntimeLifeSimBridge
-    );
-  }
-
-  if (mode === "http-sse") {
-    if (!baseUrl) {
-      throw new Error(
-        "VITE_RUNTIME_BASE_URL is required when VITE_RUNTIME_MODE=http-sse"
-      );
-    }
-    const adapter = new HttpSseRuntimeAdapter({ baseUrl, runtimeId });
-    return startBridge(
-      adapter,
-      runtimeId,
-      engine,
-      RuntimeSession,
-      SnapshotStore,
-      CommandGateway,
-      RuntimeLifeSimBridge
-    );
-  }
-
-  return null;
-}
-
-async function startBridge(
-  adapter: RuntimeAdapter,
-  runtimeId: string,
-  engine: LifeSimEngine,
-  RuntimeSessionCtor: typeof import("@agent-office/core").RuntimeSession,
-  SnapshotStoreCtor: typeof import("@agent-office/core").SnapshotStore,
-  CommandGatewayCtor: typeof import("@agent-office/core").CommandGateway,
-  RuntimeLifeSimBridgeCtor: typeof RuntimeLifeSimBridge
-): Promise<RuntimeLifeSimBridge> {
-  const store = new SnapshotStoreCtor(runtimeId);
-  const gateway = new CommandGatewayCtor(adapter);
-  const session = new RuntimeSessionCtor(adapter, store, gateway);
+  const adapter = new HttpSseRuntimeAdapter({ baseUrl, runtimeId });
+  const store = new SnapshotStore(runtimeId);
+  const gateway = new CommandGateway(adapter);
+  const session = new RuntimeSession(adapter, store, gateway);
   await session.connect();
-  const bridge = new RuntimeLifeSimBridgeCtor(session, engine);
+  const bridge = new RuntimeLifeSimBridge(session, engine);
   bridge.connect();
-  return bridge;
+  return { bridge, session, adapter };
 }
