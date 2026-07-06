@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { LifeSimEngine, LifeSimEvent } from "./types.js";
+import type { LifeSimCommand, LifeSimCommandResult, LifeSimEngine, LifeSimEvent } from "./types.js";
 
 export interface LifeSimRouter {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
+  destroy(): void;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -24,16 +25,20 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-function formatSseEvent(event: LifeSimEvent): string {
-  return `event: life-sim-event\nid: ${event.lifeSimSequence}\ndata: ${JSON.stringify(event)}\n\n`;
+function formatSseEvent(event: string, id: string, data: unknown): string {
+  return `event: ${event}\nid: ${id}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function formatLifeSimEvent(event: LifeSimEvent): string {
+  return formatSseEvent("life-sim-event", String(event.lifeSimSequence), event);
 }
 
 export function createLifeSimRouter(engine: LifeSimEngine): LifeSimRouter {
   const worldId = engine.getSnapshot().worldId;
   const liveResponses = new Set<ServerResponse>();
 
-  engine.onLifeSimEvent((event) => {
-    const message = formatSseEvent(event);
+  const unsubscribe = engine.onLifeSimEvent((event) => {
+    const message = formatLifeSimEvent(event);
     for (const res of liveResponses) {
       res.write(message);
     }
@@ -58,6 +63,24 @@ export function createLifeSimRouter(engine: LifeSimEngine): LifeSimRouter {
       return;
     }
 
+    const snapshot = engine.getSnapshot();
+    const lastKnownSequence = snapshot.checkpointLifeSimSequence + snapshot.eventLogTail.length;
+    if (afterLifeSimSequence > lastKnownSequence) {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      res.write(
+        formatSseEvent("reset", "", {
+          reason: "sequence_too_far_ahead",
+          expectedSequence: snapshot.checkpointLifeSimSequence,
+        })
+      );
+      res.end();
+      return;
+    }
+
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -67,10 +90,9 @@ export function createLifeSimRouter(engine: LifeSimEngine): LifeSimRouter {
 
     liveResponses.add(res);
 
-    const snapshot = engine.getSnapshot();
     for (const event of snapshot.eventLogTail) {
       if (event.lifeSimSequence > afterLifeSimSequence) {
-        res.write(formatSseEvent(event));
+        res.write(formatLifeSimEvent(event));
       }
     }
 
@@ -100,12 +122,24 @@ export function createLifeSimRouter(engine: LifeSimEngine): LifeSimRouter {
       return;
     }
 
+    const typedCommand = command as LifeSimCommand;
+
     try {
-      const result = await engine.execute(command as Parameters<LifeSimEngine["execute"]>[0]);
+      const result = await engine.execute(typedCommand);
       sendJson(res, 200, result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Internal error";
-      sendError(res, 500, message);
+      const result: LifeSimCommandResult = {
+        commandId: typedCommand.commandId ?? "unknown",
+        status: "rejected",
+        lifeSimSequence: null,
+        events: [],
+        error: {
+          code: "internal_error",
+          message,
+        },
+      };
+      sendJson(res, 500, result);
     }
   };
 
@@ -143,6 +177,12 @@ export function createLifeSimRouter(engine: LifeSimEngine): LifeSimRouter {
       }
 
       sendError(res, 404, "Not found");
+    },
+    destroy: () => {
+      unsubscribe();
+      for (const res of liveResponses) {
+        endResponse(res);
+      }
     },
   };
 

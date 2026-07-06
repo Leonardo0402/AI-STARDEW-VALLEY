@@ -43,6 +43,9 @@ async function startServer(engine: LifeSimEngine): Promise<{ server: http.Server
     baseUrl,
     close: () =>
       new Promise((resolve) => {
+        if ("destroy" in router && typeof router.destroy === "function") {
+          router.destroy();
+        }
         server.close(() => resolve());
         if ("closeAllConnections" in server && typeof server.closeAllConnections === "function") {
           server.closeAllConnections();
@@ -96,8 +99,8 @@ function postJson(url: string, body: unknown): Promise<{ status: number; body: u
   });
 }
 
-function openSse(url: string): { response: Promise<http.IncomingMessage>; events: Array<{ id: string; data: unknown }>; abort: () => void } {
-  const events: Array<{ id: string; data: unknown }> = [];
+function openSse(url: string): { response: Promise<http.IncomingMessage>; events: Array<{ event: string; id: string; data: unknown }>; abort: () => void } {
+  const events: Array<{ event: string; id: string; data: unknown }> = [];
   let rawBuffer = "";
   const controller = new AbortController();
   const response = new Promise<http.IncomingMessage>((resolve, reject) => {
@@ -109,17 +112,20 @@ function openSse(url: string): { response: Promise<http.IncomingMessage>; events
         rawBuffer = messages.pop() ?? "";
         for (const message of messages) {
           const lines = message.split("\n");
+          let event = "";
           let id = "";
           let data = "";
           for (const line of lines) {
-            if (line.startsWith("id: ")) {
+            if (line.startsWith("event: ")) {
+              event = line.slice(7);
+            } else if (line.startsWith("id: ")) {
               id = line.slice(4);
             } else if (line.startsWith("data: ")) {
               data = line.slice(6);
             }
           }
           if (data) {
-            events.push({ id, data: JSON.parse(data) as unknown });
+            events.push({ event, id, data: JSON.parse(data) as unknown });
           }
         }
       });
@@ -184,6 +190,29 @@ describe("life-sim HTTP router", () => {
     expect(first.body).toEqual(second.body);
   });
 
+  it("POST /command returns structured LifeSimCommandResult when the engine throws", async () => {
+    const originalExecute = engine.execute.bind(engine);
+    engine.execute = async () => {
+      throw new Error("simulated engine failure");
+    };
+
+    const command = makeCommand("world.start_day", {});
+    const { status, body } = await postJson(`${baseUrl}/life-sim/${config.worldId}/command`, command);
+    expect(status).toBe(500);
+    expect(body).toEqual({
+      commandId: command.commandId,
+      status: "rejected",
+      lifeSimSequence: null,
+      events: [],
+      error: {
+        code: "internal_error",
+        message: "simulated engine failure",
+      },
+    });
+
+    engine.execute = originalExecute;
+  });
+
   it("GET /events opens an SSE stream with replay and live events", async () => {
     await engine.execute(makeCommand("world.start_day", {}));
     await engine.execute(makeCommand("world.advance_time", { minutes: 10 }));
@@ -225,15 +254,20 @@ describe("life-sim HTTP router", () => {
     sse.abort();
   });
 
-  it("GET /events keeps the connection open when afterLifeSimSequence is ahead and streams live events", async () => {
+  it("GET /events signals reset when afterLifeSimSequence is far ahead", async () => {
+    const snapshot = engine.getSnapshot();
     const sse = openSse(`${baseUrl}/life-sim/${config.worldId}/events?afterLifeSimSequence=9999`);
     const res = await sse.response;
     expect(res.statusCode).toBe(200);
 
-    await engine.execute(makeCommand("world.start_day", {}));
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(sse.events.length).toBeGreaterThanOrEqual(1);
+    const resetEvents = sse.events.filter((e) => e.event === "reset");
+    expect(resetEvents.length).toBe(1);
+    expect(resetEvents[0].data).toEqual({
+      reason: "sequence_too_far_ahead",
+      expectedSequence: snapshot.checkpointLifeSimSequence,
+    });
 
     sse.abort();
   });
