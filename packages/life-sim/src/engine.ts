@@ -90,7 +90,10 @@ export async function createLifeSimEngine(
         endDay:
           (currentSnapshot.worldClock.status === "running" || currentSnapshot.worldClock.status === "paused") &&
           currentSnapshot.worldClock.minuteOfDay === config.endOfDayMinute,
-        advanceTime: currentSnapshot.worldClock.status === "running" && currentSnapshot.worldClock.speed === 0,
+        advanceTime:
+          currentSnapshot.worldClock.status === "running" &&
+          currentSnapshot.worldClock.speed === 0 &&
+          currentSnapshot.worldClock.minuteOfDay < config.endOfDayMinute,
         runToEndOfDay:
           currentSnapshot.worldClock.status === "running" &&
           currentSnapshot.worldClock.minuteOfDay < config.endOfDayMinute,
