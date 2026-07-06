@@ -119,7 +119,7 @@ describe("LifeSim end-to-end integration", () => {
     const pendingApproval = await waitForRequestedApproval(store);
 
     const approveResult = await gateway.execute(
-      makeOfficeCommand(CommandType.APPROVAL_ACCEPT, { approvalId: pendingApproval!.approvalId }, pendingApproval!.approvalId)
+      makeOfficeCommand(CommandType.APPROVAL_ACCEPT, { approvalId: pendingApproval.approvalId }, pendingApproval.approvalId)
     );
     expect(approveResult.status).toBe("accepted");
 
