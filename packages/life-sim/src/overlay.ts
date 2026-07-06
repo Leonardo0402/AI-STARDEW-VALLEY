@@ -1,7 +1,7 @@
 import type { AgentScheduleEntry, LifeSimSnapshot, ScheduleOverlay } from "./types.js";
 
 export function createTaskOverlay(
-  snapshot: LifeSimSnapshot,
+  _snapshot: LifeSimSnapshot,
   agentId: string,
   taskId: string,
   activity: AgentScheduleEntry["activity"],
@@ -36,8 +36,8 @@ export function createTaskOverlay(
 export function closeOverlaysForTask(
   snapshot: LifeSimSnapshot,
   taskId: string,
-  reason: string,
-  endedAtWorldMinute: number
+  _reason: string,
+  _endedAtWorldMinute: number
 ): { overlays: ScheduleOverlay[]; closedIds: string[] } {
   const remaining: ScheduleOverlay[] = [];
   const closedIds: string[] = [];
