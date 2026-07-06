@@ -196,7 +196,12 @@ export function reduceWorldCommand(
       }
 
       const events: LifeSimEvent[] = [];
-      const startedAtWorldMinute = config.startOfDayMinute;
+      const startedEvent = eventLogTail.find(
+        (e) => e.type === "world.day_started" && e.day === day
+      );
+      const startedAtWorldMinute =
+        (startedEvent?.payload as { startedAtWorldMinute?: number } | undefined)?.startedAtWorldMinute ??
+        config.startOfDayMinute;
       const endedAtWorldMinute = clock.minuteOfDay;
       const summaryId = `summary-${day}`;
 
