@@ -5,13 +5,15 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "dev:server": "node --import tsx src/http-server.ts --port=3457"
   },
   "dependencies": {
     "@agent-office/protocol": "1.0.0"
   },
   "devDependencies": {
     "@agent-office/core": "1.0.0",
-    "@agent-office/adapter-mock": "1.0.0"
+    "@agent-office/adapter-mock": "1.0.0",
+    "tsx": "^4.19.0"
   }
 }
