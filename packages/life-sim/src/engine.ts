@@ -54,7 +54,8 @@ export async function createLifeSimEngine(
       command,
       config,
       () => nextLifeSimSequence++,
-      now()
+      now(),
+      currentTail
     );
     const stagedSnapshot = next;
     const stagedTail = [...currentTail, ...events];

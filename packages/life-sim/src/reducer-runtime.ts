@@ -37,6 +37,12 @@ export function reduceRuntimeEvent(
   };
 
   switch (runtimeEvent.type) {
+    case "task.created": {
+      const { taskId } = runtimeEvent.payload as { taskId: string };
+      events.push(baseEvent("day.task_created", { taskId }));
+      break;
+    }
+
     case "task.assigned": {
       const { taskId, agentId, roomId } = runtimeEvent.payload as { taskId: string; agentId: string; roomId: string };
 
@@ -107,6 +113,15 @@ export function reduceRuntimeEvent(
       const closedOverlays = snapshot.activeOverlays.filter((o) => o.createdByTaskId === taskId);
       const { overlays } = closeOverlaysForTask(snapshot, taskId, runtimeEvent.type, bindingMinute);
       nextSnapshot = { ...snapshot, activeOverlays: overlays };
+
+      if (runtimeEvent.type === "task.completed") {
+        events.push(baseEvent("day.task_completed", { taskId }));
+      } else if (runtimeEvent.type === "task.failed") {
+        events.push(baseEvent("day.task_failed", { taskId }));
+      } else if (runtimeEvent.type === "task.blocked") {
+        events.push(baseEvent("day.task_blocked", { taskId }));
+      }
+
       for (const overlay of closedOverlays) {
         events.push(baseEvent("schedule.overlay_ended", {
           agentId: overlay.agentId,
@@ -126,6 +141,22 @@ export function reduceRuntimeEvent(
           }));
         }
       }
+      break;
+    }
+
+    case "approval.requested": {
+      const { approvalId, taskId } = runtimeEvent.payload as { approvalId: string; taskId: string };
+      events.push(baseEvent("day.approval_requested", { approvalId, taskId }));
+      break;
+    }
+
+    case "approval.resolved": {
+      const { approvalId, taskId, status } = runtimeEvent.payload as {
+        approvalId: string;
+        taskId: string;
+        status: "approved" | "rejected" | "expired";
+      };
+      events.push(baseEvent("day.approval_resolved", { approvalId, taskId, status }));
       break;
     }
 
