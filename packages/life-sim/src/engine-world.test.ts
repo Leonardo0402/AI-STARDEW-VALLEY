@@ -193,7 +193,7 @@ describe("world commands", () => {
       pause: false,
       resume: false,
       endDay: true,
-      advanceTime: true,
+      advanceTime: false,
       runToEndOfDay: false,
     });
 
