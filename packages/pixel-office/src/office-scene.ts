@@ -25,6 +25,9 @@ import { ROLE_COLORS, STATUS_COLORS, ROOM_COLORS } from "./design-tokens.js";
 import { createLayoutFromRoomViews, createDefaultLayout, type RoomLayout } from "./layout.js";
 import { AssetLoader } from "./asset-loader.js";
 
+const WALK_MS_PER_TILE = 250;
+const TILE_SIZE_PX = 64;
+
 interface LegacyAgentSprite {
   container: Container;
   nameText: Text;
@@ -34,6 +37,11 @@ interface LegacyAgentSprite {
   targetY: number;
   currentX: number;
   currentY: number;
+  lastRoomId: string | null;
+  walkStartX: number;
+  walkStartY: number;
+  walkElapsed: number;
+  walkDuration: number;
 }
 
 export interface PixelOfficeSceneOptions {
@@ -282,6 +290,11 @@ export class PixelOfficeScene {
       targetY: 0,
       currentX: 0,
       currentY: 0,
+      lastRoomId: agent.currentRoomId ?? null,
+      walkStartX: 0,
+      walkStartY: 0,
+      walkElapsed: 0,
+      walkDuration: 0,
     };
   }
 
@@ -322,6 +335,16 @@ export class PixelOfficeScene {
         sprite.targetX = commandRoom.bounds.x + commandRoom.bounds.width / 2;
         sprite.targetY = commandRoom.bounds.y + commandRoom.bounds.height / 2;
       }
+    }
+
+    // 房间变化时启动行走插值
+    if (agent.currentRoomId !== sprite.lastRoomId) {
+      sprite.lastRoomId = agent.currentRoomId;
+      sprite.walkStartX = sprite.currentX;
+      sprite.walkStartY = sprite.currentY;
+      sprite.walkElapsed = 0;
+      const distance = Math.hypot(sprite.targetX - sprite.currentX, sprite.targetY - sprite.currentY);
+      sprite.walkDuration = (distance / TILE_SIZE_PX) * WALK_MS_PER_TILE;
     }
 
     // 初始化位置
@@ -395,8 +418,8 @@ export class PixelOfficeScene {
     if (this.useSpriteRenderer && this.agentRenderer) {
       this.agentRenderer.tick(ticker.deltaMS);
 
-      // 持续刷新效果层（blocked/working/approval）；reduceMotion 在 renderer 内部控制脉冲
-      if (this.currentProjection && this.currentLayout) {
+      // 持续刷新效果层（blocked/working/approval）；reduceMotion 下只渲染一次，不逐帧刷新
+      if (!this.reduceMotion && this.currentProjection && this.currentLayout) {
         this.effectRenderer?.render(this.currentProjection, this.currentLayout, ticker.deltaMS);
       }
       return;
@@ -410,17 +433,20 @@ export class PixelOfficeScene {
     for (const sprite of this.agentSprites.values()) {
       const dx = sprite.targetX - sprite.currentX;
       const dy = sprite.targetY - sprite.currentY;
-      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-        if (this.reduceMotion) {
-          sprite.currentX = sprite.targetX;
-          sprite.currentY = sprite.targetY;
-        } else {
-          sprite.currentX += dx * 0.1;
-          sprite.currentY += dy * 0.1;
-        }
-        sprite.container.x = sprite.currentX;
-        sprite.container.y = sprite.currentY;
+      const isMoving = Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
+      if (!isMoving) continue;
+
+      if (this.reduceMotion) {
+        sprite.currentX = sprite.targetX;
+        sprite.currentY = sprite.targetY;
+      } else {
+        sprite.walkElapsed += ticker.deltaMS;
+        const progress = Math.min(sprite.walkElapsed / sprite.walkDuration, 1);
+        sprite.currentX = sprite.walkStartX + (sprite.targetX - sprite.walkStartX) * progress;
+        sprite.currentY = sprite.walkStartY + (sprite.targetY - sprite.walkStartY) * progress;
       }
+      sprite.container.x = sprite.currentX;
+      sprite.container.y = sprite.currentY;
     }
 
     // 如果有 pendingApprovals，持续刷新 overlay 闪烁（reduceMotion 时保持静态）

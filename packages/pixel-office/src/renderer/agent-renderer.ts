@@ -470,12 +470,7 @@ export class AgentRenderer {
           sprite.container.x = sprite.currentX;
           sprite.container.y = sprite.currentY;
         } else if (sprite.currentState === "walk") {
-          const agent =
-            this.lastProjection?.agents.find((a) => a.agentId === sprite.agentId) ??
-            ({ status: sprite.lastStatus } as AgentView);
-          sprite.currentTexture = null;
-          sprite.walkFrameIndex = 0;
-          this.applyVisual(sprite, agent);
+          this.finalizeWalk(sprite);
         }
         continue;
       }
@@ -501,23 +496,11 @@ export class AgentRenderer {
         }
 
         if (progress >= 1) {
-          // Arrived: switch back to status-based state
-          const agent =
-            this.lastProjection?.agents.find((a) => a.agentId === sprite.agentId) ??
-            ({ status: sprite.lastStatus } as AgentView);
-          sprite.currentTexture = null;
-          sprite.walkFrameIndex = 0;
-          this.applyVisual(sprite, agent);
+          this.finalizeWalk(sprite);
         }
       } else {
         if (sprite.currentState === "walk") {
-          // Arrived: switch back to status-based state
-          const agent =
-            this.lastProjection?.agents.find((a) => a.agentId === sprite.agentId) ??
-            ({ status: sprite.lastStatus } as AgentView);
-          sprite.currentTexture = null;
-          sprite.walkFrameIndex = 0;
-          this.applyVisual(sprite, agent);
+          this.finalizeWalk(sprite);
         }
 
         if (sprite.currentState === "idle") {
@@ -527,6 +510,15 @@ export class AgentRenderer {
         }
       }
     }
+  }
+
+  private finalizeWalk(sprite: AgentSprite): void {
+    const agent =
+      this.lastProjection?.agents.find((a) => a.agentId === sprite.agentId) ??
+      ({ status: sprite.lastStatus } as AgentView);
+    sprite.currentTexture = null;
+    sprite.walkFrameIndex = 0;
+    this.applyVisual(sprite, agent);
   }
 
   private applyIdleBreathe(sprite: AgentSprite, deltaMS: number): void {

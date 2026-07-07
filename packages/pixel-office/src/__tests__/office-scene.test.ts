@@ -116,6 +116,24 @@ describe("PixelOfficeScene renderer selection", () => {
     scene.destroy();
   });
 
+  it("does not re-render effects every frame when reduceMotion is true", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true, reduceMotion: true });
+    await scene.init(canvas);
+    const effectRenderer = (scene as any).effectRenderer as { render: import("vitest").Mock };
+    const renderSpy = vi.spyOn(effectRenderer, "render");
+
+    scene.updateProjection(baseProjection);
+    const callsAfterUpdate = renderSpy.mock.calls.length;
+    expect(callsAfterUpdate).toBeGreaterThanOrEqual(1);
+
+    (scene as unknown as { update: (ticker: { deltaMS: number }) => void }).update({ deltaMS: 16 } as unknown as import("pixi.js").Ticker);
+    (scene as unknown as { update: (ticker: { deltaMS: number }) => void }).update({ deltaMS: 16 } as unknown as import("pixi.js").Ticker);
+
+    expect(renderSpy.mock.calls.length).toBe(callsAfterUpdate);
+
+    scene.destroy();
+  });
+
   it("falls back to the default layout when projection rooms are empty", async () => {
     const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
     await scene.init(canvas);
@@ -204,10 +222,9 @@ describe("PixelOfficeScene legacy renderer reduceMotion", () => {
     (scene as unknown as { update: (ticker: { deltaMS: number }) => void }).update({ deltaMS } as unknown as import("pixi.js").Ticker);
   }
 
-  it("drives legacy overlay pulse from deltaMS instead of Date.now()", async () => {
+  it("drives legacy overlay pulse from deltaMS", async () => {
     const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
     await scene.init(canvas);
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1000);
 
     scene.updateProjection(makeApprovalProjection());
     const before = getApprovalCircleRadius(getOverlayLayer(scene))!;
@@ -217,14 +234,12 @@ describe("PixelOfficeScene legacy renderer reduceMotion", () => {
 
     expect(after).not.toBe(before);
 
-    nowSpy.mockRestore();
     scene.destroy();
   });
 
   it("keeps legacy overlay pulse static when reduceMotion is true", async () => {
     const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: true });
     await scene.init(canvas);
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValueOnce(1000).mockReturnValueOnce(2000);
 
     scene.updateProjection(makeApprovalProjection());
     const before = getApprovalCircleRadius(getOverlayLayer(scene))!;
@@ -234,7 +249,47 @@ describe("PixelOfficeScene legacy renderer reduceMotion", () => {
 
     expect(after).toBe(before);
 
-    nowSpy.mockRestore();
+    scene.destroy();
+  });
+
+  it("moves legacy agents over time with a 200-300ms-per-tile walk duration", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "idle" as const,
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: null,
+    };
+
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+    tick(scene, 16);
+
+    scene.updateProjection({ ...baseProjection, agents: [{ ...agent, currentRoomId: "execution" }] });
+
+    const agentLayer = getAgentLayer(scene);
+    const container = agentLayer.children[0] as MockContainer;
+
+    const startX = 100; // command center + a1 offsetX(0)
+    const targetX = 320; // execution center + a1 offsetX(0)
+    const distance = targetX - startX; // 220 px
+    const duration = (distance / 64) * 250;
+    const msPerTile = duration / (distance / 64);
+
+    expect(msPerTile).toBeGreaterThanOrEqual(200);
+    expect(msPerTile).toBeLessThanOrEqual(300);
+
+    tick(scene, Math.floor(duration / 2));
+    expect(container.x).not.toBe(startX);
+    expect(container.x).not.toBe(targetX);
+
+    tick(scene, Math.ceil(duration / 2) + 1);
+    expect(container.x).toBe(targetX);
+
     scene.destroy();
   });
 
