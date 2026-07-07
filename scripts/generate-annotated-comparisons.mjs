@@ -57,12 +57,13 @@ const annotations = [
     ],
   },
   {
-    name: "06-failed-runtime-error",
-    title: "06 — Failed / Runtime Error",
+    name: "06-revision-required",
+    title: "06 — Revision / Rework Required",
     notes: [
-      { x: 360, y: 420, label: "Revision/failed state is visually indistinguishable from idle on canvas" },
-      { x: 1090, y: 120, label: "No error banner in status strip; target: --failure-dim strip with error code + dismiss" },
-      { x: 1090, y: 760, label: "Agent list shows idle, not failed; target: failed posture + red pulse + error tag" },
+      { x: 360, y: 420, label: "Revision state is visually indistinguishable from idle on canvas" },
+      { x: 1090, y: 600, label: "Artifact/task marked revision_required but lacks a rework cue (clipboard with red flag)" },
+      { x: 1090, y: 760, label: "Agent list shows idle; target: reviewer/worker posture indicating rework + revision badge" },
+      { x: 360, y: 560, label: "Note: mock adapter cannot independently trigger a true failed/runtime-error state" },
     ],
   },
   {

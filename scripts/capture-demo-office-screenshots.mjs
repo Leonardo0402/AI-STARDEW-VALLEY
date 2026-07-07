@@ -73,13 +73,13 @@ try {
   await sleep(500);
   await capture(page, "05-blocked-task-agent");
 
-  // 6. Failed / runtime error (revision flow)
+  // 6. Revision / rework required
   await clickButton(page, "重置");
   await sleep(1000);
   await clickButton(page, "异常: 返工");
   await waitForText(page, "revision_required");
   await sleep(500);
-  await capture(page, "06-failed-runtime-error");
+  await capture(page, "06-revision-required");
 
   // 7. Focus mode
   await clickButton(page, "重置");
