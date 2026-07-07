@@ -60,7 +60,7 @@ This audit therefore splits the evidence into two sections:
   - selected agent on canvas + highlighted panel card,
   - hovered/selected task or artifact card,
   - selected room and related active agents.
-- The annotation script still labels pre-PR #24 gaps and must be updated to current-gap labels.
+- The annotation script has been updated to use current-gap labels; the remaining work is to capture selected/hovered states in the screenshot pipeline.
 
 ### 5. Runtime degraded / failed state capture limited by mock adapter
 
