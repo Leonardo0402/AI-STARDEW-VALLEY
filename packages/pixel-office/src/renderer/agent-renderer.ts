@@ -415,7 +415,7 @@ export class AgentRenderer {
     const cbW = 6;
     const cbH = 9;
     const cbX = f === 1 ? bx + 4 : bx - 4 - cbW;
-    g.rect(cbX, by - 18, cbW, cbH).fill({ color: 0xd8d0c8 }).stroke({ color: accentColor, width: 1 });
+    g.rect(cbX, by - 18, cbW, cbH).fill({ color: 0xa89788 }).stroke({ color: accentColor, width: 1 });
     // Clipboard clip
     g.rect(cbX + 1, by - 19, 4, 2).fill({ color: accentColor });
 

@@ -224,5 +224,13 @@ describe("AgentRenderer", () => {
     const pouch = rects.find((c) => c.args[2] === 4 && c.args[3] === 4);
     expect(pouch).toBeDefined();
     expect(Math.sign(pouch!.args[0] as number)).toBe(expectedFaceDir);
+
+    // Approval posture is a subtle turn (body offset 1); working is a stronger lean (body offset 2).
+    const approvalBodyX = rects.find((c) => c.args[2] === 14 && c.args[3] === 15)!.args[0] as number;
+    agent.status = "working";
+    renderer.render([agent], layout, projection);
+    const workingRects = getAgentBody(container, 0).commands.filter((c) => c.type === "rect");
+    const workingBodyX = workingRects.find((c) => c.args[2] === 14 && c.args[3] === 15)!.args[0] as number;
+    expect(Math.abs(approvalBodyX - target.x)).toBeGreaterThan(Math.abs(workingBodyX - target.x));
   });
 });
