@@ -13,9 +13,60 @@ const RESOLUTIONS = [
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function capture(page, outDir, name) {
+/**
+ * Parse PNG dimensions from the IHDR chunk.
+ * Playwright screenshots are written at the device pixel ratio, so the
+ * returned size is in physical pixels.
+ */
+function readPngDimensions(filePath) {
+  const buf = fs.readFileSync(filePath);
+  if (buf.length < 24 || buf[0] !== 0x89) {
+    throw new Error(`Not a PNG file: ${filePath}`);
+  }
+  // Offset 16: width, offset 20: height (big-endian).
+  const width = buf.readUInt32BE(16);
+  const height = buf.readUInt32BE(20);
+  return { width, height };
+}
+
+async function assertScreenshot(page, filePath, viewportWidth, viewportHeight) {
+  const dpr = await page.evaluate(() => window.devicePixelRatio || 1);
+  const { scrollWidth, clientWidth, scrollHeight } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+    scrollHeight: document.documentElement.scrollHeight,
+  }));
+
+  if (scrollWidth > clientWidth) {
+    throw new Error(
+      `Horizontal overflow detected at ${viewportWidth}x${viewportHeight}: ` +
+      `scrollWidth=${scrollWidth} > clientWidth=${clientWidth}`
+    );
+  }
+
+  const { width, height } = readPngDimensions(filePath);
+  const expectedWidth = viewportWidth * dpr;
+  const expectedHeight = scrollHeight * dpr;
+
+  if (width !== expectedWidth) {
+    throw new Error(
+      `PNG width mismatch for ${filePath}: got ${width}, expected ${expectedWidth} ` +
+      `(viewport ${viewportWidth} * dpr ${dpr})`
+    );
+  }
+
+  if (height !== expectedHeight) {
+    throw new Error(
+      `PNG height mismatch for ${filePath}: got ${height}, expected ${expectedHeight} ` +
+      `(scrollHeight ${scrollHeight} * dpr ${dpr})`
+    );
+  }
+}
+
+async function capture(page, outDir, name, viewportWidth, viewportHeight) {
   const filePath = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: filePath, fullPage: true });
+  await assertScreenshot(page, filePath, viewportWidth, viewportHeight);
   console.log(`Captured: ${filePath}`);
 }
 
@@ -36,7 +87,27 @@ async function waitForStable(page) {
   await page.waitForLoadState("load");
 }
 
+async function clickAgentCard(page, name) {
+  const card = page.locator(`.card:has-text("${name}")`).first();
+  await card.click();
+}
+
+async function clickTaskCard(page, title) {
+  const card = page.locator(`.card:has-text("${title}")`).first();
+  await card.click();
+}
+
 let browser;
+
+const skippedStates = [];
+
+function skipState(name, reason) {
+  const entry = `${name}: ${reason}`;
+  if (!skippedStates.includes(entry)) {
+    skippedStates.push(entry);
+    console.log(`Skipped state: ${entry}`);
+  }
+}
 
 try {
   browser = await chromium.launch({
@@ -56,26 +127,31 @@ try {
     await sleep(2000);
 
     // Rebind capture to this resolution's output directory.
-    const captureHere = (p, name) => capture(p, outDir, name);
+    const captureHere = (name) => capture(page, outDir, name, width, height);
 
     // 1. Idle office
-    await captureHere(page, "01-idle-office");
+    await captureHere("01-idle-office");
 
     // 2. Active task execution
     await clickButton(page, "正常流程");
     await waitForText(page, "working");
     await sleep(500);
-    await captureHere(page, "02-active-task-execution");
+    await captureHere("02-active-task-execution");
+
+    // 10. Selected task card (uses the active task from state 02)
+    await clickTaskCard(page, "分析项目代码质量");
+    await sleep(500);
+    await captureHere("10-selected-task-card");
 
     // 3. Artifact under review
     await waitForText(page, "reviewing");
     await sleep(500);
-    await captureHere(page, "03-artifact-under-review");
+    await captureHere("03-artifact-under-review");
 
     // 4. Pending approval
     await waitForText(page, "Approve");
     await sleep(500);
-    await captureHere(page, "04-pending-approval");
+    await captureHere("04-pending-approval");
 
     // 5. Blocked task / agent
     await clickButton(page, "重置");
@@ -83,7 +159,7 @@ try {
     await clickButton(page, "异常: 阻塞");
     await waitForText(page, "blocked");
     await sleep(500);
-    await captureHere(page, "05-blocked-task-agent");
+    await captureHere("05-blocked-task-agent");
 
     // 6. Revision / rework required
     await clickButton(page, "重置");
@@ -91,7 +167,7 @@ try {
     await clickButton(page, "异常: 返工");
     await waitForText(page, "revision_required");
     await sleep(500);
-    await captureHere(page, "06-revision-required");
+    await captureHere("06-revision-required");
 
     // 7. Focus mode
     await clickButton(page, "重置");
@@ -101,16 +177,41 @@ try {
     await sleep(500);
     await page.locator("text=Focus").first().click();
     await sleep(1000);
-    await captureHere(page, "07-focus-mode");
+    await captureHere("07-focus-mode");
 
     // 8. Debrief mode
     await page.locator("text=Debrief").first().click();
     await sleep(1000);
-    await captureHere(page, "08-debrief-mode");
+    await captureHere("08-debrief-mode");
+
+    // 9. Selected agent on canvas + highlighted panel card
+    await clickButton(page, "重置");
+    await sleep(1000);
+    await page.locator("text=Command").first().click();
+    await sleep(500);
+    await clickAgentCard(page, "Orchestrator");
+    await sleep(500);
+    await captureHere("09-selected-agent");
 
     await context.close();
     console.log(`Resolution ${width}x${height} complete.`);
   }
+
+  // New states that cannot be truthfully produced by the current mock adapter.
+  skipState(
+    "artifact-metadata-only / unavailable / unsupported-open",
+    "MockRuntimeAdapter always creates artifacts with a URI and reports ARTIFACT_OPEN as supported; " +
+    "there is no truthful path to metadata-only, unavailable, or unsupported-open artifact content."
+  );
+  skipState(
+    "runtime-degraded",
+    "MockRuntimeAdapter has no API or scripted scenario that emits a genuine runtime/session degraded state."
+  );
+  skipState(
+    "runtime-failed",
+    "MockRuntimeAdapter can emit blocked agents/tasks and revision_required artifacts, " +
+    "but cannot independently trigger a genuine runtime-failed / runtime-error state."
+  );
 
   console.log("All screenshots captured.");
 } catch (err) {

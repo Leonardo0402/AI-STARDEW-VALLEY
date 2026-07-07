@@ -4,7 +4,7 @@
 > Baseline screenshots: `docs/design/swarm-office-v1.1/baseline/{1366x768,1440x900,1920x1080}/`
 > Annotated comparisons: `docs/design/swarm-office-v1.1/annotated-comparisons/`
 > Reference: `docs/design/swarm-office/design-system.md` + `docs/design/swarm-office/high-fidelity-designs-preview.png`
-> PR context: Task 0 of Issue #25; pre-PR #24 findings are now historical. Refs #14.
+> PR context: Task 3 of Issue #25; pre-PR #24 findings are now historical. Refs #14.
 
 ## Executive summary
 
@@ -49,18 +49,19 @@ This audit therefore splits the evidence into two sections:
 
 ### 3. Multi-resolution layout hardening
 
-- Baselines exist for `1366x768`, `1440x900`, and `1920x1080`, but a per-resolution pass has not been completed.
-- `1366x768`: panel density, mode-switcher labels, and card text need legibility verification.
-- `1920x1080`: extra horizontal space can leave the stage/panel feeling loose; spacing and panel width need audit.
+- Baselines were re-captured at `1366x768`, `1440x900`, and `1920x1080` with dimension and overflow assertions.
+- No horizontal overflow was detected at any target resolution.
+- `1366x768` panel density, mode-switcher labels, and card text remain legible.
+- `1920x1080` uses the extra stage width for the centered, scaled canvas; the `420px` panel feels proportional.
 - The responsive auto-switch to list view below `1024px` is implemented but not baselined.
 
-### 4. Selected / hovered state capture missing from visual QA
+### 4. Selected / hovered state capture
 
-- The screenshot pipeline captures the eight default runtime states, but does not capture:
-  - selected agent on canvas + highlighted panel card,
-  - hovered/selected task or artifact card,
-  - selected room and related active agents.
-- The annotation script has been updated to use current-gap labels; the remaining work is to capture selected/hovered states in the screenshot pipeline.
+- The screenshot pipeline now captures:
+  - selected agent on canvas + highlighted panel card (`09-selected-agent`),
+  - selected task card + highlighted assignee on canvas (`10-selected-task-card`).
+- Linked selection for agent and task is therefore baselined.
+- Not yet captured: hover-only states, selected room and related active agents, selected approval/artifact cross-highlight, and selected/hovered rows in Debrief mode.
 
 ### 5. Runtime degraded / failed state capture limited by mock adapter
 
@@ -84,7 +85,7 @@ Old flat files directly under `baseline/` have been removed and must stay gone. 
 
 ## V1.1 verification
 
-This section records the visual QA evidence after PR #24. All eight baseline screenshots and annotated comparisons were re-captured on 2026-07-08 across the three canonical resolutions.
+This section records the visual QA evidence after PR #24 and Task 3. All ten baseline screenshots and annotated comparisons were re-captured on 2026-07-08 across the three canonical resolutions.
 
 ### Re-captured states
 
@@ -98,6 +99,8 @@ This section records the visual QA evidence after PR #24. All eight baseline scr
 | 06 | Revision / rework required | `baseline/1440x900/06-revision-required.png` | `06-revision-required-annotated.png` |
 | 07 | Focus mode | `baseline/1440x900/07-focus-mode.png` | `07-focus-mode-annotated.png` |
 | 08 | Debrief mode | `baseline/1440x900/08-debrief-mode.png` | `08-debrief-mode-annotated.png` |
+| 09 | Selected agent | `baseline/1440x900/09-selected-agent.png` | `09-selected-agent-annotated.png` |
+| 10 | Selected task card | `baseline/1440x900/10-selected-task-card.png` | `10-selected-task-card-annotated.png` |
 
 ### Visual upgrades verified
 
@@ -115,20 +118,29 @@ The regenerated evidence shows the following V1.1 improvements over the original
 
 The mock adapter cannot independently trigger a genuine runtime `failed` / runtime-error state. The V1.1 demo therefore honestly labels state 06 as **revision / rework required** (triggered by the "异常：返工" scenario) rather than as a true runtime failure. The canvas and panel still communicate rework through the reviewer posture, review-room props, and related task cues.
 
-## Resolution pass (pending)
+## Resolution pass
 
-A dedicated per-resolution pass is part of Issue #25 Task 3. Until that pass is completed, the following preliminary concerns are recorded:
+A dedicated per-resolution pass was run on 2026-07-08 across `1366x768`, `1440x900`, and `1920x1080` using the updated `capture-demo-office-screenshots.mjs`. The script asserts that every PNG matches the target viewport width, matches the full-page height, and that `document.documentElement.scrollWidth <= clientWidth`.
 
-- `1366x768`: verify that the right panel at `360px` width does not truncate card text or badges.
-- `1440x900`: current reference resolution; used as the source for annotated comparisons.
-- `1920x1080`: verify that the wider `420px` panel and the centered canvas scaling use the extra space without excessive letterboxing.
+| Resolution | Panel width | Approx. stage width | Observations |
+|---|---|---|---|
+| `1366x768` | `360px` | `1006px` | No horizontal overflow; panel density, mode-switcher labels, and card text remain legible. |
+| `1440x900` | `380px` | `1060px` | Reference resolution used for annotated comparisons; no overflow. |
+| `1920x1080` | `420px` | `1500px` | No horizontal overflow; extra stage width is used by the centered, scaled canvas without excessive letterboxing. |
+
+Findings:
+
+- All three resolutions pass the dimension and overflow assertions.
+- Full-page screenshots scale correctly with the device pixel ratio.
+- The responsive panel shrink (`360px` / `380px` / `420px`) keeps the layout balanced.
+- Gaps not resolved by this pass: artifact truth states that the mock adapter cannot produce (`metadata-only`, `unavailable`, `unsupported-open`), and runtime `degraded` / `failed` states.
 
 ## Appendix: artifact inventory
 
 | Artifact | Path |
 |----------|------|
 | Plan | `docs/superpowers/plans/2026-07-08-issue-25-swarm-office-follow-up.md` |
-| Task brief | `docs/superpowers/plans/task-0-brief.md` |
+| Task brief | `docs/superpowers/plans/task-3-brief.md` |
 | Design system | `docs/design/swarm-office/design-system.md` |
 | High-fidelity reference | `docs/design/swarm-office/high-fidelity-designs-preview.png` |
 | Baseline screenshots | `docs/design/swarm-office-v1.1/baseline/{1366x768,1440x900,1920x1080}/` |
