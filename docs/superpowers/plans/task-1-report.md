@@ -129,3 +129,41 @@ DONE
 - room 选择现在会同时高亮房间及其全部活跃 agent（通过 `selectAgents`）。
 - Reset / adapter reset 已通过 `DemoControls.onReset` 回调显式清空选择。
 - 未执行 `git push`。
+
+## 复评修复（re-reviewer findings）
+
+本次针对复评发现的问题进行了第三轮修复：
+
+### 修改文件
+
+- `packages/pixel-office/src/renderer/agent-renderer.ts`
+  - 新增 `onSelectAgent?: (agentId: string) => void` 属性。
+  - 在 `createAgentSprite` 中为 agent 容器设置 `eventMode = "static"`、`cursor = "pointer"`，并监听 `pointerdown` 事件，触发 `this.onSelectAgent?.(agent.agentId)`。
+
+- `packages/pixel-office/src/office-scene.ts`
+  - 在 `init` 中创建 `AgentRenderer` 后，立即绑定 `agentRenderer.onSelectAgent`，将画布 agent 点击转发为 `{ kind: "agent", id: agentId }` 并通过 `setOnSelect` 回调传出。
+  - 绑定发生在渲染器创建之后，确保 `agentRenderer` 重建时回调仍然生效。
+
+- `packages/control-ui/src/ControlPanel.tsx`
+  - Agent / Task / Artifact 卡片的 `selectable` 现在仅由 `Boolean(onSelect)` 决定，不再依赖 `selection !== null`，避免无选择回调时卡片仍被键盘聚焦。
+  - `setCardRef` 使用 `useCallback` 包裹，依赖项为空数组，避免每次渲染重新创建 ref 回调。
+
+- `packages/control-ui/src/ControlPanel.test.tsx`
+  - 为 `scrollIntoView` mock 添加清理：在 `ControlPanel selection` 描述块中保存原始 `Element.prototype.scrollIntoView`，并在 `afterEach` 中恢复，防止污染后续测试。
+  - 更新“选中卡片高亮属性”测试，补充传入 `onSelect`，以配合新的 `selectable` 语义。
+
+- `packages/pixel-office/src/__tests__/pixi-mock.ts`
+  - `MockContainer` 新增 `eventHandlers` 注册表与 `on(event, handler)` 方法，用于记录 PixiJS 风格的事件监听，支持画布交互测试。
+
+- `packages/pixel-office/src/__tests__/office-scene.test.ts`
+  - 新增测试：触发 agent sprite 的 `pointerdown` 事件后，`setOnSelect` 回调收到 `{ kind: "agent", id: "agent-1" }`。
+
+### 验证结果
+
+- `npm test -- --run`：59 个测试文件，638 个测试全部通过。
+- `npm run build`：TypeScript 与 demo-office Vite 构建均通过（仅有大于 500kB chunk 的常规警告）。
+
+### 提交
+
+- `fix(pixel-office,control-ui): wire canvas agent click selection and clean up review findings for Issue #25`
+  - 修复复评发现的 canvas agent 点击未绑定、`selectable` 语义不一致、ref 回调不稳定、`scrollIntoView` mock 污染及测试覆盖问题。

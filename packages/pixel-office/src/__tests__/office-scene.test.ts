@@ -799,6 +799,42 @@ describe("PixelOfficeScene selection API", () => {
     scene.destroy();
   });
 
+  it("forwards pointerdown on an agent sprite to the setOnSelect callback", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const onSelect = vi.fn();
+    scene.setOnSelect(onSelect);
+
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      agents: [
+        {
+          agentId: "agent-1",
+          name: "Agent 1",
+          role: "worker",
+          status: "idle",
+          currentTaskId: null,
+          currentRoomId: "command",
+          blockedReason: null,
+        },
+      ],
+    };
+
+    scene.updateProjection(projection);
+
+    const agentLayer = (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[2] as MockContainer;
+    const container = agentLayer.children[0] as MockContainer;
+    const pointerDownHandlers = container.eventHandlers["pointerdown"];
+    expect(pointerDownHandlers?.length).toBeGreaterThan(0);
+    pointerDownHandlers![0]();
+
+    expect(onSelect).toHaveBeenCalledWith({ kind: "agent", id: "agent-1" });
+
+    scene.destroy();
+  });
+
   it("renders a highlight outline around a selected room", async () => {
     const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
     await scene.init(canvas);

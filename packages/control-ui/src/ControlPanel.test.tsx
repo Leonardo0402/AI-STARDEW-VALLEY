@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ControlPanel, type ExperienceMode } from "./ControlPanel.js";
 import { CommandType } from "@agent-office/protocol";
 import type { OfficeProjection, DomainEvent, AdapterCapabilities } from "@agent-office/protocol";
@@ -558,6 +558,12 @@ describe("ControlPanel", () => {
 });
 
 describe("ControlPanel selection", () => {
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  });
+
   it("calls onSelect when clicking an agent card", () => {
     const onSelect = vi.fn();
     renderPanel({ onSelect });
@@ -585,6 +591,7 @@ describe("ControlPanel selection", () => {
   it("marks the selected card with highlight attributes", () => {
     renderPanel({
       selection: { kind: "agent", id: "agent-1" },
+      onSelect: vi.fn(),
     });
     const card = screen.getByText("Orchestrator").closest(".card") as HTMLElement;
     expect(card).toHaveAttribute("aria-pressed", "true");

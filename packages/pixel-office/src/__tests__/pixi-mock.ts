@@ -82,6 +82,12 @@ export class MockContainer {
     }),
   };
   public removed = false;
+  public eventHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
+
+  on(event: string, handler: (...args: unknown[]) => void): void {
+    if (!this.eventHandlers[event]) this.eventHandlers[event] = [];
+    this.eventHandlers[event].push(handler);
+  }
 
   addChild(child: unknown): unknown {
     this.children.push(child);

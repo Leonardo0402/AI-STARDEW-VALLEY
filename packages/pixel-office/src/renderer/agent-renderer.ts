@@ -75,6 +75,8 @@ export class AgentRenderer {
   private reduceMotion = false;
   private selectedIds = new Set<string>();
 
+  onSelectAgent?: (agentId: string) => void;
+
   constructor(
     private layer: Container,
     private assetLoader?: AssetLoader,
@@ -169,6 +171,10 @@ export class AgentRenderer {
     container.addChild(body);
     container.addChild(nameText);
     container.addChild(statusText);
+
+    container.eventMode = "static";
+    container.cursor = "pointer";
+    container.on("pointerdown", () => this.onSelectAgent?.(agent.agentId));
 
     return {
       container,

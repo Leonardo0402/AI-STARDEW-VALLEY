@@ -154,6 +154,7 @@ export class PixelOfficeScene {
       this.roomRenderer = new RoomRenderer(this.roomLayer, this.assetLoader);
       this.propRenderer = new PropRenderer(this.propLayer, this.assetLoader);
       this.agentRenderer = new AgentRenderer(this.agentLayer, this.assetLoader, this.reduceMotion);
+      this.agentRenderer.onSelectAgent = (agentId) => this.onSelectCallback?.({ kind: "agent", id: agentId });
       this.effectRenderer = new EffectRenderer(this.overlayLayer, this.assetLoader, this.reduceMotion);
     }
 
