@@ -275,6 +275,27 @@ describe("AgentRenderer", () => {
     expect(c.scale.y).toBe(startScaleY);
   });
 
+  it("wraps idlePhase to prevent float drift", () => {
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "idle";
+    renderer.render([agent], layout, makeProjection([agent]));
+
+    renderer.tick(1500 * 100 + 375);
+    expect(renderer.getAgentIdlePhase("a1")).toBe(375);
+  });
+
+  it("applies idle breathe via container.scale.set", () => {
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "idle";
+    renderer.render([agent], layout, makeProjection([agent]));
+
+    const c = getAgentContainer(container, 0);
+    renderer.tick(0);
+    c.scale.set.mockClear();
+    renderer.tick(375);
+    expect(c.scale.set).toHaveBeenCalled();
+  });
+
   it("moves agents over time with a 200-300ms-per-tile walk duration", () => {
     renderer.render([makeAgent("a1", "command")], layout, makeProjection([]));
     renderer.render([makeAgent("a1", "execution")], layout, makeProjection([]));

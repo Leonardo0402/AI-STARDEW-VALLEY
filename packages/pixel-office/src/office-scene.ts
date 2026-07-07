@@ -102,6 +102,12 @@ export class PixelOfficeScene {
     this.reduceMotion = value;
     this.agentRenderer?.setReduceMotion(value);
     this.effectRenderer?.setReduceMotion(value);
+    if (value) {
+      for (const sprite of this.agentSprites.values()) {
+        sprite.container.scale.set(1, 1);
+        sprite.container.y = sprite.currentY;
+      }
+    }
   }
 
   async init(canvas: HTMLCanvasElement): Promise<void> {
@@ -327,23 +333,10 @@ export class PixelOfficeScene {
       .stroke({ color: this.getStatusColor(agent.status), width: 2 });
 
     // 根据 currentRoomId 定位
-    if (agent.currentRoomId) {
-      const room = rooms.find((r) => r.roomId === agent.currentRoomId);
-      if (room) {
-        // 在房间内随机偏移定位（基于 agentId 哈希）
-        const hash = agent.agentId.charCodeAt(agent.agentId.length - 1);
-        const offsetX = ((hash % 3) - 1) * 80;
-        const offsetY = ((hash % 2) - 0.5) * 100;
-        sprite.targetX = room.bounds.x + room.bounds.width / 2 + offsetX;
-        sprite.targetY = room.bounds.y + room.bounds.height / 2 + offsetY;
-      }
-    } else {
-      // 没有 room 的 agent 放在指挥区
-      const commandRoom = rooms.find((r) => r.type === "command");
-      if (commandRoom) {
-        sprite.targetX = commandRoom.bounds.x + commandRoom.bounds.width / 2;
-        sprite.targetY = commandRoom.bounds.y + commandRoom.bounds.height / 2;
-      }
+    const position = this.computeLegacyAgentPosition(agent, rooms);
+    if (position) {
+      sprite.targetX = position.x;
+      sprite.targetY = position.y;
     }
 
     // 房间变化时启动行走插值
@@ -470,7 +463,7 @@ export class PixelOfficeScene {
     }
   }
 
-  private getAgentRenderPosition(agent: AgentView, rooms: RoomView[]): { x: number; y: number } | null {
+  private computeLegacyAgentPosition(agent: AgentView, rooms: RoomView[]): { x: number; y: number } | null {
     if (!agent.currentRoomId) {
       const commandRoom = rooms.find((r) => r.type === "command");
       if (!commandRoom) return null;
@@ -488,6 +481,14 @@ export class PixelOfficeScene {
       x: room.bounds.x + room.bounds.width / 2 + offsetX,
       y: room.bounds.y + room.bounds.height / 2 + offsetY,
     };
+  }
+
+  private getAgentRenderPosition(agent: AgentView, rooms: RoomView[]): { x: number; y: number } | null {
+    const sprite = this.agentSprites.get(agent.agentId);
+    if (sprite) {
+      return { x: sprite.targetX, y: sprite.targetY };
+    }
+    return this.computeLegacyAgentPosition(agent, rooms);
   }
 
   private getRoleColor(role: string): number {
@@ -554,7 +555,10 @@ export class PixelOfficeScene {
       }
 
       // 静止 idle 时应用呼吸动画
-      if (!this.reduceMotion && this.currentProjection) {
+      if (this.reduceMotion) {
+        sprite.container.scale.set(1, 1);
+        sprite.container.y = sprite.currentY;
+      } else if (this.currentProjection) {
         const agent = this.currentProjection.agents.find((a) => a.agentId === sprite.agentId);
         if (agent && computeAgentPresentationState(agent, this.currentProjection) === "idle") {
           const t = Math.sin((this.idlePhase / IDLE_BREATHE_PERIOD_MS) * Math.PI * 2);

@@ -528,11 +528,10 @@ export class AgentRenderer {
   }
 
   private applyIdleBreathe(sprite: AgentSprite, deltaMS: number): void {
-    sprite.idlePhase += deltaMS;
+    sprite.idlePhase = (sprite.idlePhase + deltaMS) % IDLE_BREATHE_PERIOD_MS;
     const t = Math.sin((sprite.idlePhase / IDLE_BREATHE_PERIOD_MS) * Math.PI * 2);
     sprite.container.y = sprite.currentY + t * -1;
-    sprite.container.scale.y = 1 + t * 0.03;
-    sprite.container.scale.x = 1 + t * 0.01;
+    sprite.container.scale.set(1 + t * 0.01, 1 + t * 0.03);
   }
 
   private resetTransform(sprite: AgentSprite): void {
@@ -564,5 +563,12 @@ export class AgentRenderer {
   /** 测试钩子：返回当前所有 agent 的视觉处理记录。 */
   getAgentVisualTreatments(): AgentVisualTreatment[] {
     return Array.from(this.sprites.values()).map((sprite) => sprite.treatment);
+  }
+
+  /** 测试钩子：返回指定 agent 的 idle 呼吸相位。 */
+  getAgentIdlePhase(agentId: string): number | null {
+    const sprite = this.sprites.get(agentId);
+    if (!sprite) return null;
+    return sprite.idlePhase;
   }
 }

@@ -523,11 +523,73 @@ describe("PixelOfficeScene legacy renderer animations", () => {
 
     const container = getAgentLayer(scene).children[0] as MockContainer;
     const startY = container.y;
-    const startScaleCalls = container.scale.set.mock.calls.length;
 
     tick(scene, 375);
     expect(container.y).toBe(startY);
-    expect(container.scale.set.mock.calls.length).toBe(startScaleCalls);
+    expect(container.scale.x).toBe(1);
+    expect(container.scale.y).toBe(1);
+
+    scene.destroy();
+  });
+
+  it("resets legacy idle breathe transform when reduceMotion is enabled mid-animation", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "idle" as const,
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: null,
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+    tick(scene, 375);
+
+    const container = getAgentLayer(scene).children[0] as MockContainer;
+    expect(container.scale.x).not.toBe(1);
+
+    scene.setReduceMotion(true);
+    const sprite = (scene as unknown as { agentSprites: Map<string, { currentY: number }> }).agentSprites.get("a1")!;
+    expect(container.scale.x).toBe(1);
+    expect(container.scale.y).toBe(1);
+    expect(container.y).toBe(sprite.currentY);
+
+    scene.destroy();
+  });
+
+  it("reads stored target position for legacy overlay rendering", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "blocked" as const,
+      currentTaskId: null,
+      currentRoomId: "execution",
+      blockedReason: "stuck",
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+    tick(scene, 16);
+
+    const sprite = (scene as unknown as { agentSprites: Map<string, { targetX: number; targetY: number }> }).agentSprites.get("a1")!;
+    sprite.targetX = 999;
+    sprite.targetY = 888;
+    tick(scene, 16);
+
+    const overlayLayer = getOverlayLayer(scene);
+    const graphics = overlayLayer.children.filter((c) => c instanceof MockGraphics) as MockGraphics[];
+    const glow = graphics.find((g) =>
+      g.commands.some((c) => c.type === "circle" && (c.args[2] as number) > 16)
+    );
+    expect(glow).toBeDefined();
+    const glowCircle = glow!.commands.find((c) => c.type === "circle")!;
+    expect(glowCircle.args[0]).toBe(999);
+    expect(glowCircle.args[1]).toBe(888);
 
     scene.destroy();
   });
