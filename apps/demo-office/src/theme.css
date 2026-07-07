@@ -635,6 +635,11 @@
   color: var(--base-900);
 }
 
+.debrief-timeline__outcome--warning {
+  background: var(--urgency);
+  color: var(--base-900);
+}
+
 /* ─── Reduced Motion ──────────────────────────────────────── */
 
 .reduce-motion,

@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
 
-const BASELINE_DIR = path.join(process.cwd(), "docs/design/swarm-office-v1.1/baseline");
+const BASELINE_DIR = path.join(process.cwd(), "docs/design/swarm-office-v1.1/baseline/1440x900");
 const OUT_DIR = path.join(process.cwd(), "docs/design/swarm-office-v1.1/annotated-comparisons");
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -87,7 +87,7 @@ const annotations = [
 ];
 
 function buildHtml(item) {
-  const imgSrc = `../baseline/${item.name}.png`;
+  const imgSrc = `../baseline/1440x900/${item.name}.png`;
   const svgOverlays = item.notes
     .map((note, i) => {
       const num = i + 1;

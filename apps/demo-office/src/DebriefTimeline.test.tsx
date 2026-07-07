@@ -53,7 +53,7 @@ describe("DebriefTimeline", () => {
     expect(screen.getByTestId("summary-events-count").textContent).toBe("7");
   });
 
-  it("renders only milestone events in the key timeline", () => {
+  it("renders milestone events including task.blocked in the key timeline", () => {
     const events = [
       makeEvent(EventType.TASK_CREATED, 1),
       makeEvent(EventType.TASK_COMPLETED, 2),
@@ -62,21 +62,22 @@ describe("DebriefTimeline", () => {
       makeEvent(EventType.APPROVAL_RESOLVED, 5, { status: "approved" }),
       makeEvent(EventType.ARTIFACT_CREATED, 6),
       makeEvent(EventType.ARTIFACT_REVIEWED, 7, { verdict: "approved" }),
-      makeEvent(EventType.TASK_FAILED, 8),
+      makeEvent(EventType.ARTIFACT_REVIEWED, 8, { verdict: "revision_required" }),
+      makeEvent(EventType.TASK_FAILED, 9),
     ];
 
     render(<DebriefTimeline events={events} />);
 
     const rows = screen.getAllByTestId("debrief-timeline-row");
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(6);
 
     expect(screen.getByText(EventType.TASK_COMPLETED)).toBeInTheDocument();
+    expect(screen.getByText(EventType.TASK_BLOCKED)).toBeInTheDocument();
     expect(screen.getByText(EventType.APPROVAL_RESOLVED)).toBeInTheDocument();
-    expect(screen.getByText(EventType.ARTIFACT_REVIEWED)).toBeInTheDocument();
+    expect(screen.getAllByText(EventType.ARTIFACT_REVIEWED)).toHaveLength(2);
     expect(screen.getByText(EventType.TASK_FAILED)).toBeInTheDocument();
 
     expect(screen.queryByText(EventType.TASK_CREATED)).not.toBeInTheDocument();
-    expect(screen.queryByText(EventType.TASK_BLOCKED)).not.toBeInTheDocument();
     expect(screen.queryByText(EventType.APPROVAL_REQUESTED)).not.toBeInTheDocument();
     expect(screen.queryByText(EventType.ARTIFACT_CREATED)).not.toBeInTheDocument();
   });
@@ -87,7 +88,9 @@ describe("DebriefTimeline", () => {
         events={[
           makeEvent(EventType.TASK_COMPLETED, 1),
           makeEvent(EventType.APPROVAL_RESOLVED, 2, { status: "rejected" }),
-          makeEvent(EventType.TASK_FAILED, 3),
+          makeEvent(EventType.TASK_BLOCKED, 3),
+          makeEvent(EventType.ARTIFACT_REVIEWED, 4, { verdict: "revision_required" }),
+          makeEvent(EventType.TASK_FAILED, 5),
         ]}
       />
     );
@@ -97,6 +100,12 @@ describe("DebriefTimeline", () => {
     );
     expect(screen.getByText("rejected")).toHaveClass(
       "debrief-timeline__outcome--failure"
+    );
+    expect(screen.getByText("blocked")).toHaveClass(
+      "debrief-timeline__outcome--failure"
+    );
+    expect(screen.getByText("revision required")).toHaveClass(
+      "debrief-timeline__outcome--warning"
     );
     expect(screen.getByText("failed")).toHaveClass(
       "debrief-timeline__outcome--failure"

@@ -74,10 +74,11 @@ export const StatusStrip: FC<StatusStripProps> = ({
   onRetry,
 }) => {
   const hasProjectionFailure = failedCount > 0;
-  const isFailure = sessionState === "failed" || sessionState === "disconnected" || hasProjectionFailure;
+  const isSessionFailure = sessionState === "failed" || sessionState === "disconnected";
+  const isFailure = isSessionFailure || hasProjectionFailure;
   const isUrgency = sessionState === "degraded" && !hasProjectionFailure;
-  const error = failedError ?? diagnostics.lastError;
-  const showErrorDetails = isFailure && error;
+  const error = isSessionFailure ? (failedError ?? diagnostics.lastError) : failedError;
+  const showErrorDetails = (isFailure && error) ?? false;
 
   let actionButton: JSX.Element | null = null;
   if (sessionState === "degraded" && !hasProjectionFailure) {
@@ -86,7 +87,7 @@ export const StatusStrip: FC<StatusStripProps> = ({
         Resynchronize
       </button>
     );
-  } else if (isFailure) {
+  } else if (isSessionFailure) {
     if (retryable && onRetry) {
       actionButton = (
         <button className="status-action" onClick={onRetry}>

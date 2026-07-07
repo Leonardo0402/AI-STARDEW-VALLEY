@@ -1,7 +1,7 @@
 # Swarm Office V1.1 — Gap Audit
 
 > Evidence-based visual/UX gap analysis for `apps/demo-office`.
-> Baseline screenshots: `docs/design/swarm-office-v1.1/baseline/`
+> Baseline screenshots: `docs/design/swarm-office-v1.1/baseline/{1366x768,1440x900,1920x1080}/`
 > Annotated comparisons: `docs/design/swarm-office-v1.1/annotated-comparisons/`
 > Reference: `docs/design/swarm-office/design-system.md` + `docs/design/swarm-office/high-fidelity-designs-preview.png`
 
@@ -15,16 +15,16 @@ This audit recommends a phased visual pass: first fix canvas props, room texture
 
 ## State-by-state gap table
 
-| State | Baseline file | Annotated file | What works | Key gaps |
-|-------|---------------|----------------|------------|----------|
-| Idle office | `01-idle-office.png` | `01-idle-office-annotated.png` | Header, status strip, control panel skeleton load | Canvas is black/empty; no room art, props, or ambient agents. Mode switcher is plain text. Panel cards lack `--base-700` surface / `--base-500` border. Agent list is flat. |
-| Active task execution | `02-active-task-execution.png` | `02-active-task-execution-annotated.png` | Four rooms render, task flows, status badge shows "working" | Rooms are flat color blocks without floor texture, walls, or doorway signs. Worker is a generic block; missing tool-belt/helmet silhouette and tool sparks. Props (workbench, task board, cable spool, task light) absent. |
-| Artifact under review | `03-artifact-under-review.png` | `03-artifact-under-review-annotated.png` | Reviewer moves to review room, status shows "reviewing" | Reviewer lacks glasses/clipboard. Review room has no rug, round table, magnifying lamp, or papers. No page-flip activity cue. |
-| Pending approval | `04-pending-approval.png` | `04-pending-approval-annotated.png` | Approval drawer appears with Approve/Reject | Approval/Delivery room missing counter, service bell, package slot, sconce. Drawer lacks `--urgency` 4px left border and bell icon. Buttons do not match primary/danger token styles. No pulsing bell glow on canvas. |
-| Blocked task / agent | `05-blocked-task-agent.png` | `05-blocked-task-agent-annotated.png` | Agent shows red exclamation, "blocked" badge appears | Blocked agent posture is upright/idle, not slumped/frustrated. Missing red pulse glow and speech-bubble cue. Badge lacks `--failure-dim` background and error code. |
-| Revision / rework required | `06-revision-required.png` | `06-revision-required-annotated.png` | Revision state is reachable | Revision state is visually indistinguishable from idle on canvas. No rework cue (clipboard with red flag). Agent list shows idle instead of reviewer/worker rework posture. |
-| Focus mode | `07-focus-mode.png` | `07-focus-mode-annotated.png` | Overlay appears, urgent counts render | Overlay dims canvas but does not show ambient activity or compact urgent cards. Right panel still shows full controls instead of collapsed "Urgent Only" view. Summary cards lack `--urgency` accents and count badges. |
-| Debrief mode | `08-debrief-mode.png` | `08-debrief-mode-annotated.png` | Event timeline renders, summary counts present | Debrief shows raw event log rather than curated "Session Summary" with metrics cards and Key timeline. Missing agent/room debrief visuals or heatmap. |
+| State | Baseline file (1440×900) | Annotated file | What works | Key gaps |
+|-------|--------------------------|----------------|------------|----------|
+| Idle office | `baseline/1440x900/01-idle-office.png` | `01-idle-office-annotated.png` | Header, status strip, control panel skeleton load | Canvas is black/empty; no room art, props, or ambient agents. Mode switcher is plain text. Panel cards lack `--base-700` surface / `--base-500` border. Agent list is flat. |
+| Active task execution | `baseline/1440x900/02-active-task-execution.png` | `02-active-task-execution-annotated.png` | Four rooms render, task flows, status badge shows "working" | Rooms are flat color blocks without floor texture, walls, or doorway signs. Worker is a generic block; missing tool-belt/helmet silhouette and tool sparks. Props (workbench, task board, cable spool, task light) absent. |
+| Artifact under review | `baseline/1440x900/03-artifact-under-review.png` | `03-artifact-under-review-annotated.png` | Reviewer moves to review room, status shows "reviewing" | Reviewer lacks glasses/clipboard. Review room has no rug, round table, magnifying lamp, or papers. No page-flip activity cue. |
+| Pending approval | `baseline/1440x900/04-pending-approval.png` | `04-pending-approval-annotated.png` | Approval drawer appears with Approve/Reject | Approval/Delivery room missing counter, service bell, package slot, sconce. Drawer lacks `--urgency` 4px left border and bell icon. Buttons do not match primary/danger token styles. No pulsing bell glow on canvas. |
+| Blocked task / agent | `baseline/1440x900/05-blocked-task-agent.png` | `05-blocked-task-agent-annotated.png` | Agent shows red exclamation, "blocked" badge appears | Blocked agent posture is upright/idle, not slumped/frustrated. Missing red pulse glow and speech-bubble cue. Badge lacks `--failure-dim` background and error code. |
+| Revision / rework required | `baseline/1440x900/06-revision-required.png` | `06-revision-required-annotated.png` | Revision state is reachable | Revision state is visually indistinguishable from idle on canvas. No rework cue (clipboard with red flag). Agent list shows idle instead of reviewer/worker rework posture. |
+| Focus mode | `baseline/1440x900/07-focus-mode.png` | `07-focus-mode-annotated.png` | Overlay appears, urgent counts render | Overlay dims canvas but does not show ambient activity or compact urgent cards. Right panel still shows full controls instead of collapsed "Urgent Only" view. Summary cards lack `--urgency` accents and count badges. |
+| Debrief mode | `baseline/1440x900/08-debrief-mode.png` | `08-debrief-mode-annotated.png` | Event timeline renders, summary counts present | Debrief shows raw event log rather than curated "Session Summary" with metrics cards and Key timeline. Missing agent/room debrief visuals or heatmap. |
 
 ## Design-system compliance checklist
 
@@ -159,14 +159,14 @@ This section records the visual QA evidence regenerated after Tasks 1–6 were c
 
 | # | State | Baseline | Annotated |
 |---|-------|----------|-----------|
-| 01 | Idle office | `01-idle-office.png` | `01-idle-office-annotated.png` |
-| 02 | Active task execution | `02-active-task-execution.png` | `02-active-task-execution-annotated.png` |
-| 03 | Artifact under review | `03-artifact-under-review.png` | `03-artifact-under-review-annotated.png` |
-| 04 | Pending approval | `04-pending-approval.png` | `04-pending-approval-annotated.png` |
-| 05 | Blocked task / agent | `05-blocked-task-agent.png` | `05-blocked-task-agent-annotated.png` |
-| 06 | Revision / rework required | `06-revision-required.png` | `06-revision-required-annotated.png` |
-| 07 | Focus mode | `07-focus-mode.png` | `07-focus-mode-annotated.png` |
-| 08 | Debrief mode | `08-debrief-mode.png` | `08-debrief-mode-annotated.png` |
+| 01 | Idle office | `baseline/1440x900/01-idle-office.png` | `01-idle-office-annotated.png` |
+| 02 | Active task execution | `baseline/1440x900/02-active-task-execution.png` | `02-active-task-execution-annotated.png` |
+| 03 | Artifact under review | `baseline/1440x900/03-artifact-under-review.png` | `03-artifact-under-review-annotated.png` |
+| 04 | Pending approval | `baseline/1440x900/04-pending-approval.png` | `04-pending-approval-annotated.png` |
+| 05 | Blocked task / agent | `baseline/1440x900/05-blocked-task-agent.png` | `05-blocked-task-agent-annotated.png` |
+| 06 | Revision / rework required | `baseline/1440x900/06-revision-required.png` | `06-revision-required-annotated.png` |
+| 07 | Focus mode | `baseline/1440x900/07-focus-mode.png` | `07-focus-mode-annotated.png` |
+| 08 | Debrief mode | `baseline/1440x900/08-debrief-mode.png` | `08-debrief-mode-annotated.png` |
 
 ### Visual upgrades verified
 
@@ -191,7 +191,7 @@ The mock adapter used by `apps/demo-office` cannot independently trigger a genui
 | Plan | `docs/superpowers/plans/2026-07-07-issue-23-swarm-office-v1.1-implementation.md` |
 | Design system | `docs/design/swarm-office/design-system.md` |
 | High-fidelity reference | `docs/design/swarm-office/high-fidelity-designs-preview.png` |
-| Baseline screenshots | `docs/design/swarm-office-v1.1/baseline/` |
+| Baseline screenshots | `docs/design/swarm-office-v1.1/baseline/{1366x768,1440x900,1920x1080}/` |
 | Annotated comparisons | `docs/design/swarm-office-v1.1/annotated-comparisons/` |
 | Screenshot script | `scripts/capture-demo-office-screenshots.mjs` |
 | Annotation script | `scripts/generate-annotated-comparisons.mjs` |

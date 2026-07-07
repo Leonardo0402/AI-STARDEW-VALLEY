@@ -9,6 +9,7 @@ interface DebriefTimelineProps {
 
 const MILESTONE_TYPES: Set<string> = new Set([
   EventType.TASK_COMPLETED,
+  EventType.TASK_BLOCKED,
   EventType.APPROVAL_RESOLVED,
   EventType.ARTIFACT_REVIEWED,
   EventType.TASK_FAILED,
@@ -112,6 +113,8 @@ function eventOutcome(event: DomainEvent): string | null {
   switch (event.type) {
     case EventType.TASK_COMPLETED:
       return "completed";
+    case EventType.TASK_BLOCKED:
+      return "blocked";
     case EventType.TASK_FAILED:
       return "failed";
     case EventType.APPROVAL_RESOLVED: {
@@ -123,8 +126,8 @@ function eventOutcome(event: DomainEvent): string | null {
     case EventType.ARTIFACT_REVIEWED: {
       const verdict = (event.payload as { verdict?: string }).verdict;
       if (verdict === "approved") return "approved";
-      if (verdict === "rejected" || verdict === "revision_required")
-        return "rejected";
+      if (verdict === "rejected") return "rejected";
+      if (verdict === "revision_required") return "revision required";
       return null;
     }
     default:
@@ -132,7 +135,7 @@ function eventOutcome(event: DomainEvent): string | null {
   }
 }
 
-function outcomeKind(outcome: string): "success" | "failure" | "info" {
+function outcomeKind(outcome: string): "success" | "failure" | "warning" | "info" {
   switch (outcome) {
     case "completed":
     case "approved":
@@ -142,6 +145,8 @@ function outcomeKind(outcome: string): "success" | "failure" | "info" {
     case "failed":
     case "rejected":
       return "failure";
+    case "revision required":
+      return "warning";
     default:
       return "info";
   }
