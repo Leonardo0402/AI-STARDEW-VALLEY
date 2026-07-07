@@ -151,6 +151,39 @@ A single visual/interaction PR targeting `apps/demo-office` and `packages/pixel-
 - [ ] `npm test` and `npm run build` pass.
 - [ ] PR description links this audit and `Refs #14`.
 
+## V1.1 verification
+
+This section records the visual QA evidence regenerated after Tasks 1–6 were completed. All eight baseline screenshots and annotated comparisons were re-captured on 2026-07-07.
+
+### Re-captured states
+
+| # | State | Baseline | Annotated |
+|---|-------|----------|-----------|
+| 01 | Idle office | `01-idle-office.png` | `01-idle-office-annotated.png` |
+| 02 | Active task execution | `02-active-task-execution.png` | `02-active-task-execution-annotated.png` |
+| 03 | Artifact under review | `03-artifact-under-review.png` | `03-artifact-under-review-annotated.png` |
+| 04 | Pending approval | `04-pending-approval.png` | `04-pending-approval-annotated.png` |
+| 05 | Blocked task / agent | `05-blocked-task-agent.png` | `05-blocked-task-agent-annotated.png` |
+| 06 | Revision / rework required | `06-revision-required.png` | `06-revision-required-annotated.png` |
+| 07 | Focus mode | `07-focus-mode.png` | `07-focus-mode-annotated.png` |
+| 08 | Debrief mode | `08-debrief-mode.png` | `08-debrief-mode-annotated.png` |
+
+### Visual upgrades verified
+
+The regenerated evidence shows the following V1.1 improvements over the original wireframe baseline:
+
+- **Four rooms and floor textures**: Idle canvas now renders Command, Execution, Review, and Approval/Delivery rooms with distinct floor patterns (wood planks, concrete tiles, woven rug, polished wood), wall lines, and wooden doorway signs. Previously the idle canvas was blank black.
+- **Role sprites and posture**: Agents display role-differentiated sprites (Orchestrator, Worker, Reviewer) with state-specific posture cues for idle, working, reviewing, blocked, and approval.
+- **Approval moment**: Pending-approval state shows the service-bell prop, pulsing urgency glow on the canvas, and an approval drawer with `--urgency` left-border accent, bell icon, and primary/danger Approve/Reject buttons.
+- **Blocked / failed expression**: Blocked agents show a red exclamation speech-bubble marker, red pulse glow, slumped posture, and a `--failure` badge with the blocked reason in the agent card.
+- **Focus panel**: Focus mode dims the canvas and collapses the right panel to a compact "Urgent Only" view with urgency-accented count cards for pending approvals, blocked tasks, and failed items.
+- **Debrief panel**: Debrief mode presents a curated "Session Summary" with Tasks completed, Approvals resolved, Artifacts delivered, and Events metrics, plus a Key timeline of milestone events.
+- **Micro-animations and reduced motion**: Agent idle breathe, working tool sparkle, approval bell pulse, and blocked pulse are implemented and gated by the "Motion on / Motion off" toggle in the header.
+
+### Audit caveat
+
+The mock adapter used by `apps/demo-office` cannot independently trigger a genuine runtime `failed` / runtime-error state. The V1.1 demo therefore honestly labels state 06 as **revision / rework required** (triggered by the "异常：返工" scenario) rather than as a true runtime failure. The canvas and panel still communicate rework through the Reviewer posture, review-room props, and related task cues.
+
 ## Appendix: artifact inventory
 
 | Artifact | Path |

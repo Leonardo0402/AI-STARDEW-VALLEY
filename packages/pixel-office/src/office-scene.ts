@@ -67,6 +67,7 @@ export class PixelOfficeScene {
   private overlayLayer: Container;
   private agentSprites: Map<string, LegacyAgentSprite> = new Map();
   private currentProjection: OfficeProjection | null = null;
+  private pendingProjection: OfficeProjection | null = null;
   private currentLayout: RoomLayout | null = null;
   private destroyed = false;
   private initialized = false;
@@ -158,6 +159,12 @@ export class PixelOfficeScene {
     // 启动渲染循环
     this.app.ticker.add((ticker) => this.update(ticker));
     this.initialized = true;
+
+    // 如果在初始化完成前已有投影传入，补渲染一次。
+    if (this.pendingProjection) {
+      this.updateProjection(this.pendingProjection);
+      this.pendingProjection = null;
+    }
   }
 
   private resolveAssetBasePath(): string {
@@ -171,7 +178,10 @@ export class PixelOfficeScene {
 
   /** 更新场景 — 只消费 OfficeProjection */
   updateProjection(projection: OfficeProjection): void {
-    if (!this.initialized) return;
+    if (!this.initialized) {
+      this.pendingProjection = projection;
+      return;
+    }
     this.currentProjection = projection;
 
     if (this.useSpriteRenderer && this.roomRenderer && this.propRenderer && this.agentRenderer && this.effectRenderer) {
