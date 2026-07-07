@@ -4,6 +4,16 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./clock": {
+      "default": "./src/clock.ts",
+      "types": "./src/clock.ts"
+    }
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "dev:server": "node --import tsx src/http-server.ts --port=3457"

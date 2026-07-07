@@ -373,4 +373,150 @@ describe("LifeSimSession", () => {
     expect(capabilities.schedule.override).toBe(false);
     expect(capabilities.clock.mode).toBe("manual");
   });
+
+  it("applies world.time_advanced to update projection minute and capabilities", async () => {
+    await session.start();
+    const listener = vi.fn();
+    session.onProjectionChange(listener);
+
+    client.subscriptions[0].simulateEvent(
+      makeEvent(4, "world.time_advanced", {
+        oldMinute: 480,
+        newMinute: 510,
+        day: 1,
+      })
+    );
+
+    const projection = session.getProjection();
+    expect(projection.world.minuteOfDay).toBe(510);
+    expect(projection.world.phase).toBe("morning");
+    expect(projection.capabilities.world.advanceTime).toBe(true);
+    expect(projection.capabilities.world.runToEndOfDay).toBe(true);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        world: expect.objectContaining({ minuteOfDay: 510 }),
+      })
+    );
+  });
+
+  it("applies world.time_advanced to end-of-day enabling End Day", async () => {
+    await session.start();
+
+    client.subscriptions[0].simulateEvent(
+      makeEvent(4, "world.time_advanced", {
+        oldMinute: 480,
+        newMinute: 1110,
+        day: 1,
+      })
+    );
+
+    const projection = session.getProjection();
+    expect(projection.world.minuteOfDay).toBe(1110);
+    expect(projection.world.phase).toBe("evening");
+    expect(projection.capabilities.world.endDay).toBe(true);
+    expect(projection.capabilities.world.runToEndOfDay).toBe(false);
+    expect(projection.capabilities.world.advanceTime).toBe(false);
+  });
+
+  it("applies world.day_ending and world.day_ended to reset projection", async () => {
+    await session.start();
+
+    client.subscriptions[0].simulateEvent(
+      makeEvent(4, "world.time_advanced", {
+        oldMinute: 480,
+        newMinute: 1110,
+        day: 1,
+      })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(5, "world.day_ending", { day: 1, endedAtWorldMinute: 1110 })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(6, "day.summary_recorded", {
+        day: 1,
+        summary: {
+          day: 1,
+          startedAtWorldMinute: 480,
+          endedAtWorldMinute: 1110,
+          truncated: false,
+          agentActivities: [],
+          taskCounts: { created: 0, completed: 0, blocked: 0, failed: 0 },
+          approvalCounts: { requested: 0, approved: 0, rejected: 0 },
+          notableEventIds: [],
+        },
+      })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(7, "world.day_ended", { day: 1, summaryId: "summary-1" })
+    );
+
+    const projection = session.getProjection();
+    expect(projection.world.status).toBe("not_started");
+    expect(projection.world.minuteOfDay).toBe(480);
+    expect(projection.world.phase).toBe("morning");
+    expect(projection.capabilities.world.startDay).toBe(true);
+    expect(projection.capabilities.world.endDay).toBe(false);
+    expect(projection.previousDaySummaries).toHaveLength(1);
+  });
+
+  it("clears active overlays and activities on world.day_ended", async () => {
+    await session.start();
+
+    client.subscriptions[0].simulateEvent(
+      makeEvent(4, "schedule.overlay_created", {
+        overlay: {
+          overlayId: "overlay-1",
+          agentId: "agent-1",
+          entry: {
+            entryId: "overlay-1",
+            agentId: "agent-1",
+            startMinute: 480,
+            endMinute: 1110,
+            activity: "work",
+            roomId: "room-1",
+            priority: 10,
+            source: "task_overlay",
+          },
+          createdBy: "task",
+          createdAtWorldMinute: 480,
+          createdByTaskId: "task-1",
+          createdByRuntimeSequence: 1,
+          originalStartMinute: null,
+        },
+      })
+    );
+
+    expect(session.getProjection().agents).toHaveLength(1);
+
+    client.subscriptions[0].simulateEvent(
+      makeEvent(5, "world.time_advanced", {
+        oldMinute: 480,
+        newMinute: 1110,
+        day: 1,
+      })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(6, "world.day_ending", { day: 1, endedAtWorldMinute: 1110 })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(7, "day.summary_recorded", {
+        day: 1,
+        summary: {
+          day: 1,
+          startedAtWorldMinute: 480,
+          endedAtWorldMinute: 1110,
+          truncated: false,
+          agentActivities: [],
+          taskCounts: { created: 0, completed: 0, blocked: 0, failed: 0 },
+          approvalCounts: { requested: 0, approved: 0, rejected: 0 },
+          notableEventIds: [],
+        },
+      })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(8, "world.day_ended", { day: 1, summaryId: "summary-1" })
+    );
+
+    expect(session.getProjection().agents).toHaveLength(0);
+  });
 });

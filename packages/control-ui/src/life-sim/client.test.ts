@@ -162,6 +162,26 @@ describe("HttpLifeSimClient", () => {
     expect(snapshot).toEqual(baseSnapshot);
   });
 
+  it("default same-origin baseUrl with worldId 'default' constructs /life-sim/default/snapshot", async () => {
+    const fetchImpl = mockFetch(
+      new Response(JSON.stringify(baseSnapshot), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    );
+    const client = new HttpLifeSimClient({
+      baseUrl: "",
+      worldId: "default",
+      fetch: fetchImpl,
+      EventSource: FakeEventSource as unknown as EventSourceConstructor,
+    });
+
+    await client.getSnapshot();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith("/life-sim/default/snapshot");
+  });
+
   it("execute POSTs the command body and parses the result", async () => {
     const fetchImpl = mockFetch(
       new Response(JSON.stringify(baseCommandResult), {

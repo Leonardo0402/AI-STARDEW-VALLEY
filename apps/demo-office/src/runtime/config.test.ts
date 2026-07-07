@@ -37,6 +37,11 @@ describe("readConfigFromEnv", () => {
     expect(config.runtimeId).toBe("mock-runtime-001");
   });
 
+  it("defaults lifeSimBaseUrl to same-origin root to avoid double /life-sim prefix", () => {
+    const config = readConfigFromEnv({});
+    expect(config.lifeSimBaseUrl).toBe("");
+  });
+
   it("missing VITE_RUNTIME_ID in http-sse mode throws ConfigError", () => {
     expect(() =>
       readConfigFromEnv({

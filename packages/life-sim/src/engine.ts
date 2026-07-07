@@ -49,11 +49,13 @@ export async function createLifeSimEngine(
   const runCommand = async (command: LifeSimCommand): Promise<LifeSimCommandResult> => {
     const cached = commandResults.get(command.commandId);
     if (cached) return cached;
+    let stagedNextLifeSimSequence = nextLifeSimSequence;
+    const allocateSequence = () => stagedNextLifeSimSequence++;
     const { snapshot: next, events, result } = reduceWorldCommand(
       currentSnapshot,
       command,
       config,
-      () => nextLifeSimSequence++,
+      allocateSequence,
       now(),
       currentTail
     );
@@ -65,6 +67,7 @@ export async function createLifeSimEngine(
     currentSnapshot = stagedSnapshot;
     currentTail = stagedTail;
     commandResults = stagedCommandResults;
+    nextLifeSimSequence = stagedNextLifeSimSequence;
     notifyListeners(events);
     return result;
   };
@@ -106,13 +109,15 @@ export async function createLifeSimEngine(
     }),
     applyRuntimeEvent: (event: DomainEvent) => {
       const promise = queueTail.then(async () => {
+        let stagedNextLifeSimSequence = nextLifeSimSequence;
+        const allocateSequence = () => stagedNextLifeSimSequence++;
         const bindingMinute = currentSnapshot.worldClock.minuteOfDay;
         const { snapshot: next, events } = reduceRuntimeEvent(
           currentSnapshot,
           event,
           config.endOfDayMinute,
           bindingMinute,
-          () => nextLifeSimSequence++,
+          allocateSequence,
           now()
         );
         let stagedSnapshot: LifeSimSnapshot = {
@@ -129,6 +134,7 @@ export async function createLifeSimEngine(
         await store.save(stagedSnapshot, stagedTail, commandResults);
         currentSnapshot = stagedSnapshot;
         currentTail = stagedTail;
+        nextLifeSimSequence = stagedNextLifeSimSequence;
         notifyListeners(events);
       });
       queueTail = promise.catch(() => undefined);
