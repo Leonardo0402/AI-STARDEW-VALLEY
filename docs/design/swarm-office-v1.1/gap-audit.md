@@ -141,15 +141,15 @@ A single visual/interaction PR targeting `apps/demo-office` and `packages/pixel-
 
 ### Acceptance criteria
 
-- [ ] All eight baseline states are re-captured and show clear visual improvement against this audit.
-- [ ] Mode switcher matches design-system segmented control.
-- [ ] Idle canvas shows all four rooms with props.
-- [ ] Agents show role silhouettes and state postures.
-- [ ] Approval, blocked, and failed states have explicit visual cues.
-- [ ] Focus mode shows compact urgent-only panel.
-- [ ] Debrief mode shows Session Summary + Key timeline.
-- [ ] `npm test` and `npm run build` pass.
-- [ ] PR description links this audit and `Refs #14`.
+- [x] All eight baseline states are re-captured and show clear visual improvement against this audit.
+- [x] Mode switcher matches design-system segmented control.
+- [x] Idle canvas shows all four rooms with props.
+- [x] Agents show role silhouettes and state postures.
+- [x] Approval, blocked, and failed states have explicit visual cues.
+- [x] Focus mode shows compact urgent-only panel.
+- [x] Debrief mode shows Session Summary + Key timeline.
+- [x] `npm test` and `npm run build` pass.
+- [x] PR description links `Issue #23` and `Refs #14`.
 
 ## V1.1 verification
 
