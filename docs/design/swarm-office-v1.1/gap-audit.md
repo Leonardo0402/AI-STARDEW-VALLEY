@@ -34,18 +34,18 @@ This audit therefore splits the evidence into two sections:
 
 ### 1. Canvas / control-panel linked selection
 
-- `App` and `useComposedOfficeState` have no selection state.
-- `PixelOfficeScene` exposes no selection API; `AgentRenderer` and `RoomRenderer` do not render selected/hovered outlines.
-- `ControlPanel` cards do not accept `onSelect` or highlight a selected entity.
-- `ListView` rows are not selectable and do not sync with canvas selection.
-- Keyboard selection path (Tab into cards, Enter/Space to select, Escape to clear) is absent.
+- Agent/task bidirectional linked selection is implemented and baselined (`09-selected-agent`, `10-selected-task-card`).
+- `PixelOfficeScene` exposes `selectAgent`, `selectRoom`, `selectAgents`, `clearSelection`, and `setOnSelect`; `AgentRenderer` and `RoomRenderer` render selected/highlight outlines.
+- `ControlPanel` cards accept `selection`/`onSelect`, show `aria-pressed`, and support Tab/Enter/Space keyboard selection.
+- `ListView` rows are selectable with `aria-selected` and sync with canvas selection.
+- Remaining unbaselined gaps: room/approval/artifact cross-highlight and selected/hovered rows in Debrief mode.
 
 ### 2. Artifact state truth boundaries
 
-- `revision_required`, `rejected`, `blocked`, and `failed` must remain visually distinct on both canvas and panel.
-- `ControlPanel` already classifies artifact content by `content`, `uri`, and `uri === null`, but does not render explicit `metadata-only`, `unavailable`, `loading`, `failed-open`, or `unsupported-open` UI states.
-- `artifactStatusIntent` maps `rejected` to the `failed` badge intent, which can blur the difference between a decision outcome and a runtime failure.
-- `artifactId` is never treated as a URI; missing content references must render as metadata-only/unavailable rather than invented content.
+- `revision_required`, `rejected`, `blocked`, and `failed` are now visually distinct on both canvas and panel (`revision_required` shows a rework cue, `rejected` uses a dedicated decision intent).
+- `ControlPanel` explicitly renders artifact content states: `content-available`, `metadata-only`, `unavailable`, `loading`, `failed-open`, and `unsupported-open`.
+- `artifactId` is never treated as a URI; missing content references render as metadata-only/unavailable rather than invented content.
+- The mock adapter cannot truthfully produce `metadata-only`, `unavailable`, `unsupported-open`, or `failed-open` states, so those UI states are implemented but not baselined.
 
 ### 3. Multi-resolution layout hardening
 

@@ -8,9 +8,10 @@ DONE
 
 - `1aee6ef` feat(scripts,design): capture selected states, assert dimensions, update gap-audit for Issue #25 Task 3
 - `5d8d2ea` docs(superpowers): add Task 3 report for Issue #25
+- `0194e82` docs(superpowers): update Task 3 report commit range and hash
 
 分支：`issue-25-swarm-office-follow-up`
-范围：`1aee6ef^..5d8d2ea`
+范围：`1aee6ef^..0194e82`
 
 ## 测试摘要
 
