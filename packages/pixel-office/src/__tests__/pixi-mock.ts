@@ -73,6 +73,7 @@ export class MockContainer {
   public children: unknown[] = [];
   public x = 0;
   public y = 0;
+  public scale = { set: vi.fn(), x: 1, y: 1 };
   public removed = false;
 
   addChild(child: unknown): unknown {

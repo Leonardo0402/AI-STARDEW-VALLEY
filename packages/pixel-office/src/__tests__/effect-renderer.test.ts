@@ -299,4 +299,109 @@ describe("EffectRenderer", () => {
     expect(hasErrorTag).toBe(true);
     expect(texts.some((t) => t.text === "×")).toBe(true);
   });
+
+  it("pulses the service bell on a 1.2s loop", async () => {
+    MockAssets.reset({ "service-bell": new MockTexture("service-bell") });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/service-bell"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+
+    const projection = makeProjection([], [], [
+      { approvalId: "ap1", taskId: "t1", kind: "artifact_delivery", status: "requested", requestedBy: "a1", reason: "" },
+    ]);
+
+    renderer.render(projection, layout, 0);
+    const start = lastScale(getSprites(container)[0]);
+
+    renderer.render(projection, layout, 300);
+    const quarter = lastScale(getSprites(container)[0]);
+    expect(quarter).not.toBe(start);
+
+    renderer.render(projection, layout, 900);
+    const full = lastScale(getSprites(container)[0]);
+    expect(full).toBe(start);
+  });
+
+  it("pulses blocked markers on a 1s loop", async () => {
+    MockAssets.reset({ "blocked-marker": new MockTexture("blocked-marker") });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/blocked-marker"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+
+    const agent = makeAgent({ status: "blocked", currentRoomId: "execution", blockedReason: "stuck" });
+
+    renderer.render(makeProjection([agent]), layout, 0);
+    const start = lastScale(getSprites(container)[0]);
+
+    renderer.render(makeProjection([agent]), layout, 250);
+    const quarter = lastScale(getSprites(container)[0]);
+    expect(quarter).not.toBe(start);
+
+    renderer.render(makeProjection([agent]), layout, 750);
+    const full = lastScale(getSprites(container)[0]);
+    expect(full).toBe(start);
+  });
+
+  it("animates working sparkles in 0.8s steps", async () => {
+    MockAssets.reset({ sparkle: new MockTexture("sparkle") });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/sparkle"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+
+    const agent = makeAgent({ status: "working", currentRoomId: "execution" });
+
+    renderer.render(makeProjection([agent]), layout, 0);
+    const step0 = lastScale(getSprites(container)[0]);
+
+    renderer.render(makeProjection([agent]), layout, 200);
+    const step1 = lastScale(getSprites(container)[0]);
+    expect(step1).not.toBe(step0);
+
+    renderer.render(makeProjection([agent]), layout, 200);
+    const step2 = lastScale(getSprites(container)[0]);
+    expect(step2).not.toBe(step1);
+
+    renderer.render(makeProjection([agent]), layout, 400);
+    const step4 = lastScale(getSprites(container)[0]);
+    expect(step4).toBe(step0);
+  });
+
+  it("keeps working sparkle static when reduceMotion is true", async () => {
+    MockAssets.reset({ sparkle: new MockTexture("sparkle") });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/sparkle"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader,
+      true
+    );
+
+    const agent = makeAgent({ status: "working", currentRoomId: "execution" });
+
+    renderer.render(makeProjection([agent]), layout, 0);
+    const start = lastScale(getSprites(container)[0]);
+
+    renderer.render(makeProjection([agent]), layout, 1000);
+    const later = lastScale(getSprites(container)[0]);
+    expect(later).toBe(start);
+  });
 });
+
+function lastScale(sprite: MockSprite): number {
+  const calls = sprite.scale.set.mock.calls;
+  const last = calls[calls.length - 1] as [number, number] | undefined;
+  return last?.[0] ?? 1;
+}

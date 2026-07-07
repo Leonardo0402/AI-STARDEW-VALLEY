@@ -390,7 +390,7 @@ export class PixelOfficeScene {
     if (this.destroyed) return;
 
     if (this.useSpriteRenderer && this.agentRenderer) {
-      this.agentRenderer.tick();
+      this.agentRenderer.tick(ticker.deltaMS);
 
       // 持续刷新效果层（blocked/working/approval）；reduceMotion 在 renderer 内部控制脉冲
       if (this.currentProjection && this.currentLayout) {

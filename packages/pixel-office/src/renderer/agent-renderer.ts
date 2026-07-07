@@ -10,6 +10,11 @@ import type { AssetLoader } from "../asset-loader.js";
 import { computeAgentPresentationState, type AgentPresentationState } from "../presentation-state.js";
 import { ROLE_COLORS, STATUS_COLORS } from "../design-tokens.js";
 
+const IDLE_BREATHE_PERIOD_MS = 1500;
+const WALK_MS_PER_TILE = 250;
+const TILE_SIZE_PX = 64;
+const WALK_FRAME_MS = 100;
+
 export interface AgentSprite {
   container: Container;
   nameText: Text;
@@ -29,6 +34,11 @@ export interface AgentSprite {
   currentX: number;
   currentY: number;
   isPositionInitialized: boolean;
+  idlePhase: number;
+  walkStartX: number;
+  walkStartY: number;
+  walkElapsed: number;
+  walkDuration: number;
 }
 
 export interface AgentVisualTreatment {
@@ -140,6 +150,11 @@ export class AgentRenderer {
       currentX: 0,
       currentY: 0,
       isPositionInitialized: false,
+      idlePhase: 0,
+      walkStartX: 0,
+      walkStartY: 0,
+      walkElapsed: 0,
+      walkDuration: 0,
     };
   }
 
@@ -182,6 +197,11 @@ export class AgentRenderer {
       sprite.lastRoomId = agent.currentRoomId;
       sprite.currentState = "walk";
       sprite.walkFrames = this.assetLoader?.getAnimationFrames(`${agent.role}-walk`, 2) ?? null;
+      sprite.walkStartX = sprite.currentX;
+      sprite.walkStartY = sprite.currentY;
+      sprite.walkElapsed = 0;
+      const distance = Math.hypot(sprite.targetX - sprite.currentX, sprite.targetY - sprite.currentY);
+      sprite.walkDuration = Math.max((distance / TILE_SIZE_PX) * WALK_MS_PER_TILE, 100);
     }
 
     sprite.lastStatus = agent.status;
@@ -436,13 +456,14 @@ export class AgentRenderer {
   }
 
   /** 平滑移动所有 agent 到目标位置。由外层 ticker 调用。 */
-  tick(): void {
+  tick(deltaMS = 16.67): void {
     for (const sprite of this.sprites.values()) {
       const dx = sprite.targetX - sprite.currentX;
       const dy = sprite.targetY - sprite.currentY;
       const isMoving = Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
 
       if (this.reduceMotion) {
+        this.resetTransform(sprite);
         if (isMoving) {
           sprite.currentX = sprite.targetX;
           sprite.currentY = sprite.targetY;
@@ -460,30 +481,65 @@ export class AgentRenderer {
       }
 
       if (isMoving) {
-        sprite.currentX += dx * 0.1;
-        sprite.currentY += dy * 0.1;
+        this.resetTransform(sprite);
+        sprite.walkElapsed += deltaMS;
+        const progress = Math.min(sprite.walkElapsed / sprite.walkDuration, 1);
+        sprite.currentX = sprite.walkStartX + (sprite.targetX - sprite.walkStartX) * progress;
+        sprite.currentY = sprite.walkStartY + (sprite.targetY - sprite.walkStartY) * progress;
         sprite.container.x = sprite.currentX;
         sprite.container.y = sprite.currentY;
 
         // Animate walk strip
         if (sprite.currentState === "walk" && sprite.walkFrames && sprite.walkFrames.length > 0) {
-          sprite.walkTimer++;
-          if (sprite.walkTimer % 10 === 0) {
+          sprite.walkTimer += deltaMS;
+          if (sprite.walkTimer >= WALK_FRAME_MS) {
+            sprite.walkTimer = 0;
             sprite.walkFrameIndex = (sprite.walkFrameIndex + 1) % sprite.walkFrames.length;
             sprite.currentTexture = sprite.walkFrames[sprite.walkFrameIndex];
             this.setBodySprite(sprite, sprite.currentTexture);
           }
         }
-      } else if (sprite.currentState === "walk") {
-        // Arrived: switch back to status-based state
-        const agent =
-          this.lastProjection?.agents.find((a) => a.agentId === sprite.agentId) ??
-          ({ status: sprite.lastStatus } as AgentView);
-        sprite.currentTexture = null;
-        sprite.walkFrameIndex = 0;
-        this.applyVisual(sprite, agent);
+
+        if (progress >= 1) {
+          // Arrived: switch back to status-based state
+          const agent =
+            this.lastProjection?.agents.find((a) => a.agentId === sprite.agentId) ??
+            ({ status: sprite.lastStatus } as AgentView);
+          sprite.currentTexture = null;
+          sprite.walkFrameIndex = 0;
+          this.applyVisual(sprite, agent);
+        }
+      } else {
+        if (sprite.currentState === "walk") {
+          // Arrived: switch back to status-based state
+          const agent =
+            this.lastProjection?.agents.find((a) => a.agentId === sprite.agentId) ??
+            ({ status: sprite.lastStatus } as AgentView);
+          sprite.currentTexture = null;
+          sprite.walkFrameIndex = 0;
+          this.applyVisual(sprite, agent);
+        }
+
+        if (sprite.currentState === "idle") {
+          this.applyIdleBreathe(sprite, deltaMS);
+        } else {
+          this.resetTransform(sprite);
+        }
       }
     }
+  }
+
+  private applyIdleBreathe(sprite: AgentSprite, deltaMS: number): void {
+    sprite.idlePhase += deltaMS;
+    const t = Math.sin((sprite.idlePhase / IDLE_BREATHE_PERIOD_MS) * Math.PI * 2);
+    sprite.container.y = sprite.currentY + t * -1;
+    sprite.container.scale.y = 1 + t * 0.03;
+    sprite.container.scale.x = 1 + t * 0.01;
+  }
+
+  private resetTransform(sprite: AgentSprite): void {
+    sprite.container.scale.set(1, 1);
+    sprite.container.y = sprite.currentY;
   }
 
   /** 测试钩子：返回指定 agent 的目标位置。 */
@@ -498,6 +554,13 @@ export class AgentRenderer {
     const sprite = this.sprites.get(agentId);
     if (!sprite) return null;
     return { x: sprite.currentX, y: sprite.currentY };
+  }
+
+  /** 测试钩子：返回指定 agent 的当前行走动画持续时间（毫秒）。 */
+  getAgentWalkDuration(agentId: string): number | null {
+    const sprite = this.sprites.get(agentId);
+    if (!sprite) return null;
+    return sprite.walkDuration;
   }
 
   /** 测试钩子：返回当前所有 agent 的视觉处理记录。 */

@@ -12,6 +12,12 @@ import { getAgentPositionByRoomId, type RoomLayout, type RoomLayoutEntry } from 
 import type { AssetLoader } from "../asset-loader.js";
 import { computeAgentPresentationState } from "../presentation-state.js";
 
+const BELL_PERIOD_MS = 1200;
+const BLOCKED_PERIOD_MS = 1000;
+const SPARKLE_PERIOD_MS = 800;
+const SPARKLE_STEPS = 4;
+const SPARKLE_STEP_SCALES = [0.8, 1.0, 1.1, 0.9];
+
 interface EffectItem {
   graphics: Graphics;
   label: Text;
@@ -26,6 +32,7 @@ export class EffectRenderer {
   private reduceMotion = false;
   private bellPulsePhase = 0;
   private blockedPulsePhase = 0;
+  private sparklePhase = 0;
 
   constructor(
     private layer: Container,
@@ -42,8 +49,14 @@ export class EffectRenderer {
   render(projection: OfficeProjection, layout: RoomLayout, deltaMS = 16.67): void {
     this.bellPulsePhase += deltaMS;
     this.blockedPulsePhase += deltaMS;
-    const bellPulse = this.reduceMotion ? 0.5 : (Math.sin(this.bellPulsePhase / 191) + 1) / 2;
-    const blockedPulse = this.reduceMotion ? 0.5 : (Math.sin(this.blockedPulsePhase / 159) + 1) / 2;
+    this.sparklePhase += deltaMS;
+
+    const bellPulse = this.reduceMotion
+      ? 0.5
+      : (Math.sin((this.bellPulsePhase / BELL_PERIOD_MS) * Math.PI * 2) + 1) / 2;
+    const blockedPulse = this.reduceMotion
+      ? 0.5
+      : (Math.sin((this.blockedPulsePhase / BLOCKED_PERIOD_MS) * Math.PI * 2) + 1) / 2;
 
     const failedAgents = projection.agents.filter((a) => a.status === "failed");
     const blockedAgents = projection.agents.filter(
@@ -63,7 +76,7 @@ export class EffectRenderer {
     const blockedCount = this.renderBlockedMarkers(blockedAgents, layout, blockedPulse);
     this.hideExtras(this.blockedItems, blockedCount);
 
-    const sparkleCount = this.renderWorkingSparkles(workingAgents, layout, blockedPulse);
+    const sparkleCount = this.renderWorkingSparkles(workingAgents, layout);
     this.hideExtras(this.sparkleItems, sparkleCount);
 
     const bellCount = this.renderServiceBells(bellRooms, bellPulse);
@@ -127,7 +140,7 @@ export class EffectRenderer {
     return index;
   }
 
-  private renderWorkingSparkles(agents: AgentView[], layout: RoomLayout, pulse: number): number {
+  private renderWorkingSparkles(agents: AgentView[], layout: RoomLayout): number {
     const sparkleTexture = this.assetLoader?.getTexture("sparkle");
     let index = 0;
     for (const agent of agents) {
@@ -139,12 +152,12 @@ export class EffectRenderer {
       );
       const x = pos.x + 8;
       const y = pos.y - 14;
+      const scale = this.computeSparkleScale();
 
       if (sparkleTexture) {
         this.ensureSprite(item, sparkleTexture);
         item.sprite!.x = x;
         item.sprite!.y = y;
-        const scale = 0.8 + pulse * 0.3;
         item.sprite!.scale.set(scale, scale);
         item.sprite!.visible = true;
         item.graphics.visible = false;
@@ -153,7 +166,7 @@ export class EffectRenderer {
       }
 
       item.graphics.clear();
-      this.drawStar(item.graphics, x, y, 5, 0xe6a85c);
+      this.drawStar(item.graphics, x, y, 5 * scale, 0xe6a85c);
       item.graphics.visible = true;
 
       item.label.text = "";
@@ -161,6 +174,14 @@ export class EffectRenderer {
       if (item.sprite) item.sprite.visible = false;
     }
     return index;
+  }
+
+  private computeSparkleScale(): number {
+    if (this.reduceMotion) {
+      return SPARKLE_STEP_SCALES[0];
+    }
+    const step = Math.floor(this.sparklePhase / (SPARKLE_PERIOD_MS / SPARKLE_STEPS)) % SPARKLE_STEPS;
+    return SPARKLE_STEP_SCALES[step];
   }
 
   private renderServiceBells(rooms: RoomLayoutEntry[], pulse: number): number {

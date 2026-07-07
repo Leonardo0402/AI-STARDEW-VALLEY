@@ -38,6 +38,10 @@ function getAgentBody(container: MockContainer, index: number): MockGraphics {
   return sprite.getChildAt(0) as MockGraphics;
 }
 
+function getAgentContainer(container: MockContainer, index: number): MockContainer {
+  return container.children[index] as MockContainer;
+}
+
 describe("AgentRenderer", () => {
   let container: MockContainer;
   let renderer: AgentRenderer;
@@ -232,5 +236,66 @@ describe("AgentRenderer", () => {
     const workingRects = getAgentBody(container, 0).commands.filter((c) => c.type === "rect");
     const workingBodyX = workingRects.find((c) => c.args[2] === 14 && c.args[3] === 15)!.args[0] as number;
     expect(Math.abs(approvalBodyX - target.x)).toBeGreaterThan(Math.abs(workingBodyX - target.x));
+  });
+
+  it("breathes idle agents in a 1.5s loop", () => {
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "idle";
+    renderer.render([agent], layout, makeProjection([agent]));
+
+    const c = getAgentContainer(container, 0);
+    renderer.tick(0);
+    const startY = c.y;
+    const startScaleY = c.scale.y;
+
+    renderer.tick(375);
+    const quarterY = c.y;
+    const quarterScaleY = c.scale.y;
+    expect(quarterY).not.toBe(startY);
+    expect(quarterScaleY).not.toBe(startScaleY);
+
+    renderer.tick(1125);
+    expect(c.y).toBe(startY);
+    expect(c.scale.y).toBe(startScaleY);
+  });
+
+  it("disables idle breathe when reduceMotion is true", () => {
+    renderer = new AgentRenderer(container as unknown as import("pixi.js").Container, undefined, true);
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "idle";
+    renderer.render([agent], layout, makeProjection([agent]));
+
+    const c = getAgentContainer(container, 0);
+    renderer.tick(0);
+    const startY = c.y;
+    const startScaleY = c.scale.y;
+
+    renderer.tick(375);
+    expect(c.y).toBe(startY);
+    expect(c.scale.y).toBe(startScaleY);
+  });
+
+  it("moves agents over time with a 200-300ms-per-tile walk duration", () => {
+    renderer.render([makeAgent("a1", "command")], layout, makeProjection([]));
+    renderer.render([makeAgent("a1", "execution")], layout, makeProjection([]));
+
+    const start = renderer.getAgentPosition("a1")!;
+    const target = renderer.getAgentTarget("a1")!;
+    const distance = Math.hypot(target.x - start.x, target.y - start.y);
+    const tiles = distance / 64;
+    const duration = (renderer as unknown as { getAgentWalkDuration: (id: string) => number }).getAgentWalkDuration("a1");
+    const msPerTile = duration / tiles;
+
+    expect(msPerTile).toBeGreaterThanOrEqual(200);
+    expect(msPerTile).toBeLessThanOrEqual(300);
+
+    renderer.tick(Math.floor(duration / 2));
+    const mid = renderer.getAgentPosition("a1")!;
+    expect(mid.x).not.toBe(target.x);
+
+    renderer.tick(Math.ceil(duration / 2) + 1);
+    const end = renderer.getAgentPosition("a1")!;
+    expect(end.x).toBe(target.x);
+    expect(end.y).toBe(target.y);
   });
 });
