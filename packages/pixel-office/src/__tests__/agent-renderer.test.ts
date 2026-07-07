@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { AgentRenderer } from "../renderer/agent-renderer.js";
+import { AgentRenderer, resolveAgentTreatment } from "../renderer/agent-renderer.js";
 import { createDefaultLayout } from "../layout.js";
 import type { AgentView, OfficeProjection } from "@agent-office/protocol";
 import { MockContainer, MockGraphics } from "./pixi-mock.js";
@@ -358,6 +358,7 @@ describe("AgentRenderer", () => {
         { roomId: "execution", name: "Execution", floorType: "execution", x: 100, y: 100, width: 10, height: 10, props: [] },
       ],
     };
+
     renderer.render([makeAgent("a1", "command")], zeroDistanceLayout, makeProjection([]));
     renderer.render([makeAgent("a1", "execution")], zeroDistanceLayout, makeProjection([]));
 
@@ -367,5 +368,41 @@ describe("AgentRenderer", () => {
     const position = renderer.getAgentPosition("a1")!;
     expect(Number.isFinite(position.x)).toBe(true);
     expect(Number.isFinite(position.y)).toBe(true);
+  });
+});
+
+describe("resolveAgentTreatment", () => {
+  it("maps role to body color and status to accent color", () => {
+    const agent: AgentView = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "orchestrator",
+      status: "blocked",
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: null,
+    };
+
+    const treatment = resolveAgentTreatment(agent);
+    expect(treatment.role).toBe("orchestrator");
+    expect(typeof treatment.bodyColor).toBe("number");
+    expect(typeof treatment.accentColor).toBe("number");
+    expect(treatment.bodyColor).not.toBe(treatment.accentColor);
+  });
+
+  it("falls back to base tokens for unknown role/status", () => {
+    const agent: AgentView = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "unknown-role" as AgentView["role"],
+      status: "unknown-status" as AgentView["status"],
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: null,
+    };
+
+    const treatment = resolveAgentTreatment(agent);
+    expect(treatment.bodyColor).toBe(0xb8b0bc);
+    expect(treatment.accentColor).toBe(0x7d7682);
   });
 });
