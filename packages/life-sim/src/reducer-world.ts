@@ -32,7 +32,8 @@ export function reduceWorldCommand(
   command: LifeSimCommand,
   config: LifeSimEngineConfig,
   nextSequence: () => number,
-  now: string
+  now: string,
+  eventLogTail: LifeSimEvent[] = []
 ): WorldReduceOutput {
   const rejected = (code: LifeSimCommandErrorCode, message: string): WorldReduceOutput => ({
     snapshot,
@@ -195,7 +196,12 @@ export function reduceWorldCommand(
       }
 
       const events: LifeSimEvent[] = [];
-      const startedAtWorldMinute = config.startOfDayMinute;
+      const startedEvent = eventLogTail.find(
+        (e) => e.type === "world.day_started" && e.day === day
+      );
+      const startedAtWorldMinute =
+        (startedEvent?.payload as { startedAtWorldMinute?: number } | undefined)?.startedAtWorldMinute ??
+        config.startOfDayMinute;
       const endedAtWorldMinute = clock.minuteOfDay;
       const summaryId = `summary-${day}`;
 
@@ -249,7 +255,7 @@ export function reduceWorldCommand(
       };
       events.push(endingEvent);
 
-      const { summary } = computeDaySummary(nextSnapshot, day, startedAtWorldMinute, endedAtWorldMinute);
+      const { summary } = computeDaySummary(nextSnapshot, eventLogTail, day, startedAtWorldMinute, endedAtWorldMinute);
       nextSnapshot = {
         ...nextSnapshot,
         completedDaySummaries: [...nextSnapshot.completedDaySummaries, summary],

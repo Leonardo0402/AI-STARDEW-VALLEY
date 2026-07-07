@@ -5,19 +5,32 @@ import React from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { App } from "./App.js";
-import { useOfficeState, ControlPanel } from "@agent-office/control-ui";
+import { ControlPanel } from "@agent-office/control-ui";
+import { LifeSimControlPanel } from "@agent-office/control-ui/life-sim";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
+import { useComposedOfficeState } from "./useComposedOfficeState.js";
 
 vi.mock("@agent-office/control-ui", async () => {
   const actual = await vi.importActual<object>("@agent-office/control-ui");
   return {
     ...actual,
-    useOfficeState: vi.fn(),
     ControlPanel: vi.fn(({ mode }) => (
       <div data-testid="control-panel" data-mode={mode}>ControlPanel:{mode}</div>
     )),
   };
 });
+
+vi.mock("@agent-office/control-ui/life-sim", async () => {
+  const actual = await vi.importActual<object>("@agent-office/control-ui/life-sim");
+  return {
+    ...actual,
+    LifeSimControlPanel: vi.fn(() => <div data-testid="life-sim-panel">LifeSimControlPanel</div>),
+  };
+});
+
+vi.mock("./useComposedOfficeState.js", () => ({
+  useComposedOfficeState: vi.fn(),
+}));
 
 vi.mock("@agent-office/pixel-office", () => ({
   PixelOfficeScene: vi.fn().mockImplementation(() => ({
@@ -70,6 +83,34 @@ const mockSession = {
 const mockStore = {};
 const mockGateway = {};
 
+const lifeSimProjection = {
+  world: {
+    day: 0,
+    dayOfWeek: 1,
+    minuteOfDay: 0,
+    phase: "dawn" as const,
+    status: "not_started" as const,
+    speed: 0,
+  },
+  agents: [],
+  nextTransition: null,
+  previousDaySummaries: [],
+  capabilities: {
+    world: {
+      startDay: true,
+      pause: false,
+      resume: false,
+      endDay: false,
+      advanceTime: false,
+      runToEndOfDay: false,
+    },
+    schedule: { override: false, clearOverride: false },
+    clock: { mode: "manual" as const, maxSpeed: 0 },
+  },
+  truncated: false,
+  lostRuntimeRange: null,
+};
+
 const baseState = {
   projection: {
     agents: [],
@@ -80,6 +121,7 @@ const baseState = {
     pendingApprovals: [],
     blockedTasks: [],
     errors: [],
+    lifeSim: lifeSimProjection,
   },
   eventLog: [],
   errors: [],
@@ -95,6 +137,23 @@ const baseState = {
     activeSubscriptionCursor: 1,
   },
   sendCommand: vi.fn(),
+  lifeSim: {
+    projection: lifeSimProjection,
+    state: "live" as const,
+    errors: [],
+    execute: vi.fn(),
+  },
+  sendLifeSimCommand: vi.fn(),
+};
+
+const mockLifeSimSession = {
+  getProjection: vi.fn().mockReturnValue(lifeSimProjection),
+  getState: vi.fn().mockReturnValue("live"),
+  start: vi.fn().mockResolvedValue(undefined),
+  stop: vi.fn(),
+  execute: vi.fn(),
+  onStateChange: vi.fn().mockReturnValue(() => {}),
+  onProjectionChange: vi.fn().mockReturnValue(() => {}),
 };
 
 function renderApp(overrides: Partial<Parameters<typeof App>[0]> = {}) {
@@ -106,6 +165,7 @@ function renderApp(overrides: Partial<Parameters<typeof App>[0]> = {}) {
       runtimeId="runtime-001"
       capabilities={{ supportedCommands: Object.values({}), supportedEvents: [], features: { snapshot: true, sse: false, websocket: false, commandExecution: true, softMapping: false, hardOrchestration: false } } as any}
       demoControls={<div data-testid="demo-controls">DemoControls</div>}
+      lifeSimSession={mockLifeSimSession as any}
       {...overrides}
     />
   );
@@ -116,7 +176,7 @@ describe("App shell", () => {
     vi.clearAllMocks();
     resizeCallback = null;
     setBodyWidth(1280);
-    (useOfficeState as Mock).mockReturnValue(baseState);
+    (useComposedOfficeState as Mock).mockReturnValue(baseState);
   });
 
   it("renders status strip, header, and body regions", () => {
@@ -200,7 +260,7 @@ describe("App shell", () => {
 
   it("passes retryable and onRetry through to the status strip", () => {
     const onRetry = vi.fn();
-    (useOfficeState as Mock).mockReturnValue({
+    (useComposedOfficeState as Mock).mockReturnValue({
       ...baseState,
       sessionState: "failed",
       diagnostics: { ...baseState.diagnostics, state: "failed" },

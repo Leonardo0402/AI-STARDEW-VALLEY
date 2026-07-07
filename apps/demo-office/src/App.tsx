@@ -25,13 +25,18 @@ import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-offic
 import type { AdapterCapabilities } from "@agent-office/protocol";
 import {
   ControlPanel,
-  useOfficeState,
   type ExperienceMode,
 } from "@agent-office/control-ui";
+import {
+  LifeSimControlPanel,
+  type LifeSimSession,
+  type ComposedOfficeProjection,
+} from "@agent-office/control-ui/life-sim";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
 import { DebriefTimeline } from "./DebriefTimeline.js";
 import { StatusStrip } from "./StatusStrip.js";
+import { useComposedOfficeState } from "./useComposedOfficeState.js";
 
 interface AppProps {
   session: RuntimeSession;
@@ -47,6 +52,10 @@ interface AppProps {
   retryable?: boolean;
   /** Called when the user chooses Retry from the status strip. */
   onRetry?: () => void;
+  /** Active LifeSim session rendered by the control panel. */
+  lifeSimSession: LifeSimSession;
+  /** World identifier used when sending LifeSim commands. */
+  lifeSimWorldId?: string;
 }
 
 type ViewMode = "pixel" | "list";
@@ -66,12 +75,24 @@ export const App: FC<AppProps> = ({
   demoControls,
   retryable = false,
   onRetry,
+  lifeSimSession,
+  lifeSimWorldId = "default",
 }) => {
-  const { projection, eventLog, errors, sessionState, diagnostics, sendCommand } = useOfficeState(
+  const {
+    projection,
+    eventLog,
+    errors,
+    sessionState,
+    diagnostics,
+    sendCommand,
+    sendLifeSimCommand,
+  } = useComposedOfficeState(
     session,
     store,
     gateway,
-    runtimeId
+    runtimeId,
+    lifeSimSession,
+    lifeSimWorldId
   );
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("command");
   const [view, setView] = useState<ViewMode>("pixel");
@@ -271,6 +292,10 @@ export const App: FC<AppProps> = ({
 
         <div className="app-panel">
           {demoControls}
+          <LifeSimControlPanel
+            projection={projection.lifeSim}
+            onSendCommand={sendLifeSimCommand}
+          />
           <ControlPanel
             projection={projection}
             eventLog={eventLog}
@@ -286,7 +311,7 @@ export const App: FC<AppProps> = ({
 };
 
 // ─── Focus Mode 极简指示器 ────────────────────────────────────
-const FocusModeIndicator: FC<{ projection: ReturnType<typeof useOfficeState>["projection"] }> = ({
+const FocusModeIndicator: FC<{ projection: ComposedOfficeProjection }> = ({
   projection,
 }) => {
   const pending = projection.pendingApprovals.length;

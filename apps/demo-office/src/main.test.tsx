@@ -39,6 +39,25 @@ vi.mock("./DemoControls.js", () => ({
   DemoControls: () => <div data-testid="demo-controls">DemoControls</div>,
 }));
 
+vi.mock("@agent-office/control-ui/life-sim", () => ({
+  HttpLifeSimClient: vi.fn().mockImplementation(() => ({
+    connect: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn(),
+  })),
+  LifeSimSession: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+    execute: vi.fn().mockResolvedValue({ status: "accepted" }),
+    projection: {
+      currentDay: 1,
+      currentTime: "08:00",
+      isRunning: false,
+      isEndOfDay: false,
+      summary: null,
+    },
+  })),
+}));
+
 async function flushPromises(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -83,6 +102,7 @@ describe("bootstrap", () => {
     (readConfigFromEnv as Mock).mockReturnValue({
       mode: "mock",
       runtimeId: "mock-runtime-001",
+      lifeSimBaseUrl: "/life-sim",
     });
     (createRuntime as Mock).mockReturnValue(mockComposition);
 

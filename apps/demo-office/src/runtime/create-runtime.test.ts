@@ -13,7 +13,7 @@ describe("createRuntime", () => {
   });
 
   it("mock config creates MockRuntimeAdapter composition", async () => {
-    comp = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001" });
+    comp = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001", lifeSimBaseUrl: "/life-sim" });
     expect(comp.adapter).toBeDefined();
     expect(comp.store).toBeDefined();
     expect(comp.gateway).toBeDefined();
@@ -30,6 +30,7 @@ describe("createRuntime", () => {
       mode: "http-sse",
       runtimeId: "qclaw-swarm-runtime-001",
       baseUrl: "http://localhost:3456",
+      lifeSimBaseUrl: "/life-sim",
     });
     expect(comp.adapter).toBeDefined();
     expect(comp.store).toBeDefined();
@@ -39,7 +40,7 @@ describe("createRuntime", () => {
   });
 
   it("dispose disconnects the session exactly once (idempotent)", async () => {
-    comp = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001" });
+    comp = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001", lifeSimBaseUrl: "/life-sim" });
     await comp.session.connect();
     expect(comp.session.getState()).toBe("connected");
     await comp.dispose();
@@ -50,8 +51,8 @@ describe("createRuntime", () => {
   });
 
   it("createRuntime called twice produces independent compositions (StrictMode safety)", () => {
-    const comp1 = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001" });
-    const comp2 = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001" });
+    const comp1 = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001", lifeSimBaseUrl: "/life-sim" });
+    const comp2 = createRuntime({ mode: "mock", runtimeId: "mock-runtime-001", lifeSimBaseUrl: "/life-sim" });
     expect(comp1.session).not.toBe(comp2.session);
     expect(comp1.store).not.toBe(comp2.store);
     // Cleanup both (synchronous — don't connect)

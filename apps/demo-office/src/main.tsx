@@ -4,11 +4,17 @@ import { readConfigFromEnv, ConfigError } from "./runtime/config.js";
 import { createRuntime } from "./runtime/create-runtime.js";
 import { rebuildRuntime } from "./runtime/rebuild-runtime.js";
 import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
+import {
+  HttpLifeSimClient,
+  LifeSimSession,
+} from "@agent-office/control-ui/life-sim";
 import type { DemoRuntimeConfig } from "./runtime/types.js";
 import type { RuntimeComposition } from "./runtime/types.js";
 import { App } from "./App.js";
 import { DemoControls } from "./DemoControls.js";
 import "./theme.css";
+
+const LIFE_SIM_WORLD_ID = "default";
 
 function renderStartupError(
   root: ReturnType<typeof createRoot>,
@@ -46,6 +52,7 @@ function renderAppComposition(
   root: ReturnType<typeof createRoot>,
   config: DemoRuntimeConfig,
   composition: RuntimeComposition,
+  lifeSimSession: LifeSimSession,
   onRetry: () => void
 ): void {
   const session = composition.session;
@@ -69,6 +76,8 @@ function renderAppComposition(
         }
         retryable={true}
         onRetry={onRetry}
+        lifeSimSession={lifeSimSession}
+        lifeSimWorldId={LIFE_SIM_WORLD_ID}
       />
     </React.StrictMode>
   );
@@ -90,10 +99,10 @@ async function bootstrap(): Promise<void> {
 
   let composition = createRuntime(config);
 
-  async function handleRetry(): Promise<void> {
+  async function handleRetry(lifeSimSession: LifeSimSession): Promise<void> {
     try {
       composition = await rebuildRuntime(config, composition, (next) => {
-        renderAppComposition(root, config, next, handleRetry);
+        renderAppComposition(root, config, next, lifeSimSession, handleRetry.bind(null, lifeSimSession));
       });
     } catch (err) {
       console.error("[demo-office] Runtime retry failed:", err);
@@ -129,10 +138,25 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  renderAppComposition(root, config, composition, handleRetry);
+  const lifeSimClient = new HttpLifeSimClient({
+    baseUrl: config.lifeSimBaseUrl,
+    worldId: LIFE_SIM_WORLD_ID,
+  });
+  const lifeSimSession = new LifeSimSession(lifeSimClient);
+
+  try {
+    await lifeSimSession.start();
+  } catch (err) {
+    console.error("[demo-office] LifeSimSession bootstrap failed:", err);
+    renderStartupError(root, err);
+    return;
+  }
+
+  renderAppComposition(root, config, composition, lifeSimSession, handleRetry.bind(null, lifeSimSession));
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
+      lifeSimSession.stop();
       composition.dispose();
     });
   }

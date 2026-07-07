@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "copy-pixel-assets": "node scripts/copy-pixel-assets.mjs",
-    "dev": "npm run copy-pixel-assets && vite",
+    "dev": "npm run copy-pixel-assets && node --import tsx ../../node_modules/vite/bin/vite.js",
     "build": "npm run copy-pixel-assets && tsc --noEmit && vite build",
     "preview": "vite preview"
   },
@@ -16,6 +16,7 @@
     "@agent-office/adapter-http-sse": "1.0.0",
     "@agent-office/pixel-office": "1.0.0",
     "@agent-office/control-ui": "1.0.0",
+    "@agent-office/life-sim": "1.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "pixi.js": "^8.5.0"
@@ -25,6 +26,7 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "tsx": "^4.19.0",
     "vite": "^5.4.0"
   }
 }

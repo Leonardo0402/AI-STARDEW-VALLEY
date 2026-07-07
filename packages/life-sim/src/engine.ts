@@ -54,7 +54,8 @@ export async function createLifeSimEngine(
       command,
       config,
       () => nextLifeSimSequence++,
-      now()
+      now(),
+      currentTail
     );
     const stagedSnapshot = next;
     const stagedTail = [...currentTail, ...events];
@@ -78,6 +79,8 @@ export async function createLifeSimEngine(
       worldId: currentSnapshot.worldId,
       schemaVersion: currentSnapshot.schemaVersion,
       checkpointLifeSimSequence: currentSnapshot.checkpointLifeSimSequence,
+      startOfDayMinute: config.startOfDayMinute,
+      endOfDayMinute: config.endOfDayMinute,
       snapshot: structuredClone(currentSnapshot),
       eventLogTail: structuredClone(currentTail),
     }),

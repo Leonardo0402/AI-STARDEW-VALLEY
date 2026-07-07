@@ -24,6 +24,7 @@ function makeComposition(overrides: unknown = {}): RuntimeComposition {
 const config: DemoRuntimeConfig = {
   mode: "mock",
   runtimeId: "runtime-001",
+  lifeSimBaseUrl: "/life-sim",
 };
 
 describe("rebuildRuntime", () => {

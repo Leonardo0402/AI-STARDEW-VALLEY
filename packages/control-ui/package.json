@@ -4,12 +4,23 @@
   "type": "module",
   "main": "./src/index.tsx",
   "types": "./src/index.tsx",
+  "exports": {
+    ".": {
+      "default": "./src/index.tsx",
+      "types": "./src/index.tsx"
+    },
+    "./life-sim": {
+      "default": "./src/life-sim/index.ts",
+      "types": "./src/life-sim/index.ts"
+    }
+  },
   "scripts": {
     "build": "tsc --noEmit"
   },
   "dependencies": {
     "@agent-office/protocol": "1.0.0",
     "@agent-office/core": "1.0.0",
+    "@agent-office/life-sim": "1.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
