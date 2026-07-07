@@ -206,7 +206,12 @@ export const App: FC<AppProps> = ({
     const err = projection.errors.find(
       (e) => e.severity === "error" || e.severity === "critical"
     );
-    return err ? { code: "PROJECTION_FAILURE", message: err.message } : null;
+    return err
+      ? {
+          code: (err as { code?: string }).code ?? "PROJECTION_FAILURE",
+          message: err.message,
+        }
+      : null;
   }, [projection]);
 
   const isFocus = experienceMode === "focus";

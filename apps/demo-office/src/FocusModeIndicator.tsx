@@ -8,11 +8,7 @@ interface FocusModeIndicatorProps {
 export const FocusModeIndicator: FC<FocusModeIndicatorProps> = ({
   projection,
 }) => {
-  const pending = projection.pendingApprovals.length;
-  const blocked = projection.blockedTasks.length;
-  const failed =
-    projection.agents.filter((a) => a.status === "failed").length +
-    projection.tasks.filter((t) => t.status === "failed").length;
+  void projection;
 
   return (
     <div className="focus-indicator" data-testid="focus-indicator">
@@ -20,35 +16,6 @@ export const FocusModeIndicator: FC<FocusModeIndicatorProps> = ({
       <p className="focus-indicator__hint">
         Agents continue working in the background; events queue quietly.
       </p>
-      <div className="focus-indicator__stats">
-        <div className="focus-indicator__stat">
-          <span
-            className="focus-indicator__num focus-indicator__num--urgency"
-            data-testid="focus-indicator-count"
-          >
-            {pending}
-          </span>
-          <span className="focus-indicator__label">Pending</span>
-        </div>
-        <div className="focus-indicator__stat">
-          <span
-            className="focus-indicator__num focus-indicator__num--urgency"
-            data-testid="focus-indicator-count"
-          >
-            {blocked}
-          </span>
-          <span className="focus-indicator__label">Blocked</span>
-        </div>
-        <div className="focus-indicator__stat">
-          <span
-            className="focus-indicator__num focus-indicator__num--urgency"
-            data-testid="focus-indicator-count"
-          >
-            {failed}
-          </span>
-          <span className="focus-indicator__label">Failed</span>
-        </div>
-      </div>
       <p className="focus-indicator__hint">
         Switch to Command or Debrief for details.
       </p>

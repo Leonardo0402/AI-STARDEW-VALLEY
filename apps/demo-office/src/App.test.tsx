@@ -271,6 +271,8 @@ describe("App shell", () => {
     expect(urgentPanel).toHaveTextContent("Pending approvals");
     expect(urgentPanel).toHaveTextContent("Blocked tasks");
     expect(urgentPanel).toHaveTextContent("Failed");
+
+    expect(screen.queryByTestId("focus-indicator-count")).not.toBeInTheDocument();
   });
 
   it("debrief mode replaces the canvas with the DebriefTimeline", () => {
@@ -300,6 +302,30 @@ describe("App shell", () => {
     const retryBtn = screen.getByRole("button", { name: /Retry/i });
     fireEvent.click(retryBtn);
     expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("surfaces the real projection error code in the status strip", () => {
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: {
+        ...baseState.projection,
+        agents: [{ status: "failed" }] as any,
+        errors: [
+          {
+            taskId: "t-1",
+            agentId: null,
+            message: "agent not found",
+            severity: "error",
+            code: "entity_not_found",
+          },
+        ],
+      },
+    });
+
+    renderApp();
+    expect(screen.getByText("entity_not_found")).toBeInTheDocument();
+    expect(screen.getByText("agent not found")).toBeInTheDocument();
+    expect(screen.queryByText("PROJECTION_FAILURE")).not.toBeInTheDocument();
   });
 
   it("auto-switches to list view when the body becomes narrow and restores when wide", async () => {

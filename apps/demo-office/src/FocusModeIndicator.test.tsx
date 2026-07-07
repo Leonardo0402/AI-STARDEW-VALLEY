@@ -60,7 +60,7 @@ describe("FocusModeIndicator", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows pending approval, blocked task, and failed counts", () => {
+  it("does not duplicate pending/blocked/failed counts from the urgent panel", () => {
     const projection = makeProjection({
       pendingApprovals: [{ approvalId: "a1" }, { approvalId: "a2" }] as any,
       blockedTasks: [{ taskId: "t1" }] as any,
@@ -70,19 +70,9 @@ describe("FocusModeIndicator", () => {
 
     render(<FocusModeIndicator projection={projection} />);
 
-    const counts = screen.getAllByTestId("focus-indicator-count");
-    expect(counts.map((el) => el.textContent)).toEqual(["2", "1", "2"]);
-
-    expect(screen.getByText("Pending")).toBeInTheDocument();
-    expect(screen.getByText("Blocked")).toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
-  });
-
-  it("applies urgency accent to all count cards", () => {
-    render(<FocusModeIndicator projection={makeProjection()} />);
-    const counts = screen.getAllByTestId("focus-indicator-count");
-    counts.forEach((el) => {
-      expect(el.classList.contains("focus-indicator__num--urgency")).toBe(true);
-    });
+    expect(screen.queryByTestId("focus-indicator-count")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pending")).not.toBeInTheDocument();
+    expect(screen.queryByText("Blocked")).not.toBeInTheDocument();
+    expect(screen.queryByText("Failed")).not.toBeInTheDocument();
   });
 });

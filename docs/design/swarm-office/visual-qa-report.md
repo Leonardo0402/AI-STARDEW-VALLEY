@@ -71,7 +71,7 @@ Updated `ListView.tsx` to use design-token hex equivalents.
 
 ### 8. Canvas background color did not match the app shell
 
-Pixi `backgroundColor` set to `0x161418` (`--base-850`).
+Pixi `backgroundColor` set to `0x161418` (`--base-850`, documented in design-system.md).
 
 ### 9. Canvas text did not follow the design-system font/size rules
 

@@ -112,8 +112,6 @@ function eventOutcome(event: DomainEvent): string | null {
   switch (event.type) {
     case EventType.TASK_COMPLETED:
       return "completed";
-    case EventType.TASK_BLOCKED:
-      return "blocked";
     case EventType.TASK_FAILED:
       return "failed";
     case EventType.APPROVAL_RESOLVED: {

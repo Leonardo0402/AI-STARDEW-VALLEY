@@ -413,45 +413,6 @@
   margin: 0;
 }
 
-.focus-indicator__stats {
-  display: flex;
-  gap: var(--space-lg);
-}
-
-.focus-indicator__stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-.focus-indicator__num {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--base-100);
-}
-
-.focus-indicator__num--success {
-  color: var(--success);
-}
-
-.focus-indicator__num--failure {
-  color: var(--failure);
-}
-
-.focus-indicator__num--info {
-  color: var(--info);
-}
-
-.focus-indicator__num--urgency {
-  color: var(--urgency);
-}
-
-.focus-indicator__label {
-  font-size: 11px;
-  color: var(--base-400);
-}
-
 .app-stage--dimmed > *:not(.focus-indicator) {
   opacity: 0.35;
   filter: brightness(0.55);

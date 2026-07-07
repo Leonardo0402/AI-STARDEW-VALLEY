@@ -188,7 +188,7 @@ The mock adapter used by `apps/demo-office` cannot independently trigger a genui
 
 | Artifact | Path |
 |----------|------|
-| Plan | `docs/superpowers/plans/2026-07-07-issue-14-phase3-swarm-office-v1.1.md` |
+| Plan | `docs/superpowers/plans/2026-07-07-issue-23-swarm-office-v1.1-implementation.md` |
 | Design system | `docs/design/swarm-office/design-system.md` |
 | High-fidelity reference | `docs/design/swarm-office/high-fidelity-designs-preview.png` |
 | Baseline screenshots | `docs/design/swarm-office-v1.1/baseline/` |
