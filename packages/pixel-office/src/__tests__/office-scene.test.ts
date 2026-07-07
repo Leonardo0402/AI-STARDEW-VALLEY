@@ -680,3 +680,178 @@ describe("PixelOfficeScene legacy renderer animations", () => {
     scene.destroy();
   });
 });
+
+describe("PixelOfficeScene selection API", () => {
+  let canvas: HTMLCanvasElement;
+
+  beforeEach(() => {
+    canvas = document.createElement("canvas");
+    MockAssets.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("exposes selectAgent, selectRoom, clearSelection and setOnSelect", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    expect(typeof scene.selectAgent).toBe("function");
+    expect(typeof scene.selectRoom).toBe("function");
+    expect(typeof scene.clearSelection).toBe("function");
+    expect(typeof scene.setOnSelect).toBe("function");
+
+    scene.destroy();
+  });
+
+  it("forwards selected agent ids to the agent renderer", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const agentRenderer = (scene as unknown as { agentRenderer: { getSelectedIds: () => Set<string> } }).agentRenderer;
+
+    scene.selectAgent("agent-1");
+    expect(agentRenderer.getSelectedIds().has("agent-1")).toBe(true);
+
+    scene.clearSelection();
+    expect(agentRenderer.getSelectedIds().has("agent-1")).toBe(false);
+
+    scene.destroy();
+  });
+
+  it("clears previous agent highlight when selecting a new agent", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const agentRenderer = (scene as unknown as { agentRenderer: { getSelectedIds: () => Set<string> } }).agentRenderer;
+
+    scene.selectAgent("agent-1");
+    expect(agentRenderer.getSelectedIds().has("agent-1")).toBe(true);
+
+    scene.selectAgent("agent-2");
+    expect(agentRenderer.getSelectedIds().has("agent-1")).toBe(false);
+    expect(agentRenderer.getSelectedIds().has("agent-2")).toBe(true);
+
+    scene.destroy();
+  });
+
+  it("forwards selected room ids to the room renderer", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const roomRenderer = (scene as unknown as { roomRenderer: { getSelectedIds: () => Set<string> } }).roomRenderer;
+
+    scene.selectRoom("command");
+    expect(roomRenderer.getSelectedIds().has("command")).toBe(true);
+
+    scene.clearSelection();
+    expect(roomRenderer.getSelectedIds().has("command")).toBe(false);
+
+    scene.destroy();
+  });
+
+  it("clears previous room highlight when selecting a new room", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const roomRenderer = (scene as unknown as { roomRenderer: { getSelectedIds: () => Set<string> } }).roomRenderer;
+
+    scene.selectRoom("command");
+    expect(roomRenderer.getSelectedIds().has("command")).toBe(true);
+
+    scene.selectRoom("execution");
+    expect(roomRenderer.getSelectedIds().has("command")).toBe(false);
+    expect(roomRenderer.getSelectedIds().has("execution")).toBe(true);
+
+    scene.destroy();
+  });
+
+  it("renders a highlight outline around a selected agent", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      agents: [
+        {
+          agentId: "agent-1",
+          name: "Agent 1",
+          role: "worker",
+          status: "idle",
+          currentTaskId: null,
+          currentRoomId: "command",
+          blockedReason: null,
+        },
+      ],
+    };
+
+    scene.selectAgent("agent-1");
+    scene.updateProjection(projection);
+
+    const agentLayer = (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[2] as MockContainer;
+    const container = agentLayer.children[0] as MockContainer;
+    const highlights = container.children.filter((c) => c instanceof MockGraphics);
+
+    expect(highlights.length).toBeGreaterThan(0);
+
+    scene.destroy();
+  });
+
+  it("forwards pointerdown on an agent sprite to the setOnSelect callback", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const onSelect = vi.fn();
+    scene.setOnSelect(onSelect);
+
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      agents: [
+        {
+          agentId: "agent-1",
+          name: "Agent 1",
+          role: "worker",
+          status: "idle",
+          currentTaskId: null,
+          currentRoomId: "command",
+          blockedReason: null,
+        },
+      ],
+    };
+
+    scene.updateProjection(projection);
+
+    const agentLayer = (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[2] as MockContainer;
+    const container = agentLayer.children[0] as MockContainer;
+    const pointerDownHandlers = container.eventHandlers["pointerdown"];
+    expect(pointerDownHandlers?.length).toBeGreaterThan(0);
+    pointerDownHandlers![0]();
+
+    expect(onSelect).toHaveBeenCalledWith({ kind: "agent", id: "agent-1" });
+
+    scene.destroy();
+  });
+
+  it("renders a highlight outline around a selected room", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    scene.selectRoom("command");
+    scene.updateProjection(baseProjection);
+
+    const roomLayer = (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[0] as MockContainer;
+    const roomGraphic = roomLayer.children.find((c) => c instanceof MockGraphics) as MockGraphics | undefined;
+    expect(roomGraphic).toBeDefined();
+
+    const outlineStrokes = roomGraphic!.commands.filter(
+      (c) => c.type === "stroke" && (c.args[0] as { width?: number } | undefined)?.width === 4
+    );
+    expect(outlineStrokes.length).toBeGreaterThan(0);
+
+    scene.destroy();
+  });
+});

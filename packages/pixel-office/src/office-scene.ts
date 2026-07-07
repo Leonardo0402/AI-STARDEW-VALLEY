@@ -84,6 +84,7 @@ export class PixelOfficeScene {
   private agentRenderer?: AgentRenderer;
   private effectRenderer?: EffectRenderer;
   private assetLoader?: AssetLoader;
+  private onSelectCallback: ((selection: { kind: string; id: string }) => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement, options: PixelOfficeSceneOptions = {}) {
     this.useSpriteRenderer = options.useSpriteRenderer ?? true;
@@ -153,6 +154,7 @@ export class PixelOfficeScene {
       this.roomRenderer = new RoomRenderer(this.roomLayer, this.assetLoader);
       this.propRenderer = new PropRenderer(this.propLayer, this.assetLoader);
       this.agentRenderer = new AgentRenderer(this.agentLayer, this.assetLoader, this.reduceMotion);
+      this.agentRenderer.onSelectAgent = (agentId) => this.onSelectCallback?.({ kind: "agent", id: agentId });
       this.effectRenderer = new EffectRenderer(this.overlayLayer, this.assetLoader, this.reduceMotion);
     }
 
@@ -227,6 +229,27 @@ export class PixelOfficeScene {
       }
     }
     this.initialized = false;
+  }
+
+  selectAgent(agentId: string): void {
+    this.agentRenderer?.selectAgent(agentId);
+  }
+
+  selectAgents(agentIds: string[]): void {
+    this.agentRenderer?.selectAgents(agentIds);
+  }
+
+  selectRoom(roomId: string): void {
+    this.roomRenderer?.selectRoom(roomId);
+  }
+
+  clearSelection(): void {
+    this.agentRenderer?.clearSelection();
+    this.roomRenderer?.clearSelection();
+  }
+
+  setOnSelect(callback: (selection: { kind: string; id: string }) => void): void {
+    this.onSelectCallback = callback;
   }
 
   // ─── 内部渲染方法 ──────────────────────────────────────────

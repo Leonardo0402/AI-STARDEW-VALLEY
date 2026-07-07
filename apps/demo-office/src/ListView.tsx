@@ -8,14 +8,51 @@
  *
  * 这是为了让用户能直观对比"空间表达 vs 传统 Dashboard"的差异。
  */
-import type { FC } from "react";
+import type { FC, KeyboardEvent } from "react";
 import type { OfficeProjection } from "@agent-office/protocol";
+import type { OfficeSelection } from "@agent-office/pixel-office";
 
 interface ListViewProps {
   projection: OfficeProjection;
+  selection?: OfficeSelection | null;
+  onSelect?: (selection: OfficeSelection) => void;
 }
 
-export const ListView: FC<ListViewProps> = ({ projection }) => {
+export const ListView: FC<ListViewProps> = ({ projection, selection = null, onSelect }) => {
+  const isSelected = (kind: OfficeSelection["kind"], id: string): boolean =>
+    selection?.kind === kind && selection?.id === id;
+
+  const handleSelect = (kind: OfficeSelection["kind"], id: string): void => {
+    onSelect?.({ kind, id });
+  };
+
+  const handleRowKeyDown =
+    (kind: OfficeSelection["kind"], id: string) =>
+    (e: KeyboardEvent<HTMLTableRowElement | HTMLDivElement>): void => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelect?.({ kind, id });
+      }
+    };
+
+  const rowProps = (kind: OfficeSelection["kind"], id: string) => ({
+    tabIndex: onSelect ? 0 : undefined,
+    "aria-selected": isSelected(kind, id),
+    className: `list-view__row ${isSelected(kind, id) ? "list-view__row--selected" : ""}`,
+    onClick: () => handleSelect(kind, id),
+    onKeyDown: handleRowKeyDown(kind, id),
+    style: styles.tr,
+  });
+
+  const roomCardProps = (room: { roomId: string; name: string }) => ({
+    role: "button" as const,
+    tabIndex: onSelect ? 0 : undefined,
+    "aria-selected": isSelected("room", room.roomId),
+    "aria-label": `Select room ${room.name}`,
+    className: `list-view__room-card ${isSelected("room", room.roomId) ? "list-view__row--selected" : ""}`,
+    onClick: () => handleSelect("room", room.roomId),
+    onKeyDown: handleRowKeyDown("room", room.roomId),
+  });
   return (
     <div style={styles.container}>
       <h2 style={styles.title}>Dashboard 视图（传统列表）</h2>
@@ -70,7 +107,7 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
             {projection.agents.map((a) => {
               const room = projection.rooms.find((r) => r.roomId === a.currentRoomId);
               return (
-                <tr key={a.agentId} style={styles.tr}>
+                <tr key={a.agentId} {...rowProps("agent", a.agentId)}>
                   <td style={styles.td}>{a.agentId}</td>
                   <td style={styles.td}>{a.name}</td>
                   <td style={styles.td}>{a.role}</td>
@@ -105,7 +142,7 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
             {projection.tasks.map((t) => {
               const room = projection.rooms.find((r) => r.roomId === t.roomId);
               return (
-                <tr key={t.taskId} style={styles.tr}>
+                <tr key={t.taskId} {...rowProps("task", t.taskId)}>
                   <td style={styles.td}>{t.taskId}</td>
                   <td style={styles.td}>{t.title}</td>
                   <td style={{ ...styles.td, ...taskStatusColor(t.status) }}>{t.status}</td>
@@ -138,7 +175,7 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
             </thead>
             <tbody>
               {projection.artifacts.map((a) => (
-                <tr key={a.artifactId} style={styles.tr}>
+                <tr key={a.artifactId} {...rowProps("artifact", a.artifactId)}>
                   <td style={styles.td}>{a.artifactId}</td>
                   <td style={styles.td}>{a.title}</td>
                   <td style={styles.td}>{a.type}</td>
@@ -173,7 +210,7 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
             </thead>
             <tbody>
               {projection.approvals.map((a) => (
-                <tr key={a.approvalId} style={styles.tr}>
+                <tr key={a.approvalId} {...rowProps("approval", a.approvalId)}>
                   <td style={styles.td}>{a.approvalId}</td>
                   <td style={styles.td}>{a.taskId}</td>
                   <td style={styles.td}>{a.kind}</td>
@@ -192,7 +229,7 @@ export const ListView: FC<ListViewProps> = ({ projection }) => {
         <h3 style={styles.h3}>Rooms</h3>
         <div style={styles.roomGrid}>
           {projection.rooms.map((r) => (
-            <div key={r.roomId} style={styles.roomCard}>
+            <div key={r.roomId} {...roomCardProps(r)} style={styles.roomCard}>
               <div style={styles.roomName}>{r.name}</div>
               <div style={styles.roomType}>{r.type}</div>
               <div style={styles.roomAgents}>

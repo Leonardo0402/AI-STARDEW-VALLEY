@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ControlPanel, type ExperienceMode } from "./ControlPanel.js";
 import { CommandType } from "@agent-office/protocol";
 import type { OfficeProjection, DomainEvent, AdapterCapabilities } from "@agent-office/protocol";
@@ -429,6 +429,26 @@ describe("ControlPanel", () => {
     labels.forEach((label) => expect(label).not.toBe(""));
   });
 
+  it("shows a rework badge for revision_required artifacts", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], status: "revision_required" }],
+    };
+    renderPanel({ projection });
+    const badge = screen.getByText(/revision_required/i);
+    expect(badge).toHaveClass("badge--revision_required");
+  });
+
+  it("shows a distinct rejected badge for rejected artifacts", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], status: "rejected" }],
+    };
+    renderPanel({ projection });
+    const badge = screen.getByText(/rejected/i);
+    expect(badge).toHaveClass("badge--rejected");
+  });
+
   it("focus panel only surfaces pending approvals and blocked states", () => {
     const projection: OfficeProjection = {
       ...baseProjection,
@@ -554,5 +574,80 @@ describe("ControlPanel", () => {
     expect(screen.queryByRole("heading", { name: /^Create Task$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^Agents$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^Tasks$/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("ControlPanel selection", () => {
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  });
+
+  it("calls onSelect when clicking an agent card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Orchestrator").closest(".card") as HTMLElement;
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "agent", id: "agent-1" });
+  });
+
+  it("calls onSelect when clicking a task card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Write Q3 report").closest(".card") as HTMLElement;
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "task", id: "task-1" });
+  });
+
+  it("calls onSelect when clicking an artifact card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Q3-report-v2.md").closest(".card") as HTMLElement;
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "artifact", id: "art-1" });
+  });
+
+  it("marks the selected card with highlight attributes", () => {
+    renderPanel({
+      selection: { kind: "agent", id: "agent-1" },
+      onSelect: vi.fn(),
+    });
+    const card = screen.getByText("Orchestrator").closest(".card") as HTMLElement;
+    expect(card).toHaveAttribute("aria-pressed", "true");
+    expect(card.classList.contains("card--selected")).toBe(true);
+  });
+
+  it("supports Enter key selection on a focused card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Worker-1").closest(".card") as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith({ kind: "agent", id: "agent-2" });
+  });
+
+  it("supports Space key selection on a focused card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Write Q3 report").closest(".card") as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: " " });
+    expect(onSelect).toHaveBeenCalledWith({ kind: "task", id: "task-1" });
+  });
+
+  it("scrolls the selected card into view", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    const { rerender, props } = renderPanel({
+      selection: { kind: "agent", id: "agent-1" },
+    });
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
+
+    scrollIntoView.mockClear();
+    rerender(<ControlPanel {...props} selection={{ kind: "task", id: "task-1" }} />);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
   });
 });

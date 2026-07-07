@@ -34,12 +34,25 @@ vi.mock("./useComposedOfficeState.js", () => ({
 }));
 
 vi.mock("@agent-office/pixel-office", () => ({
-  PixelOfficeScene: vi.fn().mockImplementation(() => ({
-    init: vi.fn().mockResolvedValue(undefined),
-    destroy: vi.fn(),
-    updateProjection: vi.fn(),
-    setReduceMotion: vi.fn(),
-  })),
+  PixelOfficeScene: vi.fn().mockImplementation(() => {
+    let onSelectCallback: ((selection: { kind: string; id: string }) => void) | null = null;
+    return {
+      init: vi.fn().mockResolvedValue(undefined),
+      destroy: vi.fn(),
+      updateProjection: vi.fn(),
+      setReduceMotion: vi.fn(),
+      selectAgent: vi.fn(),
+      selectAgents: vi.fn(),
+      selectRoom: vi.fn(),
+      clearSelection: vi.fn(),
+      setOnSelect: vi.fn((cb: typeof onSelectCallback) => {
+        onSelectCallback = cb;
+      }),
+      simulateAgentSelect: (id: string) => {
+        onSelectCallback?.({ kind: "agent", id });
+      },
+    };
+  }),
 }));
 
 let resizeCallback: ((entries: { contentRect: { width: number } }[]) => void) | null = null;
@@ -487,5 +500,332 @@ describe("DemoControls panel card", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "回放事件" }));
     expect(mockStore.rebuildFromLog).toHaveBeenCalled();
+  });
+});
+
+describe("App selection", () => {
+  const projectionWithEntities = {
+    ...baseState.projection,
+    agents: [
+      {
+        agentId: "agent-1",
+        name: "Agent One",
+        role: "orchestrator",
+        status: "idle",
+        currentTaskId: null,
+        currentRoomId: "room-1",
+        blockedReason: null,
+      },
+      {
+        agentId: "agent-2",
+        name: "Agent Two",
+        role: "worker",
+        status: "working",
+        currentTaskId: "task-1",
+        currentRoomId: "room-2",
+        blockedReason: null,
+      },
+    ],
+    tasks: [
+      {
+        taskId: "task-1",
+        title: "Task One",
+        description: "",
+        status: "running",
+        priority: "high",
+        assigneeId: "agent-2",
+        roomId: "room-2",
+        artifactIds: ["art-1"],
+        approvalId: null,
+        blockedReason: null,
+      },
+    ],
+    artifacts: [
+      {
+        artifactId: "art-1",
+        taskId: "task-1",
+        producerAgentId: "agent-2",
+        type: "document",
+        title: "Artifact One",
+        status: "generated",
+        version: 1,
+        reviewResult: null,
+      },
+    ],
+    approvals: [
+      {
+        approvalId: "approval-1",
+        taskId: "task-1",
+        kind: "artifact_delivery",
+        status: "requested",
+        requestedBy: "agent-2",
+        reason: "Approve delivery",
+      },
+    ],
+    rooms: [
+      {
+        roomId: "room-1",
+        name: "Command",
+        type: "command",
+        bounds: { x: 0, y: 0, width: 200, height: 150 },
+        activeAgentIds: ["agent-1"],
+      },
+      {
+        roomId: "room-2",
+        name: "Execution",
+        type: "execution",
+        bounds: { x: 220, y: 0, width: 200, height: 150 },
+        activeAgentIds: ["agent-2"],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setBodyWidth(1280);
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: projectionWithEntities,
+    });
+  });
+
+  function getControlPanelProps(): Record<string, unknown> {
+    const calls = (ControlPanel as Mock).mock.calls;
+    return calls[calls.length - 1][0] as Record<string, unknown>;
+  }
+
+  function getSceneInstance(): Record<string, ReturnType<typeof vi.fn>> {
+    return (PixelOfficeScene as Mock).mock.results[(PixelOfficeScene as Mock).mock.results.length - 1]
+      .value as Record<string, ReturnType<typeof vi.fn>>;
+  }
+
+  it("passes selection and onSelect to ControlPanel and applies agent selection to the scene", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    expect(typeof props.onSelect).toBe("function");
+
+    const scene = getSceneInstance();
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "agent", id: "agent-1" });
+    });
+
+    expect(scene.selectAgent).toHaveBeenCalledWith("agent-1");
+
+    const nextProps = getControlPanelProps();
+    expect(nextProps.selection).toEqual({ kind: "agent", id: "agent-1" });
+  });
+
+  it("selection survives mode switches", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "agent", id: "agent-1" });
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Command" }));
+
+    expect(getControlPanelProps().selection).toEqual({ kind: "agent", id: "agent-1" });
+  });
+
+  it("selection survives pixel/list view switches", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "agent", id: "agent-1" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pixel" }));
+
+    const scene = getSceneInstance();
+    expect(scene.selectAgent).toHaveBeenCalledWith("agent-1");
+    expect(getControlPanelProps().selection).toEqual({ kind: "agent", id: "agent-1" });
+  });
+
+  it("clears selection when the selected entity disappears from the projection", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "agent", id: "agent-1" });
+    });
+
+    expect(getSceneInstance().selectAgent).toHaveBeenCalledWith("agent-1");
+
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: { ...projectionWithEntities, agents: projectionWithEntities.agents.slice(1) },
+    });
+
+    // Trigger a re-render while still in pixel view so the scene stays alive.
+    fireEvent.click(screen.getByRole("button", { name: "Motion on" }));
+
+    expect(getSceneInstance().clearSelection).toHaveBeenCalled();
+    expect(getControlPanelProps().selection).toBeNull();
+  });
+
+  it("clears selection when Escape is pressed", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "agent", id: "agent-1" });
+    });
+
+    scene.selectAgent.mockClear();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    expect(scene.clearSelection).toHaveBeenCalled();
+    expect(getControlPanelProps().selection).toBeNull();
+  });
+
+  it("updates selection when an agent is selected on the canvas", () => {
+    renderApp();
+    const scene = getSceneInstance();
+    act(() => {
+      scene.simulateAgentSelect("agent-2");
+    });
+
+    expect(getControlPanelProps().selection).toEqual({ kind: "agent", id: "agent-2" });
+    expect(scene.selectAgent).toHaveBeenCalledWith("agent-2");
+  });
+
+  it("highlights the assignee agent when a task is selected", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "task", id: "task-1" });
+    });
+
+    expect(scene.selectAgent).toHaveBeenCalledWith("agent-2");
+  });
+
+  it("highlights the producer agent when an artifact is selected", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "artifact", id: "art-1" });
+    });
+
+    expect(scene.selectAgent).toHaveBeenCalledWith("agent-2");
+  });
+
+  it("highlights the requesting agent when an approval is selected", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "approval", id: "approval-1" });
+    });
+
+    expect(scene.selectAgent).toHaveBeenCalledWith("agent-2");
+  });
+
+  it("highlights the room and its active agents when a room is selected", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "room", id: "room-1" });
+    });
+
+    expect(scene.selectRoom).toHaveBeenCalledWith("room-1");
+    expect(scene.selectAgents).toHaveBeenCalledWith(["agent-1"]);
+  });
+
+  it("falls back to room highlight when a task has no assignee", () => {
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: {
+        ...projectionWithEntities,
+        tasks: [
+          {
+            ...projectionWithEntities.tasks[0],
+            assigneeId: null,
+          },
+        ],
+      },
+    });
+
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "task", id: "task-1" });
+    });
+
+    expect(scene.selectRoom).toHaveBeenCalledWith("room-2");
+  });
+
+  it("clears canvas highlight when the selected entity has no related agent or room", () => {
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: {
+        ...projectionWithEntities,
+        tasks: [
+          {
+            ...projectionWithEntities.tasks[0],
+            assigneeId: null,
+            roomId: null,
+          },
+        ],
+      },
+    });
+
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "task", id: "task-1" });
+    });
+
+    expect(scene.clearSelection).toHaveBeenCalled();
+  });
+
+  it("clears selection when Reset is triggered", () => {
+    const adapter = {
+      playNormalFlow: vi.fn(),
+      playErrorFlow: vi.fn(),
+      playRevisionFlow: vi.fn(),
+      reset: vi.fn(),
+    };
+    const store = { reset: vi.fn() };
+    const resetSession = { resynchronize: vi.fn().mockResolvedValue(undefined) };
+
+    renderApp({
+      demoControls: (
+        <DemoControls
+          adapter={adapter as any}
+          store={store as any}
+          session={resetSession as any}
+        />
+      ),
+    });
+
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "agent", id: "agent-1" });
+    });
+
+    expect(getControlPanelProps().selection).toEqual({ kind: "agent", id: "agent-1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "重置" }));
+
+    expect(adapter.reset).toHaveBeenCalled();
+    expect(store.reset).toHaveBeenCalled();
+    expect(resetSession.resynchronize).toHaveBeenCalled();
+    expect(scene.clearSelection).toHaveBeenCalled();
+    expect(getControlPanelProps().selection).toBeNull();
   });
 });

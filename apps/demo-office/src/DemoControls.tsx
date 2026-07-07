@@ -17,12 +17,15 @@ interface DemoControlsProps {
   adapter: MockRuntimeAdapter;
   store: SnapshotStore;
   session: RuntimeSession;
+  /** Called after the adapter and store have been reset. */
+  onReset?: () => void;
 }
 
-export const DemoControls: FC<DemoControlsProps> = ({ adapter, store, session }) => {
+export const DemoControls: FC<DemoControlsProps> = ({ adapter, store, session, onReset }) => {
   const handleReset = () => {
     adapter.reset();
     store.reset();
+    onReset?.();
     // 重新安装 checkpoint 并恢复订阅（由 session 统一管理）
     session.resynchronize().catch((err) => {
       console.error("[DemoControls] resynchronize 失败：", err);

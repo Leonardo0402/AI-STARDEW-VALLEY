@@ -27,6 +27,8 @@
   --success: #7db68a;
   --failure: #c96a5b;
   --failure-dim: #7a3d34;
+  --rework: #e85d75;
+  --rejected: #7d7682;
   --paused: #7a9cc6;
 
   --glow-info: rgba(126, 192, 200, 0.35);

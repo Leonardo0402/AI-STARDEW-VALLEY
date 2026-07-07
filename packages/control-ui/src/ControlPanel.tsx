@@ -4,7 +4,7 @@
  * 只通过 onSendCommand 发命令，不直接持有 Adapter 或 Store。
  * Stage 2 移除模式切换器（已上移到 App header），仅保留操作卡片和审批表面。
  */
-import { useState, type FC } from "react";
+import { useState, useEffect, useRef, useCallback, type FC } from "react";
 import type {
   OfficeProjection,
   DomainEvent,
@@ -13,6 +13,7 @@ import type {
   TaskView,
 } from "@agent-office/protocol";
 import { CommandType } from "@agent-office/protocol";
+import type { OfficeSelection } from "@agent-office/pixel-office";
 import { EventLogViewer } from "./EventLogViewer.js";
 import { Card } from "./components/Card.js";
 import { Badge, type BadgeIntent } from "./components/Badge.js";
@@ -39,6 +40,8 @@ interface ControlPanelProps {
   ) => Promise<void>;
   /** Adapter capabilities — unsupported commands disable their buttons. */
   capabilities?: AdapterCapabilities;
+  selection?: OfficeSelection | null;
+  onSelect?: (selection: OfficeSelection) => void;
 }
 
 export const ControlPanel: FC<ControlPanelProps> = ({
@@ -48,9 +51,12 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   mode,
   onSendCommand,
   capabilities,
+  selection = null,
+  onSelect,
 }) => {
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
+  const [openingArtifacts, setOpeningArtifacts] = useState<Set<string>>(new Set());
 
   const isSupported = (cmdType: string): boolean =>
     capabilities ? capabilities.supportedCommands.includes(cmdType) : true;
@@ -115,12 +121,19 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   };
 
   const handleOpenArtifact = async (artifactId: string) => {
+    setOpeningArtifacts((prev) => new Set(prev).add(artifactId));
     try {
       await runAction(`open-${artifactId}`, () =>
         onSendCommand(CommandType.ARTIFACT_OPEN, { artifactId }, artifactId)
       );
     } catch {
       // Error is already recorded in actionErrors; swallow so it doesn't become unhandled.
+    } finally {
+      setOpeningArtifacts((prev) => {
+        const next = new Set(prev);
+        next.delete(artifactId);
+        return next;
+      });
     }
   };
 
@@ -138,6 +151,49 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   const idleWorkers = projection.agents.filter(
     (a) => a.role === "worker" && a.status === "idle" && !a.blockedReason
   );
+
+  const isSelected = (kind: OfficeSelection["kind"], id: string): boolean =>
+    selection?.kind === kind && selection?.id === id;
+
+  const handleSelect =
+    (kind: OfficeSelection["kind"], id: string) =>
+    (e?: { stopPropagation?: () => void }): void => {
+      e?.stopPropagation?.();
+      onSelect?.({ kind, id });
+    };
+
+  const handleCardKeyDown =
+    (kind: OfficeSelection["kind"], id: string) =>
+    (e: import("react").KeyboardEvent<HTMLDivElement>): void => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelect?.({ kind, id });
+      }
+    };
+
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const setCardRef = useCallback(
+    (kind: OfficeSelection["kind"], id: string) =>
+      (el: HTMLDivElement | null): void => {
+        const key = `${kind}:${id}`;
+        if (el) {
+          cardRefs.current.set(key, el);
+        } else {
+          cardRefs.current.delete(key);
+        }
+      },
+    []
+  );
+
+  useEffect(() => {
+    if (!selection) return;
+    const key = `${selection.kind}:${selection.id}`;
+    const el = cardRefs.current.get(key);
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selection]);
 
   return (
     <div className="control-panel">
@@ -165,6 +221,9 @@ export const ControlPanel: FC<ControlPanelProps> = ({
             onReject={handleRejectApproval}
             approveDisabled={!isSupported(CommandType.APPROVAL_ACCEPT)}
             rejectDisabled={!isSupported(CommandType.APPROVAL_REJECT)}
+            selection={selection}
+            onSelect={onSelect}
+            cardRef={(approvalId) => setCardRef("approval", approvalId)}
           />
 
           <div className="panel-section">
@@ -178,7 +237,15 @@ export const ControlPanel: FC<ControlPanelProps> = ({
           <div className="panel-section">
             <SectionHeader title="Agents" count={projection.agents.length} countIntent="idle" />
             {projection.agents.map((agent) => (
-              <Card key={agent.agentId}>
+              <Card
+                key={agent.agentId}
+                ref={setCardRef("agent", agent.agentId)}
+                selectable={Boolean(onSelect)}
+                selected={isSelected("agent", agent.agentId)}
+                ariaLabel={`Select agent ${agent.name}`}
+                onClick={handleSelect("agent", agent.agentId)}
+                onKeyDown={handleCardKeyDown("agent", agent.agentId)}
+              >
                 <div className="card-row">
                   <div>
                     <div className="card-title">{agent.name}</div>
@@ -193,7 +260,10 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 <div className="card-footer">
                   <button
                     className="btn btn--secondary btn--small"
-                    onClick={() => handlePauseAgent(agent.agentId)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePauseAgent(agent.agentId);
+                    }}
                     disabled={
                       agent.status === "paused" ||
                       agent.status === "offline" ||
@@ -205,7 +275,10 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                   </button>
                   <button
                     className="btn btn--secondary btn--small"
-                    onClick={() => handleResumeAgent(agent.agentId)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleResumeAgent(agent.agentId);
+                    }}
                     disabled={
                       agent.status !== "paused" || !isSupported(CommandType.AGENT_RESUME)
                     }
@@ -226,7 +299,15 @@ export const ControlPanel: FC<ControlPanelProps> = ({
           <div className="panel-section">
             <SectionHeader title="Tasks" count={projection.tasks.length} countIntent="info" />
             {projection.tasks.map((task) => (
-              <Card key={task.taskId}>
+              <Card
+                key={task.taskId}
+                ref={setCardRef("task", task.taskId)}
+                selectable={Boolean(onSelect)}
+                selected={isSelected("task", task.taskId)}
+                ariaLabel={`Select task ${task.title}`}
+                onClick={handleSelect("task", task.taskId)}
+                onKeyDown={handleCardKeyDown("task", task.taskId)}
+              >
                 <div className="card-row">
                   <div>
                     <div className="card-title">{task.title}</div>
@@ -243,7 +324,10 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                       <button
                         key={a.agentId}
                         className="btn btn--primary btn--small"
-                        onClick={() => handleAssignTask(task.taskId, a.agentId)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAssignTask(task.taskId, a.agentId);
+                        }}
                       >
                         Assign to {a.name}
                       </button>
@@ -265,17 +349,24 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 countIntent="approved"
               />
               {projection.artifacts.map((art) => {
-                // NOTE: art.status is intentionally not used for content-state classification.
-                // The current ArtifactStatus union has no explicit content_unavailable/load_failed
-                // values; we use art.uri === null and actionErrors for those states instead.
                 const artifactOpenSupported = isSupported(CommandType.ARTIFACT_OPEN);
-                const hasContent = Boolean(art.content);
-                const hasUri = Boolean(art.uri);
-                const canOpen = artifactOpenSupported && (hasContent || hasUri);
+                const { state, canOpen, title } = classifyArtifactContentState(art, {
+                  artifactOpenSupported,
+                  openingArtifacts,
+                  actionErrors,
+                });
                 const openError = actionErrors[`open-${art.artifactId}`];
 
                 return (
-                  <Card key={art.artifactId}>
+                  <Card
+                    key={art.artifactId}
+                    ref={setCardRef("artifact", art.artifactId)}
+                    selectable={Boolean(onSelect)}
+                    selected={isSelected("artifact", art.artifactId)}
+                    ariaLabel={`Select artifact ${art.title}`}
+                    onClick={handleSelect("artifact", art.artifactId)}
+                    onKeyDown={handleCardKeyDown("artifact", art.artifactId)}
+                  >
                     <div className="card-row">
                       <div>
                         <div className="card-title">{art.title}</div>
@@ -293,26 +384,33 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                     <div className="card-footer">
                       <button
                         className="btn btn--secondary btn--small"
-                        onClick={() => handleOpenArtifact(art.artifactId)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenArtifact(art.artifactId);
+                        }}
                         disabled={!canOpen}
-                        title={
-                          !artifactOpenSupported
-                            ? "Unsupported by adapter"
-                            : !hasContent && !hasUri
-                              ? "Metadata only — content not loaded."
-                              : undefined
-                        }
+                        title={title}
                       >
                         View
                       </button>
                     </div>
-                    <div className="artifact-preview">
-                      {hasContent ? (
-                        <div className="artifact-preview__content">{art.content}</div>
-                      ) : hasUri ? (
-                        <div className="artifact-preview__uri">{art.uri}</div>
-                      ) : art.uri === null ? (
+                    <div className={`artifact-preview artifact-preview--${state}`}>
+                      {state === "content-available" ? (
+                        art.content != null ? (
+                          <div className="artifact-preview__content">{art.content}</div>
+                        ) : (
+                          <div className="artifact-preview__uri">{art.uri}</div>
+                        )
+                      ) : state === "unavailable" ? (
                         <div className="artifact-preview__unavailable">Content unavailable</div>
+                      ) : state === "loading" ? (
+                        <div className="artifact-preview__loading">Opening…</div>
+                      ) : state === "failed-open" ? (
+                        <div className="artifact-preview__failed">Open failed.</div>
+                      ) : state === "unsupported-open" ? (
+                        <div className="artifact-preview__unsupported">
+                          Opening not supported by adapter.
+                        </div>
                       ) : (
                         <div className="artifact-preview__metadata">
                           Metadata only — content not loaded.
@@ -365,6 +463,65 @@ function parseError(err: string): { code: string; message: string } {
   return { code: "ERROR", message: err };
 }
 
+type ArtifactContentState =
+  | "content-available"
+  | "metadata-only"
+  | "unavailable"
+  | "loading"
+  | "failed-open"
+  | "unsupported-open";
+
+interface ClassifyOptions {
+  artifactOpenSupported: boolean;
+  openingArtifacts: Set<string>;
+  actionErrors: Record<string, string>;
+}
+
+function classifyArtifactContentState(
+  art: import("@agent-office/protocol").ArtifactView,
+  { artifactOpenSupported, openingArtifacts, actionErrors }: ClassifyOptions
+): { state: ArtifactContentState; canOpen: boolean; title?: string } {
+  const openError = actionErrors[`open-${art.artifactId}`];
+
+  if (!artifactOpenSupported) {
+    return {
+      state: "unsupported-open",
+      canOpen: false,
+      title: "Unsupported by adapter",
+    };
+  }
+
+  if (openingArtifacts.has(art.artifactId)) {
+    return { state: "loading", canOpen: false, title: "Opening…" };
+  }
+
+  if (openError) {
+    return {
+      state: "failed-open",
+      canOpen: true,
+      title: "Open failed — click to retry",
+    };
+  }
+
+  if (art.uri === null) {
+    return {
+      state: "unavailable",
+      canOpen: false,
+      title: "Content unavailable",
+    };
+  }
+
+  if (art.content != null || art.uri != null) {
+    return { state: "content-available", canOpen: true };
+  }
+
+  return {
+    state: "metadata-only",
+    canOpen: false,
+    title: "Metadata only — content not loaded.",
+  };
+}
+
 function agentStatusIntent(status: AgentView["status"]): BadgeIntent {
   switch (status) {
     case "idle":
@@ -400,8 +557,9 @@ function taskStatusIntent(status: TaskView["status"]): BadgeIntent {
     case "running":
       return "running";
     case "waiting_approval":
-    case "revision_required":
       return "waiting";
+    case "revision_required":
+      return "revision_required";
     case "blocked":
       return "blocked";
     case "completed":
