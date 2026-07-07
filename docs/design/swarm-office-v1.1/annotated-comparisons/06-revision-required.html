@@ -18,7 +18,7 @@
 <body>
   <div class="header">
     <h1>06 — Revision / Rework Required</h1>
-    <p>Baseline screenshot with design-system / high-fidelity gaps annotated. Reference: docs/design/swarm-office/design-system.md</p>
+    <p>Baseline screenshot with current Issue #25 gaps annotated. Reference: docs/design/swarm-office-v1.1/gap-audit.md</p>
   </div>
   <div class="container">
     <div class="wrap" id="wrap">
@@ -32,7 +32,7 @@
       <line x1="360" y1="420" x2="390" y2="380" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="395" y="350" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">1.</strong> Revision state is visually indistinguishable from idle on canvas
+          <strong style="color:#e6a85c">1.</strong> Revision/rework must remain visually distinct from rejected and failed; artifact truth boundaries are the main remaining gap.
         </div>
       </foreignObject>
       <g transform="translate(1090, 600)">
@@ -42,7 +42,7 @@
       <line x1="1090" y1="600" x2="1120" y2="560" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="1125" y="530" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">2.</strong> Artifact/task marked revision_required but lacks a rework cue (clipboard with red flag)
+          <strong style="color:#e6a85c">2.</strong> Metadata-only / unavailable / unsupported-open artifact states need explicit UI in the artifact card.
         </div>
       </foreignObject>
       <g transform="translate(1090, 760)">
@@ -52,7 +52,7 @@
       <line x1="1090" y1="760" x2="1120" y2="720" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="1125" y="690" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">3.</strong> Agent list shows idle; target: reviewer/worker posture indicating rework + revision badge
+          <strong style="color:#e6a85c">3.</strong> Selected / hovered task or artifact capture is not part of the current baseline set.
         </div>
       </foreignObject>
       <g transform="translate(360, 560)">
@@ -62,7 +62,7 @@
       <line x1="360" y1="560" x2="390" y2="520" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="395" y="490" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">4.</strong> Note: mock adapter cannot independently trigger a true failed/runtime-error state
+          <strong style="color:#e6a85c">4.</strong> Mock adapter limitation: this baseline uses revision_required; true runtime failed state cannot be truthfully produced.
         </div>
       </foreignObject>
       </svg>

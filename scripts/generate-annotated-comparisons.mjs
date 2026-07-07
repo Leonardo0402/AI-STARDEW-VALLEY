@@ -12,76 +12,80 @@ const annotations = [
     name: "01-idle-office",
     title: "01 — Idle Office",
     notes: [
-      { x: 360, y: 260, label: "Canvas is blank black; target: full Command/Execution/Review/Approval rooms with wood floors, rugs, props" },
-      { x: 1090, y: 120, label: "Mode switcher is plain text; target: segmented control with --base-600 active fill" },
-      { x: 1090, y: 320, label: "World card lacks visual hierarchy; target: panel card --base-700 surface + --base-500 border" },
-      { x: 1090, y: 720, label: "Agent list is flat; target: cards with role silhouettes, status badges, pause actions" },
+      { x: 360, y: 260, label: "Linked canvas ↔ control-panel selection is not implemented; clicking an agent/room does not highlight the panel card." },
+      { x: 1090, y: 120, label: "Multi-resolution layout still needs hardening: 1366×768 legibility and 1920×1080 space usage are not yet baselined." },
+      { x: 1090, y: 320, label: "Selected / hovered state capture is missing from visual QA; baselines only show default unselected views." },
+      { x: 1090, y: 720, label: "Mock adapter cannot independently trigger genuine runtime failed/degraded states; those screenshots are skipped rather than fabricated." },
     ],
   },
   {
     name: "02-active-task-execution",
     title: "02 — Active Task Execution",
     notes: [
-      { x: 360, y: 220, label: "Rooms are flat color blocks; target: textured floors, wall lines, wooden doorway signs" },
-      { x: 560, y: 320, label: "Worker is a generic block; target: sturdy silhouette with tool belt + helmet, tool sparks" },
-      { x: 360, y: 560, label: "Missing props: workbench, task board, cable spool, cool task light" },
-      { x: 1090, y: 760, label: "Status badge is small green pill; target: --success badge + 'working' non-color cue (leaning posture)" },
+      { x: 560, y: 300, label: "No linked selection: selecting an agent on canvas does not highlight the matching Agents card or scroll it into view." },
+      { x: 360, y: 560, label: "Artifact truth boundaries are not exposed here; task/artifact cannot yet show content-available vs metadata-only vs unavailable states." },
+      { x: 1090, y: 760, label: "Hover / selected state capture missing; no baseline shows a highlighted task or agent row." },
+      { x: 1090, y: 320, label: "Multi-resolution layout needs audit: 1366×768 panel density and 1920×1080 stage spacing." },
     ],
   },
   {
     name: "03-artifact-under-review",
     title: "03 — Artifact Under Review",
     notes: [
-      { x: 360, y: 560, label: "Reviewer is generic block; target: slim silhouette with glasses + clipboard, page-flip activity" },
-      { x: 360, y: 760, label: "Review room lacks rug, round table, magnifying lamp, papers" },
-      { x: 1090, y: 760, label: "Status shows 'reviewing' but no approval-intent cue; target: clipboard page-flip + soft reading lamp" },
+      { x: 360, y: 560, label: "Artifact state truth boundaries need hardening: revision_required, rejected, blocked, and failed must remain visually distinct and not invented." },
+      { x: 1090, y: 600, label: "Metadata-only / unavailable artifact content is not yet rendered with dedicated UI states in the panel." },
+      { x: 1090, y: 760, label: "Canvas ↔ panel linked selection missing; selecting the reviewer or artifact does not cross-highlight." },
+      { x: 360, y: 760, label: "Mock adapter can produce blocked/revision states, but cannot truthfully produce a runtime failed state." },
     ],
   },
   {
     name: "04-pending-approval",
     title: "04 — Pending Approval",
     notes: [
-      { x: 620, y: 420, label: "Approval/Delivery room missing service bell, counter, package slot, wall sconce" },
-      { x: 1090, y: 600, label: "Approval drawer lacks urgency border-left (--urgency 4px) and bell icon" },
-      { x: 1090, y: 640, label: "Approve/Reject buttons style mismatch; target: primary + danger with --radius-md" },
-      { x: 620, y: 420, label: "No pulsing service-bell glow on canvas counterpart" },
+      { x: 620, y: 420, label: "Approval selection is not linked: choosing the approval in the drawer does not highlight the related room or agent on canvas." },
+      { x: 1090, y: 600, label: "Approve/Reject are decision outcomes; runtime failed/degraded states are out of scope for the mock adapter." },
+      { x: 1090, y: 320, label: "Selected / hovered card capture missing from visual QA baseline set." },
+      { x: 360, y: 120, label: "Multi-resolution hardening: wide-viewport spacing and narrow-viewport legibility not yet verified." },
     ],
   },
   {
     name: "05-blocked-task-agent",
     title: "05 — Blocked Task / Agent",
     notes: [
-      { x: 560, y: 300, label: "Blocked agent has red ! but no slumped posture or frustration expression" },
-      { x: 560, y: 300, label: "Missing red pulse glow / speech bubble per design system" },
-      { x: 1090, y: 840, label: "Blocked badge color correct but missing --failure-dim background + error code" },
+      { x: 560, y: 300, label: "Blocked posture and pulse are present, but true runtime failed/degraded capture is limited by mock adapter capability." },
+      { x: 360, y: 560, label: "This baseline honestly represents blocked; a genuine runtime failure cannot be independently triggered by the mock adapter." },
+      { x: 1090, y: 840, label: "Linked selection missing: clicking a blocked agent card does not highlight the canvas counterpart." },
+      { x: 1090, y: 600, label: "Artifact truth boundary: a blocked task must not be rendered as failed or rejected." },
     ],
   },
   {
     name: "06-revision-required",
     title: "06 — Revision / Rework Required",
     notes: [
-      { x: 360, y: 420, label: "Revision state is visually indistinguishable from idle on canvas" },
-      { x: 1090, y: 600, label: "Artifact/task marked revision_required but lacks a rework cue (clipboard with red flag)" },
-      { x: 1090, y: 760, label: "Agent list shows idle; target: reviewer/worker posture indicating rework + revision badge" },
-      { x: 360, y: 560, label: "Note: mock adapter cannot independently trigger a true failed/runtime-error state" },
+      { x: 360, y: 420, label: "Revision/rework must remain visually distinct from rejected and failed; artifact truth boundaries are the main remaining gap." },
+      { x: 1090, y: 600, label: "Metadata-only / unavailable / unsupported-open artifact states need explicit UI in the artifact card." },
+      { x: 1090, y: 760, label: "Selected / hovered task or artifact capture is not part of the current baseline set." },
+      { x: 360, y: 560, label: "Mock adapter limitation: this baseline uses revision_required; true runtime failed state cannot be truthfully produced." },
     ],
   },
   {
     name: "07-focus-mode",
     title: "07 — Focus Mode",
     notes: [
-      { x: 360, y: 420, label: "Focus overlay dims canvas but does not show ambient activity or compact urgent cards" },
-      { x: 1090, y: 640, label: "Urgent Summary cards exist but lack --urgency accents and count badges" },
-      { x: 1090, y: 420, label: "Right panel still shows full controls; target: collapsed 'Urgent Only' view" },
+      { x: 360, y: 420, label: "Focus panel exists but selection is not linked to canvas; no selected/hovered state capture." },
+      { x: 1090, y: 420, label: "Urgent-only compact view exists; multi-resolution spacing and 1366×768 legibility still need hardening." },
+      { x: 1090, y: 640, label: "Keyboard-accessible selection (Tab/Enter/Space/Escape) is not implemented." },
+      { x: 360, y: 120, label: "Runtime degraded/failed states are not captured because the mock adapter cannot truthfully produce them." },
     ],
   },
   {
     name: "08-debrief-mode",
     title: "08 — Debrief Mode",
     notes: [
-      { x: 360, y: 120, label: "Debrief shows raw event timeline; target: Session Summary with metrics cards + Key timeline" },
-      { x: 1090, y: 640, label: "Summary cards present but not grouped as 'Session Summary'; missing approvals/artifacts metrics" },
-      { x: 360, y: 420, label: "No agent/room debrief visuals or heatmap on canvas" },
+      { x: 360, y: 120, label: "Session Summary + Key timeline are present, but selection/hover states and canvas linkage are not." },
+      { x: 1090, y: 640, label: "Multi-resolution layout: metrics cards and timeline should be audited at 1366×768 and 1920×1080." },
+      { x: 360, y: 420, label: "No selected milestone or row highlight is captured in the baseline set." },
+      { x: 1090, y: 420, label: "Debrief selection does not sync back to canvas or panel; linked selection is a remaining gap." },
     ],
   },
 ];
@@ -125,7 +129,7 @@ function buildHtml(item) {
 <body>
   <div class="header">
     <h1>${item.title}</h1>
-    <p>Baseline screenshot with design-system / high-fidelity gaps annotated. Reference: docs/design/swarm-office/design-system.md</p>
+    <p>Baseline screenshot with current Issue #25 gaps annotated. Reference: docs/design/swarm-office-v1.1/gap-audit.md</p>
   </div>
   <div class="container">
     <div class="wrap" id="wrap">

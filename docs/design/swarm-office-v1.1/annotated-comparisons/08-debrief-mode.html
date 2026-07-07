@@ -18,7 +18,7 @@
 <body>
   <div class="header">
     <h1>08 — Debrief Mode</h1>
-    <p>Baseline screenshot with design-system / high-fidelity gaps annotated. Reference: docs/design/swarm-office/design-system.md</p>
+    <p>Baseline screenshot with current Issue #25 gaps annotated. Reference: docs/design/swarm-office-v1.1/gap-audit.md</p>
   </div>
   <div class="container">
     <div class="wrap" id="wrap">
@@ -32,7 +32,7 @@
       <line x1="360" y1="120" x2="390" y2="80" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="395" y="50" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">1.</strong> Debrief shows raw event timeline; target: Session Summary with metrics cards + Key timeline
+          <strong style="color:#e6a85c">1.</strong> Session Summary + Key timeline are present, but selection/hover states and canvas linkage are not.
         </div>
       </foreignObject>
       <g transform="translate(1090, 640)">
@@ -42,7 +42,7 @@
       <line x1="1090" y1="640" x2="1120" y2="600" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="1125" y="570" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">2.</strong> Summary cards present but not grouped as 'Session Summary'; missing approvals/artifacts metrics
+          <strong style="color:#e6a85c">2.</strong> Multi-resolution layout: metrics cards and timeline should be audited at 1366×768 and 1920×1080.
         </div>
       </foreignObject>
       <g transform="translate(360, 420)">
@@ -52,7 +52,17 @@
       <line x1="360" y1="420" x2="390" y2="380" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="395" y="350" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">3.</strong> No agent/room debrief visuals or heatmap on canvas
+          <strong style="color:#e6a85c">3.</strong> No selected milestone or row highlight is captured in the baseline set.
+        </div>
+      </foreignObject>
+      <g transform="translate(1090, 420)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">4</text>
+      </g>
+      <line x1="1090" y1="420" x2="1120" y2="380" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1125" y="350" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">4.</strong> Debrief selection does not sync back to canvas or panel; linked selection is a remaining gap.
         </div>
       </foreignObject>
       </svg>
