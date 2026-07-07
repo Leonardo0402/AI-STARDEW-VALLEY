@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PixelOfficeScene } from "../office-scene.js";
 import type { OfficeProjection, RoomView } from "@agent-office/protocol";
-import { MockContainer, MockAssets } from "./pixi-mock.js";
+import { MockContainer, MockAssets, MockGraphics } from "./pixi-mock.js";
 
 vi.mock("pixi.js", () => import("./pixi-mock.js").then((m) => m.createPixiMock()));
 
@@ -333,6 +333,287 @@ describe("PixelOfficeScene legacy renderer reduceMotion", () => {
     tick(scene, 16);
 
     expect(overlayLayer.children).toEqual(childrenBefore);
+
+    scene.destroy();
+  });
+});
+
+describe("PixelOfficeScene legacy renderer animations", () => {
+  let canvas: HTMLCanvasElement;
+
+  beforeEach(() => {
+    canvas = document.createElement("canvas");
+    MockAssets.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeApprovalProjection(): OfficeProjection {
+    return {
+      ...baseProjection,
+      tasks: [
+        {
+          taskId: "t1",
+          title: "Task",
+          description: "",
+          status: "queued",
+          priority: "normal",
+          assigneeId: null,
+          roomId: "execution",
+          artifactIds: [],
+          approvalId: null,
+          blockedReason: null,
+        },
+      ],
+      pendingApprovals: [
+        { approvalId: "ap1", taskId: "t1", kind: "artifact_delivery", status: "requested", requestedBy: "a1", reason: "" },
+      ],
+    };
+  }
+
+  function getAgentLayer(scene: PixelOfficeScene): MockContainer {
+    return (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[2] as MockContainer;
+  }
+
+  function getOverlayLayer(scene: PixelOfficeScene): MockContainer {
+    return (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[3] as MockContainer;
+  }
+
+  function getApprovalCircleRadius(overlayLayer: MockContainer): number | undefined {
+    const graphics = overlayLayer.children[0] as MockGraphics;
+    const circle = graphics.commands.find((c) => c.type === "circle");
+    return circle?.args[2] as number | undefined;
+  }
+
+  function tick(scene: PixelOfficeScene, deltaMS: number): void {
+    (scene as unknown as { update: (ticker: { deltaMS: number }) => void }).update({ deltaMS } as unknown as import("pixi.js").Ticker);
+  }
+
+  it("pulses legacy approval overlay on a 1.2s loop", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    scene.updateProjection(makeApprovalProjection());
+    const start = getApprovalCircleRadius(getOverlayLayer(scene))!;
+
+    tick(scene, 300);
+    const mid = getApprovalCircleRadius(getOverlayLayer(scene))!;
+
+    tick(scene, 900);
+    const end = getApprovalCircleRadius(getOverlayLayer(scene))!;
+
+    expect(mid).not.toBe(start);
+    expect(end).toBe(start);
+
+    scene.destroy();
+  });
+
+  it("breathes idle legacy agents in a 1.5s loop", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "idle" as const,
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: null,
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+    tick(scene, 0);
+
+    const container = getAgentLayer(scene).children[0] as MockContainer;
+    const startY = container.y;
+    const startScale = [...container.scale.set.mock.calls].pop();
+
+    tick(scene, 375);
+    expect(container.y).not.toBe(startY);
+    expect([...container.scale.set.mock.calls].pop()).not.toEqual(startScale);
+
+    tick(scene, 1125);
+    expect(container.y).toBe(startY);
+    expect([...container.scale.set.mock.calls].pop()).toEqual(startScale);
+
+    scene.destroy();
+  });
+
+  it("draws working sparkle above legacy working agents", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "working" as const,
+      currentTaskId: null,
+      currentRoomId: "execution",
+      blockedReason: null,
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+
+    const overlayLayer = getOverlayLayer(scene);
+    const graphics = overlayLayer.children.filter((c) => c instanceof MockGraphics) as MockGraphics[];
+    expect(graphics.length).toBeGreaterThan(0);
+
+    // Agent "a1" stands at execution center (320, 125).
+    const hasSparkle = graphics.some((g) =>
+      g.commands.some((c) => c.type === "moveTo" && (c.args[0] as number) > 320 && (c.args[1] as number) < 125)
+    );
+    expect(hasSparkle).toBe(true);
+
+    scene.destroy();
+  });
+
+  it("draws red pulse glow around legacy blocked agents", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "blocked" as const,
+      currentTaskId: null,
+      currentRoomId: "execution",
+      blockedReason: "stuck",
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+
+    const overlayLayer = getOverlayLayer(scene);
+    const graphics = overlayLayer.children.filter((c) => c instanceof MockGraphics) as MockGraphics[];
+    expect(graphics.length).toBeGreaterThan(0);
+
+    // Agent "a1" stands at execution center (320, 125).
+    const hasGlow = graphics.some((g) =>
+      g.commands.some(
+        (c) =>
+          c.type === "circle" &&
+          c.args[0] === 320 &&
+          c.args[1] === 125 &&
+          (c.args[2] as number) > 16
+      )
+    );
+    expect(hasGlow).toBe(true);
+
+    scene.destroy();
+  });
+
+  it("keeps legacy idle agents static when reduceMotion is true", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: true });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "idle" as const,
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: null,
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+    tick(scene, 0);
+
+    const container = getAgentLayer(scene).children[0] as MockContainer;
+    const startY = container.y;
+    const startScaleCalls = container.scale.set.mock.calls.length;
+
+    tick(scene, 375);
+    expect(container.y).toBe(startY);
+    expect(container.scale.set.mock.calls.length).toBe(startScaleCalls);
+
+    scene.destroy();
+  });
+
+  it("keeps legacy working sparkle static when reduceMotion is true", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: true });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "working" as const,
+      currentTaskId: null,
+      currentRoomId: "execution",
+      blockedReason: null,
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+
+    const overlayLayer = getOverlayLayer(scene);
+    const graphicsBefore = overlayLayer.children.filter((c) => c instanceof MockGraphics).length;
+
+    tick(scene, 16);
+    const graphicsAfter = overlayLayer.children.filter((c) => c instanceof MockGraphics).length;
+    expect(graphicsAfter).toBe(graphicsBefore);
+
+    scene.destroy();
+  });
+
+  it("keeps legacy blocked pulse static when reduceMotion is true", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: true });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "blocked" as const,
+      currentTaskId: null,
+      currentRoomId: "execution",
+      blockedReason: "stuck",
+    };
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+
+    const overlayLayer = getOverlayLayer(scene);
+    const graphicsBefore = overlayLayer.children.filter((c) => c instanceof MockGraphics).length;
+
+    tick(scene, 16);
+    const graphicsAfter = overlayLayer.children.filter((c) => c instanceof MockGraphics).length;
+    expect(graphicsAfter).toBe(graphicsBefore);
+
+    scene.destroy();
+  });
+
+  it("guards zero-distance walk duration for legacy agents", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+
+    const zeroDistanceProjection: OfficeProjection = {
+      ...baseProjection,
+      rooms: [
+        { roomId: "command", name: "Command", type: "command", bounds: { x: 0, y: 0, width: 200, height: 150 }, activeAgentIds: [] },
+        { roomId: "execution", name: "Execution", type: "execution", bounds: { x: 0, y: 0, width: 200, height: 150 }, activeAgentIds: [] },
+      ],
+    };
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "blocked" as const,
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: "stuck",
+    };
+    scene.updateProjection({ ...zeroDistanceProjection, agents: [agent] });
+    tick(scene, 16);
+
+    scene.updateProjection({ ...zeroDistanceProjection, agents: [{ ...agent, currentRoomId: "execution" }] });
+    tick(scene, 16);
+
+    const container = getAgentLayer(scene).children[0] as MockContainer;
+    expect(container.x).toBe(100);
+    expect(container.y).toBe(125);
+    expect(Number.isFinite(container.x)).toBe(true);
+    expect(Number.isFinite(container.y)).toBe(true);
 
     scene.destroy();
   });

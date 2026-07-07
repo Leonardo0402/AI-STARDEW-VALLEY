@@ -420,6 +420,41 @@ describe("EffectRenderer", () => {
     expect(later).toBe(start);
   });
 
+  it("wraps effect phases to avoid long-term float drift", async () => {
+    MockAssets.reset({
+      "service-bell": new MockTexture("service-bell"),
+      "blocked-marker": new MockTexture("blocked-marker"),
+      sparkle: new MockTexture("sparkle"),
+    });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/service-bell", "effects/blocked-marker", "effects/sparkle"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+
+    const agent = makeAgent({ status: "blocked", currentRoomId: "execution", blockedReason: "stuck" });
+    const projection = makeProjection(
+      [agent],
+      [],
+      [{ approvalId: "ap1", taskId: "t1", kind: "artifact_delivery", status: "requested", requestedBy: "a1", reason: "" }]
+    );
+
+    renderer.render(projection, layout, 1e9);
+
+    const bellPulsePhase = (renderer as unknown as { bellPulsePhase: number }).bellPulsePhase;
+    const blockedPulsePhase = (renderer as unknown as { blockedPulsePhase: number }).blockedPulsePhase;
+    const sparklePhase = (renderer as unknown as { sparklePhase: number }).sparklePhase;
+
+    expect(bellPulsePhase).toBeGreaterThanOrEqual(0);
+    expect(bellPulsePhase).toBeLessThan(1200);
+    expect(blockedPulsePhase).toBeGreaterThanOrEqual(0);
+    expect(blockedPulsePhase).toBeLessThan(1000);
+    expect(sparklePhase).toBeGreaterThanOrEqual(0);
+    expect(sparklePhase).toBeLessThan(800);
+  });
+
   it("does not accumulate effect phases when reduceMotion is true", async () => {
     MockAssets.reset({
       "service-bell": new MockTexture("service-bell"),

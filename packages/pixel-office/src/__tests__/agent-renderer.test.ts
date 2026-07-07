@@ -319,4 +319,22 @@ describe("AgentRenderer", () => {
     expect(msPerTile).toBeGreaterThanOrEqual(200);
     expect(msPerTile).toBeLessThanOrEqual(300);
   });
+
+  it("guards zero-distance walk duration and avoids division by zero", () => {
+    const zeroDistanceLayout: import("../layout.js").RoomLayout = {
+      rooms: [
+        { roomId: "command", name: "Command", floorType: "command", x: 100, y: 100, width: 10, height: 10, props: [] },
+        { roomId: "execution", name: "Execution", floorType: "execution", x: 100, y: 100, width: 10, height: 10, props: [] },
+      ],
+    };
+    renderer.render([makeAgent("a1", "command")], zeroDistanceLayout, makeProjection([]));
+    renderer.render([makeAgent("a1", "execution")], zeroDistanceLayout, makeProjection([]));
+
+    expect(renderer.getAgentWalkDuration("a1")).toBe(0);
+
+    expect(() => renderer.tick(16)).not.toThrow();
+    const position = renderer.getAgentPosition("a1")!;
+    expect(Number.isFinite(position.x)).toBe(true);
+    expect(Number.isFinite(position.y)).toBe(true);
+  });
 });

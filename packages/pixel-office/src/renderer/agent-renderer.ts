@@ -201,7 +201,7 @@ export class AgentRenderer {
       sprite.walkStartY = sprite.currentY;
       sprite.walkElapsed = 0;
       const distance = Math.hypot(sprite.targetX - sprite.currentX, sprite.targetY - sprite.currentY);
-      sprite.walkDuration = (distance / TILE_SIZE_PX) * WALK_MS_PER_TILE;
+      sprite.walkDuration = distance === 0 ? 0 : (distance / TILE_SIZE_PX) * WALK_MS_PER_TILE;
     }
 
     sprite.lastStatus = agent.status;
@@ -477,10 +477,16 @@ export class AgentRenderer {
 
       if (isMoving) {
         this.resetTransform(sprite);
-        sprite.walkElapsed += deltaMS;
-        const progress = Math.min(sprite.walkElapsed / sprite.walkDuration, 1);
-        sprite.currentX = sprite.walkStartX + (sprite.targetX - sprite.walkStartX) * progress;
-        sprite.currentY = sprite.walkStartY + (sprite.targetY - sprite.walkStartY) * progress;
+        let progress = 1;
+        if (sprite.walkDuration === 0) {
+          sprite.currentX = sprite.targetX;
+          sprite.currentY = sprite.targetY;
+        } else {
+          sprite.walkElapsed += deltaMS;
+          progress = Math.min(sprite.walkElapsed / sprite.walkDuration, 1);
+          sprite.currentX = sprite.walkStartX + (sprite.targetX - sprite.walkStartX) * progress;
+          sprite.currentY = sprite.walkStartY + (sprite.targetY - sprite.walkStartY) * progress;
+        }
         sprite.container.x = sprite.currentX;
         sprite.container.y = sprite.currentY;
 
