@@ -56,6 +56,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
 }) => {
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
+  const [openingArtifacts, setOpeningArtifacts] = useState<Set<string>>(new Set());
 
   const isSupported = (cmdType: string): boolean =>
     capabilities ? capabilities.supportedCommands.includes(cmdType) : true;
@@ -120,12 +121,19 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   };
 
   const handleOpenArtifact = async (artifactId: string) => {
+    setOpeningArtifacts((prev) => new Set(prev).add(artifactId));
     try {
       await runAction(`open-${artifactId}`, () =>
         onSendCommand(CommandType.ARTIFACT_OPEN, { artifactId }, artifactId)
       );
     } catch {
       // Error is already recorded in actionErrors; swallow so it doesn't become unhandled.
+    } finally {
+      setOpeningArtifacts((prev) => {
+        const next = new Set(prev);
+        next.delete(artifactId);
+        return next;
+      });
     }
   };
 
@@ -341,13 +349,12 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 countIntent="approved"
               />
               {projection.artifacts.map((art) => {
-                // NOTE: art.status is intentionally not used for content-state classification.
-                // The current ArtifactStatus union has no explicit content_unavailable/load_failed
-                // values; we use art.uri === null and actionErrors for those states instead.
                 const artifactOpenSupported = isSupported(CommandType.ARTIFACT_OPEN);
-                const hasContent = Boolean(art.content);
-                const hasUri = Boolean(art.uri);
-                const canOpen = artifactOpenSupported && (hasContent || hasUri);
+                const { state, canOpen, title } = classifyArtifactContentState(art, {
+                  artifactOpenSupported,
+                  openingArtifacts,
+                  actionErrors,
+                });
                 const openError = actionErrors[`open-${art.artifactId}`];
 
                 return (
@@ -382,24 +389,28 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                           handleOpenArtifact(art.artifactId);
                         }}
                         disabled={!canOpen}
-                        title={
-                          !artifactOpenSupported
-                            ? "Unsupported by adapter"
-                            : !hasContent && !hasUri
-                              ? "Metadata only — content not loaded."
-                              : undefined
-                        }
+                        title={title}
                       >
                         View
                       </button>
                     </div>
-                    <div className="artifact-preview">
-                      {hasContent ? (
-                        <div className="artifact-preview__content">{art.content}</div>
-                      ) : hasUri ? (
-                        <div className="artifact-preview__uri">{art.uri}</div>
-                      ) : art.uri === null ? (
+                    <div className={`artifact-preview artifact-preview--${state}`}>
+                      {state === "content-available" ? (
+                        art.content != null ? (
+                          <div className="artifact-preview__content">{art.content}</div>
+                        ) : (
+                          <div className="artifact-preview__uri">{art.uri}</div>
+                        )
+                      ) : state === "unavailable" ? (
                         <div className="artifact-preview__unavailable">Content unavailable</div>
+                      ) : state === "loading" ? (
+                        <div className="artifact-preview__loading">Opening…</div>
+                      ) : state === "failed-open" ? (
+                        <div className="artifact-preview__failed">Open failed.</div>
+                      ) : state === "unsupported-open" ? (
+                        <div className="artifact-preview__unsupported">
+                          Opening not supported by adapter.
+                        </div>
                       ) : (
                         <div className="artifact-preview__metadata">
                           Metadata only — content not loaded.
@@ -452,6 +463,65 @@ function parseError(err: string): { code: string; message: string } {
   return { code: "ERROR", message: err };
 }
 
+type ArtifactContentState =
+  | "content-available"
+  | "metadata-only"
+  | "unavailable"
+  | "loading"
+  | "failed-open"
+  | "unsupported-open";
+
+interface ClassifyOptions {
+  artifactOpenSupported: boolean;
+  openingArtifacts: Set<string>;
+  actionErrors: Record<string, string>;
+}
+
+function classifyArtifactContentState(
+  art: import("@agent-office/protocol").ArtifactView,
+  { artifactOpenSupported, openingArtifacts, actionErrors }: ClassifyOptions
+): { state: ArtifactContentState; canOpen: boolean; title?: string } {
+  const openError = actionErrors[`open-${art.artifactId}`];
+
+  if (!artifactOpenSupported) {
+    return {
+      state: "unsupported-open",
+      canOpen: false,
+      title: "Unsupported by adapter",
+    };
+  }
+
+  if (openingArtifacts.has(art.artifactId)) {
+    return { state: "loading", canOpen: false, title: "Opening…" };
+  }
+
+  if (openError) {
+    return {
+      state: "failed-open",
+      canOpen: true,
+      title: "Open failed — click to retry",
+    };
+  }
+
+  if (art.uri === null) {
+    return {
+      state: "unavailable",
+      canOpen: false,
+      title: "Content unavailable",
+    };
+  }
+
+  if (art.content != null || art.uri != null) {
+    return { state: "content-available", canOpen: true };
+  }
+
+  return {
+    state: "metadata-only",
+    canOpen: false,
+    title: "Metadata only — content not loaded.",
+  };
+}
+
 function agentStatusIntent(status: AgentView["status"]): BadgeIntent {
   switch (status) {
     case "idle":
@@ -487,8 +557,9 @@ function taskStatusIntent(status: TaskView["status"]): BadgeIntent {
     case "running":
       return "running";
     case "waiting_approval":
-    case "revision_required":
       return "waiting";
+    case "revision_required":
+      return "revision_required";
     case "blocked":
       return "blocked";
     case "completed":

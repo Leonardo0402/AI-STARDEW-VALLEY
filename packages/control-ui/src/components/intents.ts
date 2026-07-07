@@ -8,12 +8,13 @@ export function artifactStatusIntent(status: ArtifactView["status"]): BadgeInten
     case "generated":
       return "info";
     case "under_review":
-    case "revision_required":
       return "waiting";
+    case "revision_required":
+      return "revision_required";
     case "approved":
       return "approved";
     case "rejected":
-      return "failed";
+      return "rejected";
     case "delivered":
       return "running";
     default:

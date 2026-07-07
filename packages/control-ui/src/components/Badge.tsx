@@ -8,7 +8,9 @@ export type BadgeIntent =
   | "failed"
   | "paused"
   | "approved"
-  | "info";
+  | "info"
+  | "revision_required"
+  | "rejected";
 
 interface BadgeProps {
   intent: BadgeIntent;

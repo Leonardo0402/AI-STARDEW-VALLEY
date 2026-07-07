@@ -429,6 +429,26 @@ describe("ControlPanel", () => {
     labels.forEach((label) => expect(label).not.toBe(""));
   });
 
+  it("shows a rework badge for revision_required artifacts", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], status: "revision_required" }],
+    };
+    renderPanel({ projection });
+    const badge = screen.getByText(/revision_required/i);
+    expect(badge).toHaveClass("badge--revision_required");
+  });
+
+  it("shows a distinct rejected badge for rejected artifacts", () => {
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      artifacts: [{ ...baseProjection.artifacts[0], status: "rejected" }],
+    };
+    renderPanel({ projection });
+    const badge = screen.getByText(/rejected/i);
+    expect(badge).toHaveClass("badge--rejected");
+  });
+
   it("focus panel only surfaces pending approvals and blocked states", () => {
     const projection: OfficeProjection = {
       ...baseProjection,
