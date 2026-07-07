@@ -1,3 +1,4 @@
+import { computePhase } from "@agent-office/life-sim/clock";
 import type {
   LifeSimEvent,
   LifeSimCommand,
@@ -158,7 +159,7 @@ export class LifeSimSession {
         this.scheduleReconnect();
         return;
       }
-      snapshot = applyLifeSimEvent(snapshot, event);
+      snapshot = applyLifeSimEvent(snapshot, event, this.startOfDayMinute);
       lastSeq = event.lifeSimSequence;
       expected++;
     }
@@ -199,7 +200,8 @@ export class LifeSimSession {
     }
     this.localSnapshot = applyLifeSimEvent(
       structuredClone(this.localSnapshot!),
-      event
+      event,
+      this.startOfDayMinute
     );
     this.lastAppliedLifeSimSequence = event.lifeSimSequence;
     this.setState("live");
@@ -237,7 +239,8 @@ export class LifeSimSession {
 
 function applyLifeSimEvent(
   snapshot: LifeSimSnapshot,
-  event: LifeSimEvent
+  event: LifeSimEvent,
+  startOfDayMinute: number
 ): LifeSimSnapshot {
   const next = structuredClone(snapshot);
   switch (event.type) {
@@ -252,7 +255,28 @@ function applyLifeSimEvent(
         day: payload.day,
         dayOfWeek: payload.dayOfWeek as LifeSimSnapshot["worldClock"]["dayOfWeek"],
         minuteOfDay: payload.startedAtWorldMinute,
+        phase: computePhase(payload.startedAtWorldMinute),
         status: "running",
+        updatedAt: event.occurredAt,
+      };
+      break;
+    }
+    case "world.time_advanced": {
+      const payload = event.payload as { newMinute: number };
+      next.worldClock = {
+        ...next.worldClock,
+        minuteOfDay: payload.newMinute,
+        phase: computePhase(payload.newMinute),
+        fractionalMinute: 0,
+        updatedAt: event.occurredAt,
+      };
+      break;
+    }
+    case "world.day_ending": {
+      next.worldClock = {
+        ...next.worldClock,
+        status: "ending",
+        updatedAt: event.occurredAt,
       };
       break;
     }
@@ -260,8 +284,10 @@ function applyLifeSimEvent(
       next.worldClock = {
         ...next.worldClock,
         status: "not_started",
-        minuteOfDay: 0,
+        minuteOfDay: startOfDayMinute,
+        phase: computePhase(startOfDayMinute),
         fractionalMinute: 0,
+        updatedAt: event.occurredAt,
       };
       break;
     }
