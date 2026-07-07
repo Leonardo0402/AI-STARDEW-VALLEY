@@ -7,9 +7,10 @@ DONE
 ## 提交
 
 - `1aee6ef` feat(scripts,design): capture selected states, assert dimensions, update gap-audit for Issue #25 Task 3
-- 报告本身将在后续提交中加入本分支。
+- `5d8d2ea` docs(superpowers): add Task 3 report for Issue #25
 
 分支：`issue-25-swarm-office-follow-up`
+范围：`1aee6ef^..5d8d2ea`
 
 ## 测试摘要
 
