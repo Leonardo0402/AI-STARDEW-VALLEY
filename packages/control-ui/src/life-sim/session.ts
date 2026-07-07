@@ -289,6 +289,8 @@ function applyLifeSimEvent(
         fractionalMinute: 0,
         updatedAt: event.occurredAt,
       };
+      next.activeActivities = [];
+      next.activeOverlays = [];
       break;
     }
     case "schedule.activity_started": {

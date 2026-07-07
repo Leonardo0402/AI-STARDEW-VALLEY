@@ -458,4 +458,65 @@ describe("LifeSimSession", () => {
     expect(projection.capabilities.world.endDay).toBe(false);
     expect(projection.previousDaySummaries).toHaveLength(1);
   });
+
+  it("clears active overlays and activities on world.day_ended", async () => {
+    await session.start();
+
+    client.subscriptions[0].simulateEvent(
+      makeEvent(4, "schedule.overlay_created", {
+        overlay: {
+          overlayId: "overlay-1",
+          agentId: "agent-1",
+          entry: {
+            entryId: "overlay-1",
+            agentId: "agent-1",
+            startMinute: 480,
+            endMinute: 1110,
+            activity: "work",
+            roomId: "room-1",
+            priority: 10,
+            source: "task_overlay",
+          },
+          createdBy: "task",
+          createdAtWorldMinute: 480,
+          createdByTaskId: "task-1",
+          createdByRuntimeSequence: 1,
+          originalStartMinute: null,
+        },
+      })
+    );
+
+    expect(session.getProjection().agents).toHaveLength(1);
+
+    client.subscriptions[0].simulateEvent(
+      makeEvent(5, "world.time_advanced", {
+        oldMinute: 480,
+        newMinute: 1110,
+        day: 1,
+      })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(6, "world.day_ending", { day: 1, endedAtWorldMinute: 1110 })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(7, "day.summary_recorded", {
+        day: 1,
+        summary: {
+          day: 1,
+          startedAtWorldMinute: 480,
+          endedAtWorldMinute: 1110,
+          truncated: false,
+          agentActivities: [],
+          taskCounts: { created: 0, completed: 0, blocked: 0, failed: 0 },
+          approvalCounts: { requested: 0, approved: 0, rejected: 0 },
+          notableEventIds: [],
+        },
+      })
+    );
+    client.subscriptions[0].simulateEvent(
+      makeEvent(8, "world.day_ended", { day: 1, summaryId: "summary-1" })
+    );
+
+    expect(session.getProjection().agents).toHaveLength(0);
+  });
 });
