@@ -398,6 +398,66 @@ describe("EffectRenderer", () => {
     const later = lastScale(getSprites(container)[0]);
     expect(later).toBe(start);
   });
+
+  it("keeps blocked marker static when reduceMotion is true", async () => {
+    MockAssets.reset({ "blocked-marker": new MockTexture("blocked-marker") });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/blocked-marker"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader,
+      true
+    );
+
+    const agent = makeAgent({ status: "blocked", currentRoomId: "execution", blockedReason: "stuck" });
+
+    renderer.render(makeProjection([agent]), layout, 0);
+    const start = lastScale(getSprites(container)[0]);
+
+    renderer.render(makeProjection([agent]), layout, 1000);
+    const later = lastScale(getSprites(container)[0]);
+    expect(later).toBe(start);
+  });
+
+  it("does not accumulate effect phases when reduceMotion is true", async () => {
+    MockAssets.reset({
+      "service-bell": new MockTexture("service-bell"),
+      "blocked-marker": new MockTexture("blocked-marker"),
+      sparkle: new MockTexture("sparkle"),
+    });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/service-bell", "effects/blocked-marker", "effects/sparkle"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader,
+      true
+    );
+
+    const agent = makeAgent({ status: "blocked", currentRoomId: "execution", blockedReason: "stuck" });
+    const projection = makeProjection(
+      [agent],
+      [],
+      [{ approvalId: "ap1", taskId: "t1", kind: "artifact_delivery", status: "requested", requestedBy: "a1", reason: "" }]
+    );
+
+    renderer.render(projection, layout, 16);
+    const before = {
+      bellPulsePhase: (renderer as unknown as { bellPulsePhase: number }).bellPulsePhase,
+      blockedPulsePhase: (renderer as unknown as { blockedPulsePhase: number }).blockedPulsePhase,
+      sparklePhase: (renderer as unknown as { sparklePhase: number }).sparklePhase,
+    };
+
+    renderer.render(projection, layout, 10000);
+    const after = {
+      bellPulsePhase: (renderer as unknown as { bellPulsePhase: number }).bellPulsePhase,
+      blockedPulsePhase: (renderer as unknown as { blockedPulsePhase: number }).blockedPulsePhase,
+      sparklePhase: (renderer as unknown as { sparklePhase: number }).sparklePhase,
+    };
+
+    expect(after).toEqual(before);
+  });
 });
 
 function lastScale(sprite: MockSprite): number {

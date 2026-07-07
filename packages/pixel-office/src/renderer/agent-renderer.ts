@@ -201,7 +201,7 @@ export class AgentRenderer {
       sprite.walkStartY = sprite.currentY;
       sprite.walkElapsed = 0;
       const distance = Math.hypot(sprite.targetX - sprite.currentX, sprite.targetY - sprite.currentY);
-      sprite.walkDuration = Math.max((distance / TILE_SIZE_PX) * WALK_MS_PER_TILE, 100);
+      sprite.walkDuration = (distance / TILE_SIZE_PX) * WALK_MS_PER_TILE;
     }
 
     sprite.lastStatus = agent.status;

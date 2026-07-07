@@ -283,7 +283,7 @@ describe("AgentRenderer", () => {
     const target = renderer.getAgentTarget("a1")!;
     const distance = Math.hypot(target.x - start.x, target.y - start.y);
     const tiles = distance / 64;
-    const duration = (renderer as unknown as { getAgentWalkDuration: (id: string) => number }).getAgentWalkDuration("a1");
+    const duration = renderer.getAgentWalkDuration("a1")!;
     const msPerTile = duration / tiles;
 
     expect(msPerTile).toBeGreaterThanOrEqual(200);
@@ -297,5 +297,26 @@ describe("AgentRenderer", () => {
     const end = renderer.getAgentPosition("a1")!;
     expect(end.x).toBe(target.x);
     expect(end.y).toBe(target.y);
+  });
+
+  it("does not clamp short moves above 300ms per tile", () => {
+    const shortLayout: import("../layout.js").RoomLayout = {
+      rooms: [
+        { roomId: "command", name: "Command", floorType: "command", x: 0, y: 0, width: 10, height: 10, props: [] },
+        { roomId: "execution", name: "Execution", floorType: "execution", x: 10, y: 0, width: 10, height: 10, props: [] },
+      ],
+    };
+    renderer.render([makeAgent("a1", "command")], shortLayout, makeProjection([]));
+    renderer.render([makeAgent("a1", "execution")], shortLayout, makeProjection([]));
+
+    const start = renderer.getAgentPosition("a1")!;
+    const target = renderer.getAgentTarget("a1")!;
+    const distance = Math.hypot(target.x - start.x, target.y - start.y);
+    const tiles = distance / 64;
+    const duration = renderer.getAgentWalkDuration("a1")!;
+    const msPerTile = duration / tiles;
+
+    expect(msPerTile).toBeGreaterThanOrEqual(200);
+    expect(msPerTile).toBeLessThanOrEqual(300);
   });
 });

@@ -148,3 +148,137 @@ describe("PixelOfficeScene renderer selection", () => {
     scene.destroy();
   });
 });
+
+describe("PixelOfficeScene legacy renderer reduceMotion", () => {
+  let canvas: HTMLCanvasElement;
+
+  beforeEach(() => {
+    canvas = document.createElement("canvas");
+    MockAssets.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeApprovalProjection(): OfficeProjection {
+    return {
+      ...baseProjection,
+      tasks: [
+        {
+          taskId: "t1",
+          title: "Task",
+          description: "",
+          status: "queued",
+          priority: "normal",
+          assigneeId: null,
+          roomId: "execution",
+          artifactIds: [],
+          approvalId: null,
+          blockedReason: null,
+        },
+      ],
+      pendingApprovals: [
+        { approvalId: "ap1", taskId: "t1", kind: "artifact_delivery", status: "requested", requestedBy: "a1", reason: "" },
+      ],
+    };
+  }
+
+  function getOverlayLayer(scene: PixelOfficeScene): MockContainer {
+    return (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[3] as MockContainer;
+  }
+
+  function getAgentLayer(scene: PixelOfficeScene): MockContainer {
+    return (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[2] as MockContainer;
+  }
+
+  function getApprovalCircleRadius(overlayLayer: MockContainer): number | undefined {
+    const graphics = overlayLayer.children[0] as import("./pixi-mock.js").MockGraphics;
+    const circle = graphics.commands.find((c) => c.type === "circle");
+    return circle?.args[2] as number | undefined;
+  }
+
+  function tick(scene: PixelOfficeScene, deltaMS: number): void {
+    (scene as unknown as { update: (ticker: { deltaMS: number }) => void }).update({ deltaMS } as unknown as import("pixi.js").Ticker);
+  }
+
+  it("drives legacy overlay pulse from deltaMS instead of Date.now()", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: false });
+    await scene.init(canvas);
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1000);
+
+    scene.updateProjection(makeApprovalProjection());
+    const before = getApprovalCircleRadius(getOverlayLayer(scene))!;
+
+    tick(scene, 1000);
+    const after = getApprovalCircleRadius(getOverlayLayer(scene))!;
+
+    expect(after).not.toBe(before);
+
+    nowSpy.mockRestore();
+    scene.destroy();
+  });
+
+  it("keeps legacy overlay pulse static when reduceMotion is true", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: true });
+    await scene.init(canvas);
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValueOnce(1000).mockReturnValueOnce(2000);
+
+    scene.updateProjection(makeApprovalProjection());
+    const before = getApprovalCircleRadius(getOverlayLayer(scene))!;
+
+    tick(scene, 1000);
+    const after = getApprovalCircleRadius(getOverlayLayer(scene))!;
+
+    expect(after).toBe(before);
+
+    nowSpy.mockRestore();
+    scene.destroy();
+  });
+
+  it("teleports legacy agents instantly when reduceMotion is true", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: true });
+    await scene.init(canvas);
+
+    const agent = {
+      agentId: "a1",
+      name: "Agent 1",
+      role: "worker" as const,
+      status: "idle" as const,
+      currentTaskId: null,
+      currentRoomId: "command",
+      blockedReason: null,
+    };
+
+    scene.updateProjection({ ...baseProjection, agents: [agent] });
+    tick(scene, 16);
+
+    scene.updateProjection({ ...baseProjection, agents: [{ ...agent, currentRoomId: "execution" }] });
+    tick(scene, 16);
+
+    const agentLayer = getAgentLayer(scene);
+    const container = agentLayer.children[0] as MockContainer;
+    // Agent "a1" hash gives offsetX=0, offsetY=50 inside the execution room.
+    expect(container.x).toBe(320);
+    expect(container.y).toBe(125);
+
+    scene.destroy();
+  });
+
+  it("does not re-render legacy overlays every frame when reduceMotion is true", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: false, reduceMotion: true });
+    await scene.init(canvas);
+
+    scene.updateProjection(makeApprovalProjection());
+    const overlayLayer = getOverlayLayer(scene);
+    const childrenBefore = overlayLayer.children.slice();
+
+    tick(scene, 16);
+
+    expect(overlayLayer.children).toEqual(childrenBefore);
+
+    scene.destroy();
+  });
+});

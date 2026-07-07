@@ -47,9 +47,11 @@ export class EffectRenderer {
   }
 
   render(projection: OfficeProjection, layout: RoomLayout, deltaMS = 16.67): void {
-    this.bellPulsePhase += deltaMS;
-    this.blockedPulsePhase += deltaMS;
-    this.sparklePhase += deltaMS;
+    if (!this.reduceMotion) {
+      this.bellPulsePhase += deltaMS;
+      this.blockedPulsePhase += deltaMS;
+      this.sparklePhase += deltaMS;
+    }
 
     const bellPulse = this.reduceMotion
       ? 0.5

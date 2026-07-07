@@ -59,6 +59,7 @@ export class PixelOfficeScene {
 
   private useSpriteRenderer: boolean;
   private reduceMotion: boolean;
+  private overlayPulsePhase = 0;
   private roomRenderer?: RoomRenderer;
   private propRenderer?: PropRenderer;
   private agentRenderer?: AgentRenderer;
@@ -342,7 +343,9 @@ export class PixelOfficeScene {
       const room = projection.rooms.find((r) => r.roomId === task.roomId);
       if (!room) continue;
 
-      const pulse = (Math.sin(Date.now() / 300) + 1) / 2;
+      const pulse = this.reduceMotion
+        ? 0.5
+        : (Math.sin(this.overlayPulsePhase / 300) + 1) / 2;
       const circle = new Graphics();
       circle
         .circle(room.bounds.x + room.bounds.width / 2, room.bounds.y + 20, 8 + pulse * 4)
@@ -399,20 +402,29 @@ export class PixelOfficeScene {
       return;
     }
 
+    if (!this.reduceMotion) {
+      this.overlayPulsePhase += ticker.deltaMS;
+    }
+
     // 平滑移动 agent 到目标位置
     for (const sprite of this.agentSprites.values()) {
       const dx = sprite.targetX - sprite.currentX;
       const dy = sprite.targetY - sprite.currentY;
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-        sprite.currentX += dx * 0.1;
-        sprite.currentY += dy * 0.1;
+        if (this.reduceMotion) {
+          sprite.currentX = sprite.targetX;
+          sprite.currentY = sprite.targetY;
+        } else {
+          sprite.currentX += dx * 0.1;
+          sprite.currentY += dy * 0.1;
+        }
         sprite.container.x = sprite.currentX;
         sprite.container.y = sprite.currentY;
       }
     }
 
-    // 如果有 pendingApprovals，持续刷新 overlay 闪烁
-    if (this.currentProjection && this.currentProjection.pendingApprovals.length > 0) {
+    // 如果有 pendingApprovals，持续刷新 overlay 闪烁（reduceMotion 时保持静态）
+    if (!this.reduceMotion && this.currentProjection && this.currentProjection.pendingApprovals.length > 0) {
       this.renderOverlays(this.currentProjection);
     }
   }
