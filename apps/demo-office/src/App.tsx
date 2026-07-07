@@ -195,6 +195,20 @@ export const App: FC<AppProps> = ({
     return { type: event.type, timestamp: event.occurredAt };
   }, [eventLog]);
 
+  const failedCount = useMemo(
+    () =>
+      projection.agents.filter((a) => a.status === "failed").length +
+      projection.tasks.filter((t) => t.status === "failed").length,
+    [projection]
+  );
+
+  const failedError = useMemo(() => {
+    const err = projection.errors.find(
+      (e) => e.severity === "error" || e.severity === "critical"
+    );
+    return err ? { code: "PROJECTION_FAILURE", message: err.message } : null;
+  }, [projection]);
+
   const isFocus = experienceMode === "focus";
   const isDebrief = experienceMode === "debrief";
 
@@ -206,6 +220,8 @@ export const App: FC<AppProps> = ({
         diagnostics={diagnostics}
         lastEvent={lastEvent}
         retryable={retryable}
+        failedCount={failedCount}
+        failedError={failedError}
         onRetry={onRetry}
         onResync={() => {
           session.resynchronize().catch((err) =>

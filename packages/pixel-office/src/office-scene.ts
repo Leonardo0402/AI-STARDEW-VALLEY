@@ -153,7 +153,7 @@ export class PixelOfficeScene {
       const layout = projection.rooms.length > 0 ? createLayoutFromRoomViews(projection.rooms) : createDefaultLayout();
       this.currentLayout = layout;
       this.roomRenderer.render(layout);
-      this.propRenderer.render(layout);
+      this.propRenderer.render(layout, projection.pendingApprovals.length);
       this.agentRenderer.render(projection.agents, layout, projection);
       this.effectRenderer.render(projection, layout);
     } else {

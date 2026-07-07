@@ -216,4 +216,88 @@ describe("EffectRenderer", () => {
       expect(calls[calls.length - 1]).toEqual(firstCalls[i][firstCalls[i].length - 1]);
     });
   });
+
+  it("draws an urgency glow ring around the service bell", async () => {
+    MockAssets.reset({ "service-bell": new MockTexture("service-bell") });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/service-bell"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+
+    const projection = makeProjection([], [], [
+      { approvalId: "ap1", taskId: "t1", kind: "artifact_delivery", status: "requested", requestedBy: "a1", reason: "" },
+    ]);
+    renderer.render(projection, layout);
+
+    const graphics = getGraphics(container);
+    expect(graphics.length).toBeGreaterThan(0);
+    const approvalRoom = layout.rooms.find((r) => r.floorType === "approval_delivery")!;
+    const bx = approvalRoom.x + approvalRoom.width / 2;
+    const by = approvalRoom.y + 20;
+    const hasGlow = graphics.some((g) =>
+      g.commands.some(
+        (cmd) =>
+          cmd.type === "circle" &&
+          cmd.args[0] === bx &&
+          cmd.args[1] === by &&
+          (cmd.args[2] as number) > 12
+      )
+    );
+    expect(hasGlow).toBe(true);
+  });
+
+  it("draws a red pulse glow and speech-bubble exclamation for blocked agents", async () => {
+    MockAssets.reset({ "blocked-marker": new MockTexture("blocked-marker") });
+    const loader = new AssetLoader();
+    await loader.loadAll(["effects/blocked-marker"]);
+
+    const renderer = new EffectRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+
+    const agent = makeAgent({ status: "blocked", currentRoomId: "execution", blockedReason: "stuck" });
+    renderer.render(makeProjection([agent]), layout);
+
+    const pos = getAgentPositionByRoomId(layout, "execution", agentSeed(agent.agentId));
+    const graphics = getGraphics(container);
+    const texts = getTexts(container);
+
+    const hasGlow = graphics.some((g) =>
+      g.commands.some(
+        (cmd) =>
+          cmd.type === "circle" &&
+          cmd.args[0] === pos.x &&
+          cmd.args[1] === pos.y &&
+          (cmd.args[2] as number) > 10
+      )
+    );
+    expect(hasGlow).toBe(true);
+    expect(texts.some((t) => t.text === "!")).toBe(true);
+  });
+
+  it("draws an error tag next to failed agents", () => {
+    const renderer = new EffectRenderer(container as unknown as import("pixi.js").Container);
+
+    const agent = makeAgent({ status: "failed", currentRoomId: "execution" });
+    renderer.render(makeProjection([agent]), layout);
+
+    const pos = getAgentPositionByRoomId(layout, "execution", agentSeed(agent.agentId));
+    const graphics = getGraphics(container);
+    const texts = getTexts(container);
+
+    const hasErrorTag = graphics.some((g) =>
+      g.commands.some(
+        (cmd) =>
+          cmd.type === "rect" &&
+          (cmd.args[0] as number) > pos.x &&
+          (cmd.args[1] as number) < pos.y
+      )
+    );
+    expect(hasErrorTag).toBe(true);
+    expect(texts.some((t) => t.text === "×")).toBe(true);
+  });
 });

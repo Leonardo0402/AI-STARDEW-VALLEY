@@ -197,6 +197,10 @@
   filter: brightness(1.08);
 }
 
+.status-strip--failure .status-error-code {
+  color: var(--failure);
+}
+
 /* ─── App Header ──────────────────────────────────────────── */
 
 .app-header {
@@ -458,6 +462,24 @@
   inset: 0;
   background: rgba(19, 16, 20, 0.55);
   backdrop-filter: blur(2px);
+}
+
+/* ─── Approval Drawer overrides ───────────────────────────── */
+
+.approval-drawer__title::before {
+  content: "🔔";
+  font-size: 10px;
+  margin-right: var(--space-xs);
+}
+
+/* ─── Blocked / failed panel cards ────────────────────────── */
+
+.card:has(.badge--blocked) {
+  border-left: 3px solid var(--failure);
+}
+
+.badge--failed {
+  background: var(--failure-dim);
 }
 
 /* ─── Debrief Timeline ────────────────────────────────────── */

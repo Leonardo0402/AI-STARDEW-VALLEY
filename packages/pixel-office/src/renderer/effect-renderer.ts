@@ -22,6 +22,7 @@ export class EffectRenderer {
   private blockedItems: EffectItem[] = [];
   private sparkleItems: EffectItem[] = [];
   private bellItems: EffectItem[] = [];
+  private failedItems: EffectItem[] = [];
   private reduceMotion = false;
   private pulsePhase = 0;
 
@@ -41,8 +42,9 @@ export class EffectRenderer {
     this.pulsePhase += deltaMS;
     const pulse = this.reduceMotion ? 0.5 : (Math.sin(this.pulsePhase / 400) + 1) / 2;
 
+    const failedAgents = projection.agents.filter((a) => a.status === "failed");
     const blockedAgents = projection.agents.filter(
-      (a) => computeAgentPresentationState(a, projection) === "blocked"
+      (a) => computeAgentPresentationState(a, projection) === "blocked" && a.status !== "failed"
     );
     const workingAgents = projection.agents.filter(
       (a) => computeAgentPresentationState(a, projection) === "working"
@@ -53,6 +55,9 @@ export class EffectRenderer {
             (r) => r.floorType === "approval_delivery" || r.floorType === "review"
           )
         : [];
+
+    const failedCount = this.renderFailedMarkers(failedAgents, layout, pulse);
+    this.hideExtras(this.failedItems, failedCount);
 
     const blockedCount = this.renderBlockedMarkers(blockedAgents, layout, pulse);
     this.hideExtras(this.blockedItems, blockedCount);
@@ -76,6 +81,14 @@ export class EffectRenderer {
       );
       const x = pos.x;
       const y = pos.y - 18;
+      const glowRadius = 18 + pulse * 4;
+      const glowAlpha = 0.1 + pulse * 0.15;
+
+      item.graphics.clear();
+      item.graphics
+        .circle(pos.x, pos.y, glowRadius)
+        .fill({ color: 0xc96a5b, alpha: glowAlpha });
+      item.graphics.visible = true;
 
       if (markerTexture) {
         this.ensureSprite(item, markerTexture);
@@ -84,22 +97,31 @@ export class EffectRenderer {
         const scale = 0.9 + pulse * 0.2;
         item.sprite!.scale.set(scale, scale);
         item.sprite!.visible = true;
-        item.graphics.visible = false;
-        item.label.visible = false;
-        continue;
+      } else {
+        item.graphics.circle(x, y, 6).fill({ color: 0xc96a5b }).stroke({ color: 0x7a332a, width: 2 });
+        if (item.sprite) item.sprite.visible = false;
       }
 
-      item.graphics.clear();
-      item.graphics.circle(x, y, 6).fill({ color: 0xc96a5b }).stroke({ color: 0x7a332a, width: 2 });
-      item.graphics.visible = true;
+      // Speech-bubble exclamation marker
+      const bubbleX = x + 12;
+      const bubbleY = y - 10;
+      item.graphics
+        .circle(bubbleX, bubbleY, 6)
+        .fill({ color: 0xc96a5b })
+        .stroke({ color: 0x7a332a, width: 1 });
+      item.graphics
+        .moveTo(bubbleX - 3, bubbleY + 4)
+        .lineTo(bubbleX - 6, bubbleY + 9)
+        .lineTo(bubbleX, bubbleY + 5)
+        .closePath()
+        .fill({ color: 0xc96a5b });
 
       item.label.text = "!";
       item.label.style = new TextStyle({ fontSize: 10, fill: 0xf2f0eb, fontFamily: "Inter, system-ui, sans-serif" });
       item.label.anchor.set(0.5, 0.5);
-      item.label.x = x;
-      item.label.y = y;
+      item.label.x = bubbleX;
+      item.label.y = bubbleY;
       item.label.visible = true;
-      if (item.sprite) item.sprite.visible = false;
     }
     return index;
   }
@@ -147,31 +169,68 @@ export class EffectRenderer {
       const item = this.getItem(this.bellItems, index++);
       const x = room.x + room.width / 2;
       const y = room.y + 20;
+      const glowRadius = 16 + pulse * 6;
+      const glowAlpha = 0.15 + pulse * 0.25;
+
+      item.graphics.clear();
+      item.graphics
+        .circle(x, y, glowRadius)
+        .fill({ color: 0xe6a85c, alpha: glowAlpha });
+      item.graphics.visible = true;
 
       if (bellTexture) {
         this.ensureSprite(item, bellTexture);
         item.sprite!.x = x;
         item.sprite!.y = y;
-        const scale = 0.9 + pulse * 0.2;
+        const scale = 0.9 + pulse * 0.25;
         item.sprite!.scale.set(scale, scale);
         item.sprite!.visible = true;
-        item.graphics.visible = false;
-        item.label.visible = false;
-        continue;
+      } else {
+        item.graphics
+          .circle(x, y, 10)
+          .fill({ color: 0xe6a85c, alpha: 0.5 })
+          .stroke({ color: 0xe6a85c, width: 2 });
+        if (item.sprite) item.sprite.visible = false;
       }
 
-      item.graphics.clear();
-      item.graphics
-        .circle(x, y, 10)
-        .fill({ color: 0xe6a85c, alpha: 0.5 })
-        .stroke({ color: 0xe6a85c, width: 2 });
-      item.graphics.visible = true;
-
-      item.label.text = "B";
+      item.label.text = bellTexture ? "" : "B";
       item.label.style = new TextStyle({ fontSize: 10, fill: 0x0d0b0f, fontFamily: "Inter, system-ui, sans-serif" });
       item.label.anchor.set(0.5, 0.5);
       item.label.x = x;
       item.label.y = y;
+      item.label.visible = !bellTexture;
+    }
+    return index;
+  }
+
+  private renderFailedMarkers(agents: AgentView[], layout: RoomLayout, pulse: number): number {
+    let index = 0;
+    for (const agent of agents) {
+      const item = this.getItem(this.failedItems, index++);
+      const pos = getAgentPositionByRoomId(
+        layout,
+        agent.currentRoomId ?? "command",
+        this.hashSeed(agent.agentId)
+      );
+      const x = pos.x + 12;
+      const y = pos.y - 24;
+      const glowAlpha = 0.1 + pulse * 0.15;
+
+      item.graphics.clear();
+      item.graphics
+        .rect(x - 2, y - 2, 12, 12)
+        .fill({ color: 0xc96a5b, alpha: glowAlpha });
+      item.graphics
+        .rect(x, y, 8, 8)
+        .fill({ color: 0xc96a5b })
+        .stroke({ color: 0x7a332a, width: 1 });
+      item.graphics.visible = true;
+
+      item.label.text = "×";
+      item.label.style = new TextStyle({ fontSize: 8, fill: 0xf2f0eb, fontFamily: "Inter, system-ui, sans-serif" });
+      item.label.anchor.set(0.5, 0.5);
+      item.label.x = x + 4;
+      item.label.y = y + 4;
       item.label.visible = true;
       if (item.sprite) item.sprite.visible = false;
     }

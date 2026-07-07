@@ -20,6 +20,8 @@ interface StatusStripProps {
   diagnostics: SessionDiagnostics;
   lastEvent?: { type: string; timestamp: string } | null;
   retryable?: boolean;
+  failedCount?: number;
+  failedError?: { code: string; message: string } | null;
   onResync: () => void;
   onReload: () => void;
   onRetry?: () => void;
@@ -65,13 +67,17 @@ export const StatusStrip: FC<StatusStripProps> = ({
   diagnostics,
   lastEvent,
   retryable = false,
+  failedCount = 0,
+  failedError,
   onResync,
   onReload,
   onRetry,
 }) => {
-  const isFailure = sessionState === "failed" || sessionState === "disconnected";
-  const isUrgency = sessionState === "degraded";
-  const showErrorDetails = isFailure && diagnostics.lastError;
+  const hasProjectionFailure = failedCount > 0;
+  const isFailure = sessionState === "failed" || sessionState === "disconnected" || hasProjectionFailure;
+  const isUrgency = sessionState === "degraded" && !hasProjectionFailure;
+  const error = failedError ?? diagnostics.lastError;
+  const showErrorDetails = isFailure && error;
 
   let actionButton: JSX.Element | null = null;
   if (sessionState === "degraded") {
@@ -99,7 +105,11 @@ export const StatusStrip: FC<StatusStripProps> = ({
   return (
     <div
       data-testid="status-strip"
-      className={classNames("status-strip", STRIP_MODIFIERS[sessionState])}
+      className={classNames(
+        "status-strip",
+        STRIP_MODIFIERS[sessionState],
+        hasProjectionFailure && "status-strip--failure"
+      )}
     >
       <div className="status-left">
         <span className="status-pill">
@@ -108,8 +118,8 @@ export const StatusStrip: FC<StatusStripProps> = ({
         </span>
         {showErrorDetails && (
           <>
-            <span className="status-error-code">{diagnostics.lastError!.code}</span>
-            <span className="status-message">{diagnostics.lastError!.message}</span>
+            <span className="status-error-code">{error!.code}</span>
+            <span className="status-message">{error!.message}</span>
           </>
         )}
         <span className="status-label">runtime: {runtimeId}</span>
