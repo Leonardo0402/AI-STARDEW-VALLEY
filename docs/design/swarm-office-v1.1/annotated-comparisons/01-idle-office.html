@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>01 — Idle Office</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #131014; color: #f2f0eb; font-family: Inter, system-ui, sans-serif; }
+    .header { padding: 16px 24px; border-bottom: 1px solid #322e36; }
+    .header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+    .header p { margin: 4px 0 0; font-size: 11px; color: #b8b0bc; }
+    .wrap { position: relative; display: inline-block; }
+    .wrap img { display: block; max-width: 100%; }
+    .container { padding: 16px 24px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>01 — Idle Office</h1>
+    <p>Baseline screenshot with design-system / high-fidelity gaps annotated. Reference: docs/design/swarm-office/design-system.md</p>
+  </div>
+  <div class="container">
+    <div class="wrap" id="wrap">
+      <img src="../baseline/01-idle-office.png" id="targetImg" />
+      <svg id="overlay" style="position:absolute;top:0;left:0;pointer-events:none;" xmlns="http://www.w3.org/2000/svg">
+        
+      <g transform="translate(360, 260)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">1</text>
+      </g>
+      <line x1="360" y1="260" x2="390" y2="220" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="395" y="190" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">1.</strong> Canvas is blank black; target: full Command/Execution/Review/Approval rooms with wood floors, rugs, props
+        </div>
+      </foreignObject>
+      <g transform="translate(1090, 120)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">2</text>
+      </g>
+      <line x1="1090" y1="120" x2="1120" y2="80" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1125" y="50" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">2.</strong> Mode switcher is plain text; target: segmented control with --base-600 active fill
+        </div>
+      </foreignObject>
+      <g transform="translate(1090, 320)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">3</text>
+      </g>
+      <line x1="1090" y1="320" x2="1120" y2="280" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1125" y="250" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">3.</strong> World card lacks visual hierarchy; target: panel card --base-700 surface + --base-500 border
+        </div>
+      </foreignObject>
+      <g transform="translate(1090, 720)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">4</text>
+      </g>
+      <line x1="1090" y1="720" x2="1120" y2="680" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1125" y="650" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">4.</strong> Agent list is flat; target: cards with role silhouettes, status badges, pause actions
+        </div>
+      </foreignObject>
+      </svg>
+    </div>
+  </div>
+  <script>
+    const img = document.getElementById('targetImg');
+    const svg = document.getElementById('overlay');
+    img.onload = () => {
+      svg.setAttribute('width', img.naturalWidth);
+      svg.setAttribute('height', img.naturalHeight);
+      document.getElementById('wrap').style.width = img.naturalWidth + 'px';
+    };
+    if (img.complete) img.onload();
+  </script>
+</body>
+</html>
