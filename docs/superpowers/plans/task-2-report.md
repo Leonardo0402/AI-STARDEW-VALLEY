@@ -8,6 +8,7 @@ DONE
 
 - `3bd7680` — feat(control-ui): distinct revision_required/rejected intents and artifact content states
 - `ffa9ff4` — feat(pixel-office): rework cue for revision_required artifacts and blocked/failed posture truth
+- `365c47d` — docs(superpowers): add task 2 report
 
 ## Summary
 
