@@ -29,6 +29,7 @@ import { computeAgentPresentationState } from "./presentation-state.js";
 const WALK_MS_PER_TILE = 250;
 const TILE_SIZE_PX = 64;
 const IDLE_BREATHE_PERIOD_MS = 1500;
+const BELL_PERIOD_MS = 1200;
 const BLOCKED_PERIOD_MS = 1000;
 const SPARKLE_PERIOD_MS = 800;
 const SPARKLE_STEPS = 4;
@@ -363,7 +364,7 @@ export class PixelOfficeScene {
 
     const approvalPulse = this.reduceMotion
       ? 0.5
-      : (Math.sin((this.overlayPulsePhase / 1200) * Math.PI * 2) + 1) / 2;
+      : (Math.sin((this.overlayPulsePhase / BELL_PERIOD_MS) * Math.PI * 2) + 1) / 2;
     const blockedPulse = this.reduceMotion
       ? 0.5
       : (Math.sin((this.blockedPulsePhase / BLOCKED_PERIOD_MS) * Math.PI * 2) + 1) / 2;
