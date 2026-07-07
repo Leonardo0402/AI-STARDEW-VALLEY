@@ -90,6 +90,7 @@
 .status-strip--failure {
   background: var(--failure-dim);
   border-bottom-color: var(--failure);
+  border-left: 3px solid var(--failure);
   color: var(--base-100);
 }
 
@@ -473,10 +474,6 @@
 }
 
 /* ─── Blocked / failed panel cards ────────────────────────── */
-
-.card:has(.badge--blocked) {
-  border-left: 3px solid var(--failure);
-}
 
 .badge--failed {
   background: var(--failure-dim);

@@ -80,7 +80,21 @@ export const StatusStrip: FC<StatusStripProps> = ({
   const showErrorDetails = isFailure && error;
 
   let actionButton: JSX.Element | null = null;
-  if (sessionState === "degraded") {
+  if (hasProjectionFailure) {
+    if (retryable && onRetry) {
+      actionButton = (
+        <button className="status-action" onClick={onRetry}>
+          Retry
+        </button>
+      );
+    } else {
+      actionButton = (
+        <button className="status-action" onClick={onReload}>
+          Reload
+        </button>
+      );
+    }
+  } else if (sessionState === "degraded") {
     actionButton = (
       <button className="status-action" onClick={onResync}>
         Resynchronize
@@ -107,8 +121,11 @@ export const StatusStrip: FC<StatusStripProps> = ({
       data-testid="status-strip"
       className={classNames(
         "status-strip",
-        STRIP_MODIFIERS[sessionState],
-        hasProjectionFailure && "status-strip--failure"
+        hasProjectionFailure
+          ? "status-strip--failure"
+          : isUrgency
+            ? "status-strip--urgency"
+            : STRIP_MODIFIERS[sessionState]
       )}
     >
       <div className="status-left">

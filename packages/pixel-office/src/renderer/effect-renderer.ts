@@ -4,7 +4,7 @@
  * V1 效果规则：
  * - 每个 presentation state 为 blocked 的 agent 头顶绘制红色阻塞标记。
  * - 每个 presentation state 为 working 的 agent 肩膀上方绘制 sparkle。
- * - 当存在 pendingApprovals 时，在 approval_delivery / review 房间中心绘制服务铃。
+ * - 当存在 pendingApprovals 时，在 approval_delivery 房间中心绘制服务铃。
  */
 import { Container, Graphics, Text, TextStyle, Sprite, Texture } from "pixi.js";
 import type { OfficeProjection, AgentView } from "@agent-office/protocol";
@@ -24,7 +24,8 @@ export class EffectRenderer {
   private bellItems: EffectItem[] = [];
   private failedItems: EffectItem[] = [];
   private reduceMotion = false;
-  private pulsePhase = 0;
+  private bellPulsePhase = 0;
+  private blockedPulsePhase = 0;
 
   constructor(
     private layer: Container,
@@ -39,8 +40,10 @@ export class EffectRenderer {
   }
 
   render(projection: OfficeProjection, layout: RoomLayout, deltaMS = 16.67): void {
-    this.pulsePhase += deltaMS;
-    const pulse = this.reduceMotion ? 0.5 : (Math.sin(this.pulsePhase / 400) + 1) / 2;
+    this.bellPulsePhase += deltaMS;
+    this.blockedPulsePhase += deltaMS;
+    const bellPulse = this.reduceMotion ? 0.5 : (Math.sin(this.bellPulsePhase / 191) + 1) / 2;
+    const blockedPulse = this.reduceMotion ? 0.5 : (Math.sin(this.blockedPulsePhase / 159) + 1) / 2;
 
     const failedAgents = projection.agents.filter((a) => a.status === "failed");
     const blockedAgents = projection.agents.filter(
@@ -51,21 +54,19 @@ export class EffectRenderer {
     );
     const bellRooms =
       projection.pendingApprovals.length > 0
-        ? layout.rooms.filter(
-            (r) => r.floorType === "approval_delivery" || r.floorType === "review"
-          )
+        ? layout.rooms.filter((r) => r.floorType === "approval_delivery")
         : [];
 
-    const failedCount = this.renderFailedMarkers(failedAgents, layout, pulse);
+    const failedCount = this.renderFailedMarkers(failedAgents, layout, blockedPulse);
     this.hideExtras(this.failedItems, failedCount);
 
-    const blockedCount = this.renderBlockedMarkers(blockedAgents, layout, pulse);
+    const blockedCount = this.renderBlockedMarkers(blockedAgents, layout, blockedPulse);
     this.hideExtras(this.blockedItems, blockedCount);
 
-    const sparkleCount = this.renderWorkingSparkles(workingAgents, layout, pulse);
+    const sparkleCount = this.renderWorkingSparkles(workingAgents, layout, blockedPulse);
     this.hideExtras(this.sparkleItems, sparkleCount);
 
-    const bellCount = this.renderServiceBells(bellRooms, pulse);
+    const bellCount = this.renderServiceBells(bellRooms, bellPulse);
     this.hideExtras(this.bellItems, bellCount);
   }
 
@@ -98,7 +99,7 @@ export class EffectRenderer {
         item.sprite!.scale.set(scale, scale);
         item.sprite!.visible = true;
       } else {
-        item.graphics.circle(x, y, 6).fill({ color: 0xc96a5b }).stroke({ color: 0x7a332a, width: 2 });
+        item.graphics.circle(x, y, 6).fill({ color: 0xc96a5b }).stroke({ color: 0x7a3d34, width: 2 });
         if (item.sprite) item.sprite.visible = false;
       }
 
@@ -108,7 +109,7 @@ export class EffectRenderer {
       item.graphics
         .circle(bubbleX, bubbleY, 6)
         .fill({ color: 0xc96a5b })
-        .stroke({ color: 0x7a332a, width: 1 });
+        .stroke({ color: 0x7a3d34, width: 1 });
       item.graphics
         .moveTo(bubbleX - 3, bubbleY + 4)
         .lineTo(bubbleX - 6, bubbleY + 9)
@@ -194,7 +195,7 @@ export class EffectRenderer {
       }
 
       item.label.text = bellTexture ? "" : "B";
-      item.label.style = new TextStyle({ fontSize: 10, fill: 0x0d0b0f, fontFamily: "Inter, system-ui, sans-serif" });
+      item.label.style = new TextStyle({ fontSize: 10, fill: 0x131014, fontFamily: "Inter, system-ui, sans-serif" });
       item.label.anchor.set(0.5, 0.5);
       item.label.x = x;
       item.label.y = y;
@@ -223,7 +224,7 @@ export class EffectRenderer {
       item.graphics
         .rect(x, y, 8, 8)
         .fill({ color: 0xc96a5b })
-        .stroke({ color: 0x7a332a, width: 1 });
+        .stroke({ color: 0x7a3d34, width: 1 });
       item.graphics.visible = true;
 
       item.label.text = "×";

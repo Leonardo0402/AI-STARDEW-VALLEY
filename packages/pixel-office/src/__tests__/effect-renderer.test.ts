@@ -138,7 +138,7 @@ describe("EffectRenderer", () => {
     expect(getGraphics(container).length).toBe(0);
   });
 
-  it("renders service bell above approval_delivery and review rooms when pending approvals exist", async () => {
+  it("renders service bell above the approval_delivery room when pending approvals exist", async () => {
     MockAssets.reset({ "service-bell": new MockTexture("service-bell") });
     const loader = new AssetLoader();
     await loader.loadAll(["effects/service-bell"]);
@@ -154,13 +154,12 @@ describe("EffectRenderer", () => {
     renderer.render(projection, layout);
 
     const sprites = getSprites(container);
-    expect(sprites.length).toBe(2);
-    expect(sprites.every((s) => s.texture?.sourceUrl === "service-bell")).toBe(true);
+    expect(sprites.length).toBe(1);
+    expect(sprites[0].texture?.sourceUrl).toBe("service-bell");
 
-    const reviewRoom = layout.rooms.find((r) => r.floorType === "review")!;
     const approvalRoom = layout.rooms.find((r) => r.floorType === "approval_delivery")!;
-    expect(sprites.some((s) => s.x === reviewRoom.x + reviewRoom.width / 2 && s.y === reviewRoom.y + 20)).toBe(true);
-    expect(sprites.some((s) => s.x === approvalRoom.x + approvalRoom.width / 2 && s.y === approvalRoom.y + 20)).toBe(true);
+    expect(sprites[0].x).toBe(approvalRoom.x + approvalRoom.width / 2);
+    expect(sprites[0].y).toBe(approvalRoom.y + 20);
   });
 
   it("does not render service bell when there are no pending approvals", async () => {
