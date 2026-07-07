@@ -300,6 +300,31 @@ describe("EffectRenderer", () => {
     expect(texts.some((t) => t.text === "×")).toBe(true);
   });
 
+  it("draws a rework cue above the producer of a revision_required artifact", () => {
+    const renderer = new EffectRenderer(container as unknown as import("pixi.js").Container);
+
+    const agent = makeAgent({ agentId: "a1", status: "idle", currentRoomId: "execution" });
+    const projection: OfficeProjection = {
+      ...makeProjection([agent]),
+      artifacts: [
+        {
+          artifactId: "art-1",
+          taskId: "t1",
+          producerAgentId: "a1",
+          type: "document",
+          title: "Report",
+          status: "revision_required",
+          version: 1,
+          reviewResult: null,
+        },
+      ],
+    };
+    renderer.render(projection, layout);
+
+    const texts = getTexts(container);
+    expect(texts.some((t) => t.text === "rework")).toBe(true);
+  });
+
   it("pulses the service bell on a 1.2s loop", async () => {
     MockAssets.reset({ "service-bell": new MockTexture("service-bell") });
     const loader = new AssetLoader();

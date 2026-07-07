@@ -7,7 +7,7 @@
  * - 当存在 pendingApprovals 时，在 approval_delivery 房间中心绘制服务铃。
  */
 import { Container, Graphics, Text, TextStyle, Sprite, Texture } from "pixi.js";
-import type { OfficeProjection, AgentView } from "@agent-office/protocol";
+import type { OfficeProjection, AgentView, ArtifactView } from "@agent-office/protocol";
 import { getAgentPositionByRoomId, type RoomLayout, type RoomLayoutEntry } from "../layout.js";
 import type { AssetLoader } from "../asset-loader.js";
 import { computeAgentPresentationState } from "../presentation-state.js";
@@ -29,6 +29,7 @@ export class EffectRenderer {
   private sparkleItems: EffectItem[] = [];
   private bellItems: EffectItem[] = [];
   private failedItems: EffectItem[] = [];
+  private reworkItems: EffectItem[] = [];
   private reduceMotion = false;
   private bellPulsePhase = 0;
   private blockedPulsePhase = 0;
@@ -83,6 +84,12 @@ export class EffectRenderer {
 
     const bellCount = this.renderServiceBells(bellRooms, bellPulse);
     this.hideExtras(this.bellItems, bellCount);
+
+    const reworkArtifacts = projection.artifacts.filter(
+      (a) => a.status === "revision_required" && a.producerAgentId
+    );
+    const reworkCount = this.renderReworkCues(reworkArtifacts, projection, layout);
+    this.hideExtras(this.reworkItems, reworkCount);
   }
 
   private renderBlockedMarkers(agents: AgentView[], layout: RoomLayout, pulse: number): number {
@@ -255,6 +262,59 @@ export class EffectRenderer {
       item.label.anchor.set(0.5, 0.5);
       item.label.x = x + 4;
       item.label.y = y + 4;
+      item.label.visible = true;
+      if (item.sprite) item.sprite.visible = false;
+    }
+    return index;
+  }
+
+  private renderReworkCues(
+    artifacts: ArtifactView[],
+    projection: OfficeProjection,
+    layout: RoomLayout
+  ): number {
+    let index = 0;
+    for (const artifact of artifacts) {
+      const producer = projection.agents.find((a) => a.agentId === artifact.producerAgentId);
+      if (!producer?.currentRoomId) continue;
+
+      const item = this.getItem(this.reworkItems, index++);
+      const pos = getAgentPositionByRoomId(
+        layout,
+        producer.currentRoomId,
+        this.hashSeed(artifact.artifactId)
+      );
+      const x = pos.x + 10;
+      const y = pos.y - 38;
+
+      item.graphics.clear();
+      // Clipboard body
+      item.graphics
+        .rect(x, y, 10, 12)
+        .fill({ color: 0xa89788 })
+        .stroke({ color: 0x7d7682, width: 1 });
+      // Clipboard clip
+      item.graphics.rect(x + 2, y - 1, 6, 2).fill({ color: 0x7d7682 });
+      // Red flag pole
+      item.graphics.rect(x + 2, y - 8, 1, 8).fill({ color: 0xc96a5b });
+      // Red flag
+      item.graphics
+        .moveTo(x + 3, y - 8)
+        .lineTo(x + 10, y - 5)
+        .lineTo(x + 3, y - 2)
+        .closePath()
+        .fill({ color: 0xc96a5b });
+      item.graphics.visible = true;
+
+      item.label.text = "rework";
+      item.label.style = new TextStyle({
+        fontSize: 8,
+        fill: 0xc96a5b,
+        fontFamily: "Inter, system-ui, sans-serif",
+      });
+      item.label.anchor.set(0.5, 0);
+      item.label.x = x + 5;
+      item.label.y = y + 14;
       item.label.visible = true;
       if (item.sprite) item.sprite.visible = false;
     }

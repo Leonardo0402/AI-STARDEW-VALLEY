@@ -199,6 +199,16 @@ describe("AgentRenderer", () => {
     expect(failedCommands.some((c) => c.type === "lineTo")).toBe(true);
   });
 
+  it("does not give blocked agents the failed posture marker", () => {
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "blocked";
+    agent.blockedReason = "Adapter timeout";
+    renderer.render([agent], layout, makeProjection([agent]));
+    const blockedCommands = getAgentBody(container, 0).commands.slice();
+
+    expect(blockedCommands.some((c) => c.type === "lineTo")).toBe(false);
+  });
+
   it("turns approval agents toward the service bell at room center", () => {
     const agent = makeAgent("a1", "approval_delivery", "worker");
     agent.status = "waiting";
