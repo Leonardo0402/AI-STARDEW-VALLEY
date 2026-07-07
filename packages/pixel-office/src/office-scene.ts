@@ -22,7 +22,7 @@ import { EffectRenderer } from "./renderer/effect-renderer.js";
 import { PropRenderer } from "./renderer/prop-renderer.js";
 import { RoomRenderer } from "./renderer/room-renderer.js";
 import { ROLE_COLORS, STATUS_COLORS, ROOM_COLORS } from "./design-tokens.js";
-import { createLayoutFromRoomViews, type RoomLayout } from "./layout.js";
+import { createLayoutFromRoomViews, createDefaultLayout, type RoomLayout } from "./layout.js";
 import { AssetLoader } from "./asset-loader.js";
 
 interface LegacyAgentSprite {
@@ -150,7 +150,7 @@ export class PixelOfficeScene {
     this.currentProjection = projection;
 
     if (this.useSpriteRenderer && this.roomRenderer && this.propRenderer && this.agentRenderer && this.effectRenderer) {
-      const layout = createLayoutFromRoomViews(projection.rooms);
+      const layout = projection.rooms.length > 0 ? createLayoutFromRoomViews(projection.rooms) : createDefaultLayout();
       this.currentLayout = layout;
       this.roomRenderer.render(layout);
       this.propRenderer.render(layout);

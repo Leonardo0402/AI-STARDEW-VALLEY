@@ -115,4 +115,36 @@ describe("PixelOfficeScene renderer selection", () => {
 
     scene.destroy();
   });
+
+  it("falls back to the default layout when projection rooms are empty", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const idleProjection: OfficeProjection = {
+      ...baseProjection,
+      rooms: [],
+      agents: [
+        {
+          agentId: "agent-1",
+          name: "Idle Agent",
+          role: "worker",
+          status: "idle",
+          currentTaskId: null,
+          currentRoomId: "command",
+          blockedReason: null,
+        },
+      ],
+    };
+
+    scene.updateProjection(idleProjection);
+
+    const roomLayer = (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[0] as MockContainer;
+    expect(roomLayer.children.length).toBeGreaterThan(0);
+
+    const agentRenderer = (scene as any).agentRenderer;
+    expect(agentRenderer.getAgentTarget("agent-1")).toBeDefined();
+
+    scene.destroy();
+  });
 });
