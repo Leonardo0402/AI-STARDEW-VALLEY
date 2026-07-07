@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { AgentRenderer } from "../renderer/agent-renderer.js";
 import { createDefaultLayout } from "../layout.js";
 import type { AgentView, OfficeProjection } from "@agent-office/protocol";
-import { MockContainer } from "./pixi-mock.js";
+import { MockContainer, MockGraphics } from "./pixi-mock.js";
 
 vi.mock("pixi.js", () => import("./pixi-mock.js").then((m) => m.createPixiMock()));
 
@@ -32,6 +32,11 @@ function makeProjection(agents: AgentView[]): OfficeProjection {
 }
 
 const layout = createDefaultLayout();
+
+function getAgentBody(container: MockContainer, index: number): MockGraphics {
+  const sprite = container.children[index] as MockContainer;
+  return sprite.getChildAt(0) as MockGraphics;
+}
 
 describe("AgentRenderer", () => {
   let container: MockContainer;
@@ -111,5 +116,113 @@ describe("AgentRenderer", () => {
     const after = renderer.getAgentPosition("a1")!;
     expect(after.x).toBe(target.x);
     expect(after.y).toBe(target.y);
+  });
+
+  it("draws orchestrator with tall body, headset and tablet", () => {
+    const agents = [makeAgent("a1", "command", "orchestrator")];
+    renderer.render(agents, layout, makeProjection(agents));
+    const body = getAgentBody(container, 0);
+    const rects = body.commands.filter((c) => c.type === "rect");
+    expect(rects.some((c) => c.args[2] === 8 && c.args[3] === 18)).toBe(true);
+    expect(rects.some((c) => c.args[2] === 5 && c.args[3] === 7)).toBe(true);
+    expect(body.commands.some((c) => c.type === "lineTo")).toBe(true);
+  });
+
+  it("draws worker with sturdy body, helmet and tool belt", () => {
+    const agents = [makeAgent("a1", "command", "worker")];
+    renderer.render(agents, layout, makeProjection(agents));
+    const body = getAgentBody(container, 0);
+    const rects = body.commands.filter((c) => c.type === "rect");
+    expect(rects.some((c) => c.args[2] === 14 && c.args[3] === 15)).toBe(true);
+    expect(rects.some((c) => c.args[2] === 12 && c.args[3] === 4)).toBe(true);
+    expect(rects.some((c) => c.args[2] === 14 && c.args[3] === 3)).toBe(true);
+  });
+
+  it("draws reviewer with slim body, glasses and clipboard", () => {
+    const agents = [makeAgent("a1", "command", "reviewer")];
+    renderer.render(agents, layout, makeProjection(agents));
+    const body = getAgentBody(container, 0);
+    const rects = body.commands.filter((c) => c.type === "rect");
+    expect(rects.some((c) => c.args[2] === 6 && c.args[3] === 16)).toBe(true);
+    expect(rects.filter((c) => c.args[2] === 3 && c.args[3] === 2).length).toBe(2);
+    expect(rects.some((c) => c.args[2] === 6 && c.args[3] === 9)).toBe(true);
+  });
+
+  it("leans working agents forward", () => {
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "working";
+    renderer.render([agent], layout, makeProjection([agent]));
+    const workingCommands = getAgentBody(container, 0).commands.slice();
+    const workingHead = workingCommands.find((c) => c.type === "circle")!;
+
+    agent.status = "idle";
+    renderer.render([agent], layout, makeProjection([agent]));
+    const idleCommands = getAgentBody(container, 0).commands.slice();
+    const idleHead = idleCommands.find((c) => c.type === "circle")!;
+
+    expect(workingHead.args[0]).not.toBe(idleHead.args[0]);
+  });
+
+  it("slumps blocked agents lower", () => {
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "blocked";
+    renderer.render([agent], layout, makeProjection([agent]));
+    const blockedCommands = getAgentBody(container, 0).commands.slice();
+    const blockedHead = blockedCommands.find((c) => c.type === "circle")!;
+
+    agent.status = "idle";
+    agent.blockedReason = null;
+    renderer.render([agent], layout, makeProjection([agent]));
+    const idleCommands = getAgentBody(container, 0).commands.slice();
+    const idleHead = idleCommands.find((c) => c.type === "circle")!;
+
+    expect(blockedHead.args[1] as number).toBeGreaterThan(idleHead.args[1] as number);
+  });
+
+  it("downcasts failed agents", () => {
+    const agent = makeAgent("a1", "command", "worker");
+    agent.status = "failed";
+    renderer.render([agent], layout, makeProjection([agent]));
+    const failedCommands = getAgentBody(container, 0).commands.slice();
+    const failedHead = failedCommands.find((c) => c.type === "circle")!;
+
+    agent.status = "idle";
+    renderer.render([agent], layout, makeProjection([agent]));
+    const idleCommands = getAgentBody(container, 0).commands.slice();
+    const idleHead = idleCommands.find((c) => c.type === "circle")!;
+
+    expect(failedHead.args[1] as number).toBeGreaterThan(idleHead.args[1] as number);
+    expect(failedCommands.some((c) => c.type === "lineTo")).toBe(true);
+  });
+
+  it("turns approval agents toward the service bell at room center", () => {
+    const agent = makeAgent("a1", "approval_delivery", "worker");
+    agent.status = "waiting";
+    const projection: OfficeProjection = {
+      ...makeProjection([agent]),
+      rooms: [
+        {
+          roomId: "approval_delivery",
+          name: "Approval Hall",
+          type: "approval_delivery",
+          bounds: { x: 420, y: 320, width: 340, height: 240 },
+          activeAgentIds: ["a1"],
+        },
+      ],
+      pendingApprovals: [
+        { approvalId: "ap1", taskId: "t1", kind: "artifact_delivery", status: "requested", requestedBy: "a1", reason: "deliver" },
+      ],
+    };
+    renderer.render([agent], layout, projection);
+    const target = renderer.getAgentTarget("a1")!;
+    const room = layout.rooms.find((r) => r.roomId === "approval_delivery")!;
+    const roomCenterX = room.x + room.width / 2;
+    const expectedFaceDir = roomCenterX > target.x ? 1 : -1;
+
+    const body = getAgentBody(container, 0);
+    const rects = body.commands.filter((c) => c.type === "rect");
+    const pouch = rects.find((c) => c.args[2] === 4 && c.args[3] === 4);
+    expect(pouch).toBeDefined();
+    expect(Math.sign(pouch!.args[0] as number)).toBe(expectedFaceDir);
   });
 });

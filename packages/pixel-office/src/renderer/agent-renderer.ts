@@ -1,8 +1,7 @@
 /**
  * AgentRenderer — 根据 agent 的 currentRoomId 渲染角色。
  *
- * AgentSprite 抽象将 agentId + role + 展示状态映射到视觉处理。
- * Stage 4 使用程序化色块/形状；Stage 5 接入精灵纹理并支持行走动画。
+ * Stage 4 使用程序化角色轮廓；Stage 5 接入精灵纹理并支持行走动画。
  */
 import { Container, Graphics, Text, TextStyle, Sprite, Texture } from "pixi.js";
 import type { AgentView, OfficeProjection } from "@agent-office/protocol";
@@ -35,20 +34,31 @@ export interface AgentSprite {
 export interface AgentVisualTreatment {
   bodyColor: number;
   accentColor: number;
-  shape: "square" | "circle" | "diamond";
+  role: AgentView["role"];
+}
+
+type AgentVisualState = AgentPresentationState | "failed";
+
+interface AgentPosture {
+  bodyOffsetX: number;
+  bodyOffsetY: number;
+  headOffsetX: number;
+  headOffsetY: number;
+  faceDir: number;
 }
 
 export function resolveAgentTreatment(agent: AgentView): AgentVisualTreatment {
   return {
     bodyColor: ROLE_COLORS[agent.role] ?? 0xb8b0bc, // --base-300 fallback
     accentColor: STATUS_COLORS[agent.status] ?? 0x7d7682, // --base-400 fallback
-    shape: agent.role === "orchestrator" ? "diamond" : agent.role === "reviewer" ? "circle" : "square",
+    role: agent.role,
   };
 }
 
 export class AgentRenderer {
   private sprites = new Map<string, AgentSprite>();
   private lastProjection: OfficeProjection | null = null;
+  private lastLayout: RoomLayout | null = null;
   private reduceMotion = false;
 
   constructor(
@@ -65,6 +75,8 @@ export class AgentRenderer {
 
   render(agents: AgentView[], layout: RoomLayout, projection: OfficeProjection): void {
     this.lastProjection = projection;
+    this.lastLayout = layout;
+
     // 移除不存在的 agent
     for (const [id, sprite] of this.sprites) {
       if (!agents.find((a) => a.agentId === id)) {
@@ -89,7 +101,7 @@ export class AgentRenderer {
     const treatment = resolveAgentTreatment(agent);
 
     const body = new Graphics();
-    this.drawBodyShape(body, treatment);
+    this.drawBodyShape(body, treatment, "idle");
 
     const nameText = new Text({
       text: agent.name,
@@ -139,14 +151,14 @@ export class AgentRenderer {
       sprite.role !== agent.role ||
       sprite.treatment.bodyColor !== treatment.bodyColor ||
       sprite.treatment.accentColor !== treatment.accentColor ||
-      sprite.treatment.shape !== treatment.shape
+      sprite.treatment.role !== treatment.role
     ) {
       sprite.role = agent.role;
       sprite.treatment = treatment;
       if (!sprite.currentTexture) {
         const body = sprite.container.getChildAt(0) as Graphics;
         body.clear();
-        this.drawBodyShape(body, treatment);
+        this.drawBodyShape(body, treatment, sprite.currentState as AgentVisualState);
       }
     }
 
@@ -179,31 +191,35 @@ export class AgentRenderer {
   private applyVisual(sprite: AgentSprite, agent: AgentView): void {
     const projection = this.lastProjection ?? this.emptyProjection();
     const computedState = computeAgentPresentationState(agent, projection);
-    const targetState = sprite.currentState === "walk" ? "walk" : computedState;
+    let visualState: AgentVisualState = sprite.currentState === "walk" ? "walk" : computedState;
+    if (agent.status === "failed" && visualState !== "walk") {
+      visualState = "failed";
+    }
+    const presentationState: AgentPresentationState = visualState === "failed" ? "blocked" : visualState;
 
-    if (targetState === "walk" && sprite.walkFrames && sprite.walkFrames.length > 0) {
-      sprite.currentState = "walk";
+    if (visualState === "walk" && sprite.walkFrames && sprite.walkFrames.length > 0) {
+      sprite.currentState = presentationState;
       sprite.currentTexture = sprite.walkFrames[0];
       this.setBodySprite(sprite, sprite.walkFrames[0]);
       return;
     }
 
-    // 审批展示状态复用 idle 纹理（V1 没有专用 approval 精灵）
-    const textureState = targetState === "approval" ? "idle" : targetState;
+    // 审批 / 失败展示状态复用 idle / blocked 纹理（V1 没有专用精灵）
+    const textureState = visualState === "approval" ? "idle" : visualState === "failed" ? "blocked" : visualState;
     const textureName = `${agent.role}-${textureState}`;
     const texture = this.assetLoader?.getTexture(textureName) ?? null;
 
     if (texture) {
-      sprite.currentState = targetState;
+      sprite.currentState = presentationState;
       sprite.currentTexture = texture;
       this.setBodySprite(sprite, texture);
       return;
     }
 
-    // Fallback: procedural shape
-    sprite.currentState = targetState;
+    // Fallback: procedural silhouette
+    sprite.currentState = presentationState;
     sprite.currentTexture = null;
-    this.setBodyGraphics(sprite, sprite.treatment);
+    this.setBodyGraphics(sprite, sprite.treatment, visualState, agent);
   }
 
   private emptyProjection(): OfficeProjection {
@@ -226,33 +242,193 @@ export class AgentRenderer {
     sprite.container.addChildAt(body, 0);
   }
 
-  private setBodyGraphics(sprite: AgentSprite, treatment: AgentVisualTreatment): void {
+  private setBodyGraphics(sprite: AgentSprite, treatment: AgentVisualTreatment, state: AgentVisualState, agent: AgentView): void {
     sprite.container.removeChildAt(0);
     const body = new Graphics();
-    this.drawBodyShape(body, treatment);
+    const posture = this.computePosture(sprite, agent, state);
+    this.drawBodyShape(body, treatment, state, posture);
     sprite.container.addChildAt(body, 0);
   }
 
-  private drawBodyShape(g: Graphics, treatment: AgentVisualTreatment): void {
-    const size = 16;
-    switch (treatment.shape) {
-      case "circle":
-        g.circle(0, 0, size).fill({ color: treatment.bodyColor }).stroke({ color: treatment.accentColor, width: 2 });
+  private computePosture(sprite: AgentSprite, agent: AgentView, state: AgentVisualState): AgentPosture {
+    const posture: AgentPosture = {
+      bodyOffsetX: 0,
+      bodyOffsetY: 0,
+      headOffsetX: 0,
+      headOffsetY: 0,
+      faceDir: this.hashSeed(sprite.agentId) % 2 === 0 ? 1 : -1,
+    };
+
+    const faceRoomCenter = (): void => {
+      const roomId = agent.currentRoomId;
+      if (roomId && this.lastLayout) {
+        const room = this.lastLayout.rooms.find((r) => r.roomId === roomId);
+        if (room) {
+          const cx = room.x + room.width / 2;
+          if (cx > sprite.targetX) posture.faceDir = 1;
+          else if (cx < sprite.targetX) posture.faceDir = -1;
+        }
+      }
+    };
+
+    switch (state) {
+      case "working":
+        faceRoomCenter();
+        posture.bodyOffsetX = 2 * posture.faceDir;
+        posture.headOffsetX = 3 * posture.faceDir;
         break;
-      case "diamond":
-        g.moveTo(0, -size)
-          .lineTo(size, 0)
-          .lineTo(0, size)
-          .lineTo(-size, 0)
-          .closePath()
-          .fill({ color: treatment.bodyColor })
-          .stroke({ color: treatment.accentColor, width: 2 });
+      case "blocked":
+        posture.bodyOffsetY = 3;
+        posture.headOffsetY = 5;
+        break;
+      case "failed":
+        posture.bodyOffsetY = 3;
+        posture.headOffsetY = 6;
+        break;
+      case "approval":
+        faceRoomCenter();
+        posture.bodyOffsetX = 1 * posture.faceDir;
+        break;
+    }
+
+    return posture;
+  }
+
+  private drawBodyShape(
+    g: Graphics,
+    treatment: AgentVisualTreatment,
+    state: AgentVisualState = "idle",
+    posture?: AgentPosture
+  ): void {
+    const { bodyColor, accentColor, role } = treatment;
+    const p = posture ?? {
+      bodyOffsetX: 0,
+      bodyOffsetY: 0,
+      headOffsetX: 0,
+      headOffsetY: 0,
+      faceDir: 1,
+    };
+
+    switch (role) {
+      case "orchestrator":
+        this.drawOrchestrator(g, bodyColor, accentColor, state, p);
+        break;
+      case "worker":
+        this.drawWorker(g, bodyColor, accentColor, state, p);
+        break;
+      case "reviewer":
+        this.drawReviewer(g, bodyColor, accentColor, state, p);
         break;
       default:
-        g.rect(-size, -size, size * 2, size * 2)
-          .fill({ color: treatment.bodyColor })
-          .stroke({ color: treatment.accentColor, width: 2 });
+        this.drawGeneric(g, bodyColor, accentColor, p);
     }
+  }
+
+  private drawOrchestrator(
+    g: Graphics,
+    bodyColor: number,
+    accentColor: number,
+    state: AgentVisualState,
+    p: AgentPosture
+  ): void {
+    const bx = p.bodyOffsetX;
+    const by = p.bodyOffsetY;
+    const hx = p.headOffsetX;
+    const hy = p.headOffsetY;
+    const f = p.faceDir;
+
+    // Tall body
+    g.rect(bx - 4, by - 22, 8, 18).fill({ color: bodyColor }).stroke({ color: accentColor, width: 1 });
+    // Head
+    g.circle(hx, hy - 26, 5).fill({ color: bodyColor }).stroke({ color: accentColor, width: 1 });
+    // Headset boom
+    g.moveTo(hx, hy - 30).lineTo(hx + 5 * f, hy - 28).stroke({ color: accentColor, width: 1 });
+    // Headset earpiece
+    const earW = 3 * f;
+    const earX = f === 1 ? hx + 4 : hx - 7;
+    g.rect(earX, hy - 30, earW, 3).fill({ color: accentColor });
+    // Tablet
+    const tabletW = 5;
+    const tabletX = f === 1 ? bx + 3 : bx - 3 - tabletW;
+    g.rect(tabletX, by - 16, tabletW, 7).fill({ color: 0xb8b0bc }).stroke({ color: accentColor, width: 1 });
+
+    if (state === "failed") {
+      g.moveTo(hx - 2 * f, hy - 26).lineTo(hx - 2 * f, hy - 23).stroke({ color: accentColor, width: 1 });
+    }
+  }
+
+  private drawWorker(
+    g: Graphics,
+    bodyColor: number,
+    accentColor: number,
+    state: AgentVisualState,
+    p: AgentPosture
+  ): void {
+    const bx = p.bodyOffsetX;
+    const by = p.bodyOffsetY;
+    const hx = p.headOffsetX;
+    const hy = p.headOffsetY;
+    const f = p.faceDir;
+
+    // Sturdy body
+    g.rect(bx - 7, by - 18, 14, 15).fill({ color: bodyColor }).stroke({ color: accentColor, width: 1 });
+    // Head
+    g.circle(hx, hy - 24, 5).fill({ color: bodyColor }).stroke({ color: accentColor, width: 1 });
+    // Helmet
+    g.rect(hx - 6, hy - 30, 12, 4).fill({ color: accentColor });
+    // Tool belt
+    g.rect(bx - 7, by - 12, 14, 3).fill({ color: accentColor });
+    // Tool pouch
+    const pouchW = 4;
+    const pouchX = f === 1 ? bx + 4 : bx - 4 - pouchW;
+    g.rect(pouchX, by - 11, pouchW, 4).fill({ color: 0xb8b0bc }).stroke({ color: accentColor, width: 1 });
+
+    if (state === "failed") {
+      g.moveTo(hx - 2 * f, hy - 24).lineTo(hx - 2 * f, hy - 21).stroke({ color: accentColor, width: 1 });
+    }
+  }
+
+  private drawReviewer(
+    g: Graphics,
+    bodyColor: number,
+    accentColor: number,
+    state: AgentVisualState,
+    p: AgentPosture
+  ): void {
+    const bx = p.bodyOffsetX;
+    const by = p.bodyOffsetY;
+    const hx = p.headOffsetX;
+    const hy = p.headOffsetY;
+    const f = p.faceDir;
+
+    // Slim body
+    g.rect(bx - 3, by - 20, 6, 16).fill({ color: bodyColor }).stroke({ color: accentColor, width: 1 });
+    // Head
+    g.circle(hx, hy - 25, 4).fill({ color: bodyColor }).stroke({ color: accentColor, width: 1 });
+    // Glasses
+    const lensW = 3;
+    const leftLensX = f === 1 ? hx - 4 : hx + 1;
+    const rightLensX = f === 1 ? hx + 1 : hx - 4;
+    g.rect(leftLensX, hy - 26, lensW, 2).fill({ color: accentColor });
+    g.rect(rightLensX, hy - 26, lensW, 2).fill({ color: accentColor });
+    // Clipboard
+    const cbW = 6;
+    const cbH = 9;
+    const cbX = f === 1 ? bx + 4 : bx - 4 - cbW;
+    g.rect(cbX, by - 18, cbW, cbH).fill({ color: 0xd8d0c8 }).stroke({ color: accentColor, width: 1 });
+    // Clipboard clip
+    g.rect(cbX + 1, by - 19, 4, 2).fill({ color: accentColor });
+
+    if (state === "failed") {
+      g.moveTo(hx - 1 * f, hy - 25).lineTo(hx - 1 * f, hy - 22).stroke({ color: accentColor, width: 1 });
+    }
+  }
+
+  private drawGeneric(g: Graphics, bodyColor: number, accentColor: number, p: AgentPosture): void {
+    const size = 16;
+    g.rect(p.bodyOffsetX - size, p.bodyOffsetY - size, size * 2, size * 2)
+      .fill({ color: bodyColor })
+      .stroke({ color: accentColor, width: 2 });
   }
 
   private hashSeed(agentId: string): number {
