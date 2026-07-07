@@ -1,0 +1,164 @@
+# Swarm Office V1.1 — Gap Audit
+
+> Evidence-based visual/UX gap analysis for `apps/demo-office`.
+> Baseline screenshots: `docs/design/swarm-office-v1.1/baseline/`
+> Annotated comparisons: `docs/design/swarm-office-v1.1/annotated-comparisons/`
+> Reference: `docs/design/swarm-office/design-system.md` + `docs/design/swarm-office/high-fidelity-designs-preview.png`
+
+## Executive summary
+
+`demo-office` successfully renders all eight requested runtime states (idle, execution, review, approval, blocked, failed, focus, debrief) and the underlying Runtime → LifeSim integration is functional. However, the current UI is still a wireframe-level implementation: the pixel canvas lacks the approved "Cozy Pixel Operations Room" art direction, panels do not follow the design-system token hierarchy, and several high-impact product moments (approval, blocked, failed) rely on text rather than visual storytelling.
+
+The single largest gap is the **idle/blank canvas**: in Command mode with no active task, the pixel office is entirely black, giving the impression the app is broken. The second largest is **role/state readability**: agents are colored blocks with only a name label and a small badge, missing the silhouette, posture, and glow cues defined in the design system.
+
+This audit recommends a phased visual pass: first fix canvas props, room textures, and idle-agent presence (P0); then role-specific sprites, state animations, and approval/blocked/failed expression (P1); finally polish focus/debrief layouts and micro-interactions (P2).
+
+## State-by-state gap table
+
+| State | Baseline file | Annotated file | What works | Key gaps |
+|-------|---------------|----------------|------------|----------|
+| Idle office | `01-idle-office.png` | `01-idle-office-annotated.png` | Header, status strip, control panel skeleton load | Canvas is black/empty; no room art, props, or ambient agents. Mode switcher is plain text. Panel cards lack `--base-700` surface / `--base-500` border. Agent list is flat. |
+| Active task execution | `02-active-task-execution.png` | `02-active-task-execution-annotated.png` | Four rooms render, task flows, status badge shows "working" | Rooms are flat color blocks without floor texture, walls, or doorway signs. Worker is a generic block; missing tool-belt/helmet silhouette and tool sparks. Props (workbench, task board, cable spool, task light) absent. |
+| Artifact under review | `03-artifact-under-review.png` | `03-artifact-under-review-annotated.png` | Reviewer moves to review room, status shows "reviewing" | Reviewer lacks glasses/clipboard. Review room has no rug, round table, magnifying lamp, or papers. No page-flip activity cue. |
+| Pending approval | `04-pending-approval.png` | `04-pending-approval-annotated.png` | Approval drawer appears with Approve/Reject | Approval/Delivery room missing counter, service bell, package slot, sconce. Drawer lacks `--urgency` 4px left border and bell icon. Buttons do not match primary/danger token styles. No pulsing bell glow on canvas. |
+| Blocked task / agent | `05-blocked-task-agent.png` | `05-blocked-task-agent-annotated.png` | Agent shows red exclamation, "blocked" badge appears | Blocked agent posture is upright/idle, not slumped/frustrated. Missing red pulse glow and speech-bubble cue. Badge lacks `--failure-dim` background and error code. |
+| Failed / runtime error | `06-failed-runtime-error.png` | `06-failed-runtime-error-annotated.png` | Revision state is reachable | Failed state is visually indistinguishable from idle on canvas. No error banner in status strip. Agent list still shows idle. |
+| Focus mode | `07-focus-mode.png` | `07-focus-mode-annotated.png` | Overlay appears, urgent counts render | Overlay dims canvas but does not show ambient activity or compact urgent cards. Right panel still shows full controls instead of collapsed "Urgent Only" view. Summary cards lack `--urgency` accents and count badges. |
+| Debrief mode | `08-debrief-mode.png` | `08-debrief-mode-annotated.png` | Event timeline renders, summary counts present | Debrief shows raw event log rather than curated "Session Summary" with metrics cards and Key timeline. Missing agent/room debrief visuals or heatmap. |
+
+## Design-system compliance checklist
+
+### Color tokens
+
+| Token | Status | Notes |
+|-------|--------|-------|
+| `--base-900` / `--base-800` backgrounds | Partial | App background is dark but not using the exact token values. |
+| `--base-700` panel cards | Missing | Panels use flatter surfaces without card borders. |
+| `--base-500` borders | Missing | Dividers exist but are ad-hoc grays. |
+| `--info` / `--urgency` / `--failure` intents | Partial | Badges use similar hues but not the exact tokens; glows missing. |
+| `--glow-*` | Missing | No glow effects for approval, blocked, or working states. |
+
+### Typography
+
+| Token | Status | Notes |
+|-------|--------|-------|
+| `--font-ui` Inter 12–14px | Partial | Font stack not explicit; sizes roughly match. |
+| `--font-mono` JetBrains Mono | Missing | Runtime IDs/sequence use default monospace. |
+| `--font-pixel` Press Start 2P | Missing | Room labels are sans-serif, not pixel font. |
+| Headings (`--h1`, `--h2`) | Partial | Section titles lack consistent weight/scale. |
+
+### Layout
+
+| Token | Status | Notes |
+|-------|--------|-------|
+| `--panel-width` 420px | Partial | Right panel width is close but not fixed/tokenized. |
+| `--status-height` 28px | Partial | Status strip exists; height not explicit. |
+| `--header-height` 44px | Partial | Header exists; height not explicit. |
+| Spacing tokens | Missing | Values are hard-coded in inline styles. |
+
+### Components
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Status strip | Partial | Shows connection + runtime ID + seq; missing error state / timestamp. |
+| App header | Partial | Wordmark present; mode switcher is not a segmented control. |
+| Mode switcher | Missing | Plain text buttons, no active fill. |
+| Panel cards | Missing | No `--base-700` surface / `--base-500` border. |
+| Status badges | Partial | Colors roughly match but sizing/typography inconsistent. |
+| Approval drawer | Missing | No urgency border-left or bell icon. |
+| Error banner | Missing | Failed state has no banner. |
+
+### Assets / animation
+
+| Area | Status | Notes |
+|------|--------|-------|
+| Agent sprites (28×36, role silhouettes) | Missing | Agents are solid-color rectangles. |
+| Room floor tiles (64×64) | Missing | Flat fills instead of textured tiles. |
+| Props (desk, workbench, lamp, bell) | Missing | Only simple desks present; no lamps/bells/signs. |
+| State animations (breathe, walk, sparkle, pulse) | Missing | Agents are static. |
+| Reduced-motion toggle | Present | "Motion on" toggle exists in header. |
+
+## Prioritized recommendations
+
+### P0 — Must have before V1.1 feels complete
+
+1. **Idle canvas must not be blank.** Render the four rooms even when no task is active: wood-plank Command floor, concrete Execution floor, rug Review floor, polished-wood Approval floor, plus wall lines and doorway signs.
+2. **Fix the mode switcher.** Convert Command/Focus/Debrief text buttons into a segmented control per the design system (`--base-600` active fill, `--base-100` active text).
+3. **Panel card surfaces.** Apply `--base-700` background, `--base-500` 1px border, `--radius-md`, and `--space-sm` padding to World, Actions, Create Task, Agents, Pending Approval, and Summary cards.
+
+### P1 — High impact on observability and character
+
+4. **Role-differentiated agent sprites.** Implement Orchestrator (tall, headset, tablet), Worker (sturdy, tool belt, helmet), and Reviewer (slim, glasses, clipboard) silhouettes.
+5. **State-specific posture and glows.** Add working lean + tool sparkle, blocked slumped posture + red pulse + speech bubble, approval turn-toward-bell + "?" thought bubble, failed downcast + error tag.
+6. **Approval moment.** Add service bell prop, pulsing `--glow-urgency`, `--urgency` left-border drawer, bell icon, and primary/danger Approve/Reject buttons.
+7. **Blocked/failed expression.** Add `--failure-dim` badge background, error code in status strip / agent card, and canvas-side red pulse marker.
+
+### P2 — Polish and mode-specific layouts
+
+8. **Focus mode redesign.** Collapse right panel to an "Urgent Only" compact view with `--urgency`-accented count cards; keep canvas dimmed but show ambient agent silhouettes.
+9. **Debrief mode redesign.** Replace raw event timeline with curated Session Summary: Tasks completed, Approvals resolved, Artifacts delivered, Events count, plus a Key timeline of meaningful milestones.
+10. **Micro-animations.** Agent idle breathe, walk transitions, approval bell pulse, blocked pulse, panel card expand; all gated by reduced-motion toggle.
+11. **Typography hardening.** Enforce Inter / JetBrains Mono / Press Start 2P stacks and tokenized sizes across app and canvas.
+
+## Proposed implementation plan for follow-up PR
+
+### PR scope
+
+A single visual/interaction PR targeting `apps/demo-office` and `packages/pixel-office` only. No protocol or reducer changes.
+
+### Task breakdown
+
+1. **Canvas scene foundation**
+   - Draw four rooms with floor tiles, wall lines, doorway signs.
+   - Keep agents visible in idle state.
+   - Files: `packages/pixel-office/src/scene/*`
+
+2. **Mode switcher + panel card styling**
+   - Implement segmented control in app header.
+   - Apply panel card tokens to right-hand components.
+   - Files: `apps/demo-office/src/App.tsx`, `apps/demo-office/src/components/*`
+
+3. **Agent sprites and state postures**
+   - Add role-specific sprites and state postures.
+   - Wire Runtime state to sprite selection.
+   - Files: `packages/pixel-office/src/agents/*`, `packages/pixel-office/src/render/*`
+
+4. **Approval, blocked, failed moments**
+   - Service bell prop + glow.
+   - Approval drawer styling.
+   - Blocked/failed badges and error banner.
+   - Files: `packages/pixel-office/src/rooms/approval.ts`, `apps/demo-office/src/panels/*`
+
+5. **Focus and Debrief layouts**
+   - Compact urgent-only panel for Focus.
+   - Session Summary + Key timeline for Debrief.
+   - Files: `apps/demo-office/src/modes/*`
+
+6. **Animation pass**
+   - Idle breathe, walk, sparkle, pulse, bell glow.
+   - Reduced-motion gating.
+   - Files: `packages/pixel-office/src/animations/*`
+
+### Acceptance criteria
+
+- [ ] All eight baseline states are re-captured and show clear visual improvement against this audit.
+- [ ] Mode switcher matches design-system segmented control.
+- [ ] Idle canvas shows all four rooms with props.
+- [ ] Agents show role silhouettes and state postures.
+- [ ] Approval, blocked, and failed states have explicit visual cues.
+- [ ] Focus mode shows compact urgent-only panel.
+- [ ] Debrief mode shows Session Summary + Key timeline.
+- [ ] `npm test` and `npm run build` pass.
+- [ ] PR description links this audit and `Refs #14`.
+
+## Appendix: artifact inventory
+
+| Artifact | Path |
+|----------|------|
+| Plan | `docs/superpowers/plans/2026-07-07-issue-14-phase3-swarm-office-v1.1.md` |
+| Design system | `docs/design/swarm-office/design-system.md` |
+| High-fidelity reference | `docs/design/swarm-office/high-fidelity-designs-preview.png` |
+| Baseline screenshots | `docs/design/swarm-office-v1.1/baseline/` |
+| Annotated comparisons | `docs/design/swarm-office-v1.1/annotated-comparisons/` |
+| Screenshot script | `scripts/capture-demo-office-screenshots.mjs` |
+| Annotation script | `scripts/generate-annotated-comparisons.mjs` |
