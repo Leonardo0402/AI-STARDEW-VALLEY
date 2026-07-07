@@ -5,6 +5,7 @@ import React from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { App } from "./App.js";
+import { DemoControls } from "./DemoControls.js";
 import { ControlPanel } from "@agent-office/control-ui";
 import { LifeSimControlPanel } from "@agent-office/control-ui/life-sim";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
@@ -349,5 +350,87 @@ describe("App shell", () => {
       key: "Home",
     });
     expect(tabs[0]).toHaveFocus();
+  });
+
+  it("marks the active mode tab with the segmented-control active class", () => {
+    renderApp();
+    const commandTab = screen.getByRole("tab", { name: "Command" });
+    const focusTab = screen.getByRole("tab", { name: "Focus" });
+    const debriefTab = screen.getByRole("tab", { name: "Debrief" });
+
+    expect(commandTab.classList.contains("mode-switcher__btn--active")).toBe(true);
+    expect(focusTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+    expect(debriefTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+
+    fireEvent.click(focusTab);
+    expect(commandTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+    expect(focusTab.classList.contains("mode-switcher__btn--active")).toBe(true);
+    expect(debriefTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+  });
+});
+
+describe("DemoControls panel card", () => {
+  const mockAdapter = {
+    playNormalFlow: vi.fn(),
+    playErrorFlow: vi.fn(),
+    playRevisionFlow: vi.fn(),
+    reset: vi.fn(),
+  };
+
+  const mockStore = { reset: vi.fn(), rebuildFromLog: vi.fn() };
+  const mockSession = { resynchronize: vi.fn().mockResolvedValue(undefined) };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders as a design-system panel card", () => {
+    render(
+      <DemoControls
+        adapter={mockAdapter as any}
+        store={mockStore as any}
+        session={mockSession as any}
+      />
+    );
+
+    const card = document.querySelector(".demo-controls");
+    expect(card).toBeInTheDocument();
+    expect(card?.classList.contains("panel-card")).toBe(true);
+    expect(screen.getByText("运行演示（Mock 专用）")).toBeInTheDocument();
+  });
+
+  it("uses token-driven button styles instead of inline styles", () => {
+    render(
+      <DemoControls
+        adapter={mockAdapter as any}
+        store={mockStore as any}
+        session={mockSession as any}
+      />
+    );
+
+    const button = screen.getByRole("button", { name: "正常流程" });
+    expect(button.classList.contains("demo-controls__btn")).toBe(true);
+    expect(button).not.toHaveAttribute("style");
+  });
+
+  it("still invokes adapter and store actions on button clicks", () => {
+    render(
+      <DemoControls
+        adapter={mockAdapter as any}
+        store={mockStore as any}
+        session={mockSession as any}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "正常流程" }));
+    expect(mockAdapter.playNormalFlow).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "重置" }));
+    expect(mockAdapter.reset).toHaveBeenCalled();
+    expect(mockStore.reset).toHaveBeenCalled();
+    expect(mockSession.resynchronize).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "回放事件" }));
+    expect(mockStore.rebuildFromLog).toHaveBeenCalled();
   });
 });

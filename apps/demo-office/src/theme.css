@@ -326,10 +326,70 @@
 .app-panel {
   display: flex;
   flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
   background: var(--base-800);
   border-left: 1px solid var(--base-500);
   overflow-y: auto;
   min-width: 360px;
+}
+
+/* ─── Panel Cards ─────────────────────────────────────────── */
+
+.panel-card {
+  background: var(--base-700);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+}
+
+.panel-card__title {
+  margin: 0 0 var(--space-xs);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--base-100);
+}
+
+/* ─── Demo Controls ───────────────────────────────────────── */
+
+.demo-controls {
+  flex-shrink: 0;
+}
+
+.demo-controls__title {
+  margin: 0 0 var(--space-xs);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--base-100);
+}
+
+.demo-controls__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.demo-controls__btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--base-600);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-sm);
+  color: var(--base-100);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 120ms ease-out;
+}
+
+.demo-controls__btn:hover {
+  filter: brightness(1.08);
+}
+
+.demo-controls__btn:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
 }
 
 /* ─── Focus Mode Indicator ────────────────────────────────── */
