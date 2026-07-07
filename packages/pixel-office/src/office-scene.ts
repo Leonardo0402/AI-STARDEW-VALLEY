@@ -234,6 +234,10 @@ export class PixelOfficeScene {
     this.agentRenderer?.selectAgent(agentId);
   }
 
+  selectAgents(agentIds: string[]): void {
+    this.agentRenderer?.selectAgents(agentIds);
+  }
+
   selectRoom(roomId: string): void {
     this.roomRenderer?.selectRoom(roomId);
   }

@@ -80,4 +80,56 @@ describe("ApprovalDrawer", () => {
     fireEvent.keyDown(approveBtn, { key: "Escape" });
     expect(title).toHaveFocus();
   });
+
+  it("calls onSelect when clicking an approval card", () => {
+    const onSelect = vi.fn();
+    render(
+      <ApprovalDrawer
+        approvals={[makeApproval("ap1")]}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        selection={null}
+        onSelect={onSelect}
+      />
+    );
+
+    const card = document.querySelector(".approval-drawer");
+    expect(card).toBeInTheDocument();
+    fireEvent.click(card!);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "approval", id: "ap1" });
+  });
+
+  it("marks the selected approval card with highlight attributes", () => {
+    render(
+      <ApprovalDrawer
+        approvals={[makeApproval("ap1")]}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        selection={{ kind: "approval", id: "ap1" }}
+        onSelect={vi.fn()}
+      />
+    );
+
+    const card = document.querySelector(".approval-drawer");
+    expect(card).toHaveAttribute("aria-pressed", "true");
+    expect(card?.classList.contains("card--selected")).toBe(true);
+  });
+
+  it("supports Enter key selection on a focused approval card", () => {
+    const onSelect = vi.fn();
+    render(
+      <ApprovalDrawer
+        approvals={[makeApproval("ap1")]}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        selection={null}
+        onSelect={onSelect}
+      />
+    );
+
+    const card = document.querySelector(".approval-drawer") as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith({ kind: "approval", id: "ap1" });
+  });
 });

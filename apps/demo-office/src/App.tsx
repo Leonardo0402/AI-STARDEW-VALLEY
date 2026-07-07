@@ -154,8 +154,25 @@ export const App: FC<AppProps> = ({
   const appBodyRef = useRef<HTMLDivElement>(null);
   const modeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const lastManualViewRef = useRef<ViewMode>("pixel");
-  const prevSelectionRef = useRef<OfficeSelection | null>(null);
   const prevCanvasSelectionRef = useRef<CanvasSelection>(null);
+
+  const applyCanvasSelection = useCallback(
+    (scene: PixelOfficeScene, canvasSelection: CanvasSelection) => {
+      scene.clearSelection();
+      if (!canvasSelection) return;
+
+      if (canvasSelection.kind === "agent") {
+        scene.selectAgent(canvasSelection.id);
+      } else if (canvasSelection.kind === "room") {
+        scene.selectRoom(canvasSelection.id);
+        const room = projection.rooms.find((r) => r.roomId === canvasSelection.id);
+        if (room && room.activeAgentIds.length > 0) {
+          scene.selectAgents(room.activeAgentIds);
+        }
+      }
+    },
+    [projection]
+  );
 
   // 初始化 PixelOfficeScene
   useEffect(() => {
@@ -167,14 +184,7 @@ export const App: FC<AppProps> = ({
     scene.setOnSelect((s) => setSelection(s as OfficeSelection));
 
     const canvasSelection = resolveCanvasSelection(selection, projection);
-    if (!canvasSelection) {
-      scene.clearSelection();
-    } else if (canvasSelection.kind === "agent") {
-      scene.selectAgent(canvasSelection.id);
-    } else if (canvasSelection.kind === "room") {
-      scene.selectRoom(canvasSelection.id);
-    }
-    prevSelectionRef.current = selection;
+    applyCanvasSelection(scene, canvasSelection);
     prevCanvasSelectionRef.current = canvasSelection;
     scene.init(canvasRef.current).catch((err) => {
       console.error("[App] PixelOfficeScene 初始化失败：", err);
@@ -276,19 +286,9 @@ export const App: FC<AppProps> = ({
       return;
     }
     prevCanvasSelectionRef.current = canvasSelection;
-    prevSelectionRef.current = selection;
 
-    if (!canvasSelection) {
-      sceneRef.current.clearSelection();
-      return;
-    }
-
-    if (canvasSelection.kind === "agent") {
-      sceneRef.current.selectAgent(canvasSelection.id);
-    } else if (canvasSelection.kind === "room") {
-      sceneRef.current.selectRoom(canvasSelection.id);
-    }
-  }, [selection, projection]);
+    applyCanvasSelection(sceneRef.current, canvasSelection);
+  }, [selection, projection, applyCanvasSelection]);
 
   // 当已选实体从 projection 中消失时清除选择
   useEffect(() => {

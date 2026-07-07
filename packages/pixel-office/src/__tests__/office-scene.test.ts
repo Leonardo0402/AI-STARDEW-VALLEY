@@ -720,6 +720,22 @@ describe("PixelOfficeScene selection API", () => {
     scene.destroy();
   });
 
+  it("clears previous agent highlight when selecting a new agent", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const agentRenderer = (scene as unknown as { agentRenderer: { getSelectedIds: () => Set<string> } }).agentRenderer;
+
+    scene.selectAgent("agent-1");
+    expect(agentRenderer.getSelectedIds().has("agent-1")).toBe(true);
+
+    scene.selectAgent("agent-2");
+    expect(agentRenderer.getSelectedIds().has("agent-1")).toBe(false);
+    expect(agentRenderer.getSelectedIds().has("agent-2")).toBe(true);
+
+    scene.destroy();
+  });
+
   it("forwards selected room ids to the room renderer", async () => {
     const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
     await scene.init(canvas);
@@ -731,6 +747,22 @@ describe("PixelOfficeScene selection API", () => {
 
     scene.clearSelection();
     expect(roomRenderer.getSelectedIds().has("command")).toBe(false);
+
+    scene.destroy();
+  });
+
+  it("clears previous room highlight when selecting a new room", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const roomRenderer = (scene as unknown as { roomRenderer: { getSelectedIds: () => Set<string> } }).roomRenderer;
+
+    scene.selectRoom("command");
+    expect(roomRenderer.getSelectedIds().has("command")).toBe(true);
+
+    scene.selectRoom("execution");
+    expect(roomRenderer.getSelectedIds().has("command")).toBe(false);
+    expect(roomRenderer.getSelectedIds().has("execution")).toBe(true);
 
     scene.destroy();
   });

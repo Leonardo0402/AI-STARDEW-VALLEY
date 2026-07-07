@@ -608,4 +608,19 @@ describe("ControlPanel selection", () => {
     fireEvent.keyDown(card, { key: " " });
     expect(onSelect).toHaveBeenCalledWith({ kind: "task", id: "task-1" });
   });
+
+  it("scrolls the selected card into view", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    const { rerender, props } = renderPanel({
+      selection: { kind: "agent", id: "agent-1" },
+    });
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
+
+    scrollIntoView.mockClear();
+    rerender(<ControlPanel {...props} selection={{ kind: "task", id: "task-1" }} />);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
+  });
 });

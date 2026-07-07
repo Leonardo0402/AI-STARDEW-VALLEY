@@ -42,6 +42,7 @@ vi.mock("@agent-office/pixel-office", () => ({
       updateProjection: vi.fn(),
       setReduceMotion: vi.fn(),
       selectAgent: vi.fn(),
+      selectAgents: vi.fn(),
       selectRoom: vi.fn(),
       clearSelection: vi.fn(),
       setOnSelect: vi.fn((cb: typeof onSelectCallback) => {
@@ -724,6 +725,19 @@ describe("App selection", () => {
     });
 
     expect(scene.selectAgent).toHaveBeenCalledWith("agent-2");
+  });
+
+  it("highlights the room and its active agents when a room is selected", () => {
+    renderApp();
+    const props = getControlPanelProps();
+    const scene = getSceneInstance();
+
+    act(() => {
+      (props.onSelect as (s: { kind: string; id: string }) => void)({ kind: "room", id: "room-1" });
+    });
+
+    expect(scene.selectRoom).toHaveBeenCalledWith("room-1");
+    expect(scene.selectAgents).toHaveBeenCalledWith(["agent-1"]);
   });
 
   it("falls back to room highlight when a task has no assignee", () => {

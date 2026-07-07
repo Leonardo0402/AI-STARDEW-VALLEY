@@ -36,6 +36,7 @@ export class RoomRenderer {
   ) {}
 
   selectRoom(roomId: string): void {
+    this.clearSelection();
     this.selectedIds.add(roomId);
   }
 

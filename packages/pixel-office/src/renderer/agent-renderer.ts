@@ -88,10 +88,22 @@ export class AgentRenderer {
   }
 
   selectAgent(agentId: string): void {
+    this.clearSelection();
     this.selectedIds.add(agentId);
     const sprite = this.sprites.get(agentId);
     if (sprite) {
       this.updateHighlight(sprite);
+    }
+  }
+
+  selectAgents(agentIds: string[]): void {
+    this.clearSelection();
+    for (const agentId of agentIds) {
+      this.selectedIds.add(agentId);
+      const sprite = this.sprites.get(agentId);
+      if (sprite) {
+        this.updateHighlight(sprite);
+      }
     }
   }
 

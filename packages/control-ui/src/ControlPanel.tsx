@@ -4,7 +4,7 @@
  * 只通过 onSendCommand 发命令，不直接持有 Adapter 或 Store。
  * Stage 2 移除模式切换器（已上移到 App header），仅保留操作卡片和审批表面。
  */
-import { useState, type FC } from "react";
+import { useState, useEffect, useRef, type FC } from "react";
 import type {
   OfficeProjection,
   DomainEvent,
@@ -163,6 +163,28 @@ export const ControlPanel: FC<ControlPanelProps> = ({
       }
     };
 
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const setCardRef =
+    (kind: OfficeSelection["kind"], id: string) =>
+    (el: HTMLDivElement | null): void => {
+      const key = `${kind}:${id}`;
+      if (el) {
+        cardRefs.current.set(key, el);
+      } else {
+        cardRefs.current.delete(key);
+      }
+    };
+
+  useEffect(() => {
+    if (!selection) return;
+    const key = `${selection.kind}:${selection.id}`;
+    const el = cardRefs.current.get(key);
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selection]);
+
   return (
     <div className="control-panel">
       {visibleErrors.length > 0 && (
@@ -189,6 +211,9 @@ export const ControlPanel: FC<ControlPanelProps> = ({
             onReject={handleRejectApproval}
             approveDisabled={!isSupported(CommandType.APPROVAL_ACCEPT)}
             rejectDisabled={!isSupported(CommandType.APPROVAL_REJECT)}
+            selection={selection}
+            onSelect={onSelect}
+            cardRef={(approvalId) => setCardRef("approval", approvalId)}
           />
 
           <div className="panel-section">
@@ -204,6 +229,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
             {projection.agents.map((agent) => (
               <Card
                 key={agent.agentId}
+                ref={setCardRef("agent", agent.agentId)}
                 selectable={Boolean(onSelect) || selection !== null}
                 selected={isSelected("agent", agent.agentId)}
                 ariaLabel={`Select agent ${agent.name}`}
@@ -265,6 +291,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
             {projection.tasks.map((task) => (
               <Card
                 key={task.taskId}
+                ref={setCardRef("task", task.taskId)}
                 selectable={Boolean(onSelect) || selection !== null}
                 selected={isSelected("task", task.taskId)}
                 ariaLabel={`Select task ${task.title}`}
@@ -324,6 +351,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 return (
                   <Card
                     key={art.artifactId}
+                    ref={setCardRef("artifact", art.artifactId)}
                     selectable={Boolean(onSelect) || selection !== null}
                     selected={isSelected("artifact", art.artifactId)}
                     ariaLabel={`Select artifact ${art.title}`}
