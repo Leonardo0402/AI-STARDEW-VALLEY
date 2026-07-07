@@ -69,6 +69,7 @@ export function useOfficeState(
         agentId: null,
         message: err.message,
         severity: "warning" as const,
+        code: err.code,
       }));
       setProjection(projectSnapshot(snap, projErrors));
     });

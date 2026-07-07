@@ -22,8 +22,18 @@ import { EffectRenderer } from "./renderer/effect-renderer.js";
 import { PropRenderer } from "./renderer/prop-renderer.js";
 import { RoomRenderer } from "./renderer/room-renderer.js";
 import { ROLE_COLORS, STATUS_COLORS, ROOM_COLORS } from "./design-tokens.js";
-import { createLayoutFromRoomViews, type RoomLayout } from "./layout.js";
+import { createLayoutFromRoomViews, createDefaultLayout, type RoomLayout } from "./layout.js";
 import { AssetLoader } from "./asset-loader.js";
+import { computeAgentPresentationState } from "./presentation-state.js";
+
+const WALK_MS_PER_TILE = 250;
+const TILE_SIZE_PX = 64;
+const IDLE_BREATHE_PERIOD_MS = 1500;
+const BELL_PERIOD_MS = 1200;
+const BLOCKED_PERIOD_MS = 1000;
+const SPARKLE_PERIOD_MS = 800;
+const SPARKLE_STEPS = 4;
+const SPARKLE_STEP_SCALES = [0.8, 1.0, 1.1, 0.9];
 
 interface LegacyAgentSprite {
   container: Container;
@@ -34,6 +44,11 @@ interface LegacyAgentSprite {
   targetY: number;
   currentX: number;
   currentY: number;
+  lastRoomId: string | null;
+  walkStartX: number;
+  walkStartY: number;
+  walkElapsed: number;
+  walkDuration: number;
 }
 
 export interface PixelOfficeSceneOptions {
@@ -52,6 +67,7 @@ export class PixelOfficeScene {
   private overlayLayer: Container;
   private agentSprites: Map<string, LegacyAgentSprite> = new Map();
   private currentProjection: OfficeProjection | null = null;
+  private pendingProjection: OfficeProjection | null = null;
   private currentLayout: RoomLayout | null = null;
   private destroyed = false;
   private initialized = false;
@@ -59,6 +75,10 @@ export class PixelOfficeScene {
 
   private useSpriteRenderer: boolean;
   private reduceMotion: boolean;
+  private overlayPulsePhase = 0;
+  private idlePhase = 0;
+  private blockedPulsePhase = 0;
+  private sparklePhase = 0;
   private roomRenderer?: RoomRenderer;
   private propRenderer?: PropRenderer;
   private agentRenderer?: AgentRenderer;
@@ -84,6 +104,12 @@ export class PixelOfficeScene {
     this.reduceMotion = value;
     this.agentRenderer?.setReduceMotion(value);
     this.effectRenderer?.setReduceMotion(value);
+    if (value) {
+      for (const sprite of this.agentSprites.values()) {
+        sprite.container.scale.set(1, 1);
+        sprite.container.y = sprite.currentY;
+      }
+    }
   }
 
   async init(canvas: HTMLCanvasElement): Promise<void> {
@@ -133,6 +159,12 @@ export class PixelOfficeScene {
     // 启动渲染循环
     this.app.ticker.add((ticker) => this.update(ticker));
     this.initialized = true;
+
+    // 如果在初始化完成前已有投影传入，补渲染一次。
+    if (this.pendingProjection) {
+      this.updateProjection(this.pendingProjection);
+      this.pendingProjection = null;
+    }
   }
 
   private resolveAssetBasePath(): string {
@@ -146,14 +178,17 @@ export class PixelOfficeScene {
 
   /** 更新场景 — 只消费 OfficeProjection */
   updateProjection(projection: OfficeProjection): void {
-    if (!this.initialized) return;
+    if (!this.initialized) {
+      this.pendingProjection = projection;
+      return;
+    }
     this.currentProjection = projection;
 
     if (this.useSpriteRenderer && this.roomRenderer && this.propRenderer && this.agentRenderer && this.effectRenderer) {
-      const layout = createLayoutFromRoomViews(projection.rooms);
+      const layout = projection.rooms.length > 0 ? createLayoutFromRoomViews(projection.rooms) : createDefaultLayout();
       this.currentLayout = layout;
       this.roomRenderer.render(layout);
-      this.propRenderer.render(layout);
+      this.propRenderer.render(layout, projection.pendingApprovals.length);
       this.agentRenderer.render(projection.agents, layout, projection);
       this.effectRenderer.render(projection, layout);
     } else {
@@ -281,6 +316,11 @@ export class PixelOfficeScene {
       targetY: 0,
       currentX: 0,
       currentY: 0,
+      lastRoomId: agent.currentRoomId ?? null,
+      walkStartX: 0,
+      walkStartY: 0,
+      walkElapsed: 0,
+      walkDuration: 0,
     };
   }
 
@@ -304,23 +344,20 @@ export class PixelOfficeScene {
       .stroke({ color: this.getStatusColor(agent.status), width: 2 });
 
     // 根据 currentRoomId 定位
-    if (agent.currentRoomId) {
-      const room = rooms.find((r) => r.roomId === agent.currentRoomId);
-      if (room) {
-        // 在房间内随机偏移定位（基于 agentId 哈希）
-        const hash = agent.agentId.charCodeAt(agent.agentId.length - 1);
-        const offsetX = ((hash % 3) - 1) * 80;
-        const offsetY = ((hash % 2) - 0.5) * 100;
-        sprite.targetX = room.bounds.x + room.bounds.width / 2 + offsetX;
-        sprite.targetY = room.bounds.y + room.bounds.height / 2 + offsetY;
-      }
-    } else {
-      // 没有 room 的 agent 放在指挥区
-      const commandRoom = rooms.find((r) => r.type === "command");
-      if (commandRoom) {
-        sprite.targetX = commandRoom.bounds.x + commandRoom.bounds.width / 2;
-        sprite.targetY = commandRoom.bounds.y + commandRoom.bounds.height / 2;
-      }
+    const position = this.computeLegacyAgentPosition(agent, rooms);
+    if (position) {
+      sprite.targetX = position.x;
+      sprite.targetY = position.y;
+    }
+
+    // 房间变化时启动行走插值
+    if (agent.currentRoomId !== sprite.lastRoomId) {
+      sprite.lastRoomId = agent.currentRoomId;
+      sprite.walkStartX = sprite.currentX;
+      sprite.walkStartY = sprite.currentY;
+      sprite.walkElapsed = 0;
+      const distance = Math.hypot(sprite.targetX - sprite.currentX, sprite.targetY - sprite.currentY);
+      sprite.walkDuration = distance === 0 ? 0 : (distance / TILE_SIZE_PX) * WALK_MS_PER_TILE;
     }
 
     // 初始化位置
@@ -335,6 +372,13 @@ export class PixelOfficeScene {
   private renderOverlays(projection: OfficeProjection): void {
     this.overlayLayer.removeChildren();
 
+    const approvalPulse = this.reduceMotion
+      ? 0.5
+      : (Math.sin((this.overlayPulsePhase / BELL_PERIOD_MS) * Math.PI * 2) + 1) / 2;
+    const blockedPulse = this.reduceMotion
+      ? 0.5
+      : (Math.sin((this.blockedPulsePhase / BLOCKED_PERIOD_MS) * Math.PI * 2) + 1) / 2;
+
     // 审批请求标记（闪烁的红圈）
     for (const approval of projection.pendingApprovals) {
       const task = projection.tasks.find((t) => t.taskId === approval.taskId);
@@ -342,11 +386,10 @@ export class PixelOfficeScene {
       const room = projection.rooms.find((r) => r.roomId === task.roomId);
       if (!room) continue;
 
-      const pulse = (Math.sin(Date.now() / 300) + 1) / 2;
       const circle = new Graphics();
       circle
-        .circle(room.bounds.x + room.bounds.width / 2, room.bounds.y + 20, 8 + pulse * 4)
-        .fill({ color: 0xe6a85c, alpha: 0.3 + pulse * 0.4 })
+        .circle(room.bounds.x + room.bounds.width / 2, room.bounds.y + 20, 8 + approvalPulse * 4)
+        .fill({ color: 0xe6a85c, alpha: 0.3 + approvalPulse * 0.4 })
         .stroke({ color: 0xe6a85c, width: 2 });
 
       const label = new Text({
@@ -376,6 +419,87 @@ export class PixelOfficeScene {
 
       this.overlayLayer.addChild(label);
     }
+
+    // 阻塞 agent 红色脉冲光晕
+    for (const agent of projection.agents) {
+      const state = computeAgentPresentationState(agent, projection);
+      if (state !== "blocked" || agent.status === "failed") continue;
+      const pos = this.getAgentRenderPosition(agent, projection.rooms);
+      if (!pos) continue;
+
+      const glowRadius = 18 + blockedPulse * 4;
+      const glowAlpha = 0.1 + blockedPulse * 0.15;
+      const glow = new Graphics();
+      glow.circle(pos.x, pos.y, glowRadius).fill({ color: 0xc96a5b, alpha: glowAlpha });
+      this.overlayLayer.addChild(glow);
+
+      const bubbleX = pos.x + 12;
+      const bubbleY = pos.y - 18;
+      const marker = new Graphics();
+      marker
+        .circle(bubbleX, bubbleY, 6)
+        .fill({ color: 0xc96a5b })
+        .stroke({ color: 0x7a3d34, width: 1 });
+      marker
+        .moveTo(bubbleX - 3, bubbleY + 4)
+        .lineTo(bubbleX - 6, bubbleY + 9)
+        .lineTo(bubbleX, bubbleY + 5)
+        .closePath()
+        .fill({ color: 0xc96a5b });
+      this.overlayLayer.addChild(marker);
+
+      const exclamation = new Text({
+        text: "!",
+        style: new TextStyle({ fontSize: 10, fill: 0xf2f0eb, fontFamily: "Inter, system-ui, sans-serif" }),
+      });
+      exclamation.anchor.set(0.5, 0.5);
+      exclamation.x = bubbleX;
+      exclamation.y = bubbleY;
+      this.overlayLayer.addChild(exclamation);
+    }
+
+    // working agent 工具火花
+    for (const agent of projection.agents) {
+      const state = computeAgentPresentationState(agent, projection);
+      if (state !== "working") continue;
+      const pos = this.getAgentRenderPosition(agent, projection.rooms);
+      if (!pos) continue;
+
+      const scale = this.reduceMotion
+        ? SPARKLE_STEP_SCALES[0]
+        : SPARKLE_STEP_SCALES[Math.floor(this.sparklePhase / (SPARKLE_PERIOD_MS / SPARKLE_STEPS)) % SPARKLE_STEPS];
+      const sparkle = new Graphics();
+      this.drawStar(sparkle, pos.x + 8, pos.y - 24, 5 * scale, 0xe6a85c);
+      this.overlayLayer.addChild(sparkle);
+    }
+  }
+
+  private computeLegacyAgentPosition(agent: AgentView, rooms: RoomView[]): { x: number; y: number } | null {
+    if (!agent.currentRoomId) {
+      const commandRoom = rooms.find((r) => r.type === "command");
+      if (!commandRoom) return null;
+      return {
+        x: commandRoom.bounds.x + commandRoom.bounds.width / 2,
+        y: commandRoom.bounds.y + commandRoom.bounds.height / 2,
+      };
+    }
+    const room = rooms.find((r) => r.roomId === agent.currentRoomId);
+    if (!room) return null;
+    const hash = agent.agentId.charCodeAt(agent.agentId.length - 1);
+    const offsetX = ((hash % 3) - 1) * 80;
+    const offsetY = ((hash % 2) - 0.5) * 100;
+    return {
+      x: room.bounds.x + room.bounds.width / 2 + offsetX,
+      y: room.bounds.y + room.bounds.height / 2 + offsetY,
+    };
+  }
+
+  private getAgentRenderPosition(agent: AgentView, rooms: RoomView[]): { x: number; y: number } | null {
+    const sprite = this.agentSprites.get(agent.agentId);
+    if (sprite) {
+      return { x: sprite.targetX, y: sprite.targetY };
+    }
+    return this.computeLegacyAgentPosition(agent, rooms);
   }
 
   private getRoleColor(role: string): number {
@@ -386,34 +510,89 @@ export class PixelOfficeScene {
     return STATUS_COLORS[status] ?? 0x7d7682; // --base-400 fallback
   }
 
+  private drawStar(g: Graphics, x: number, y: number, radius: number, color: number): void {
+    g.moveTo(x, y - radius)
+      .lineTo(x + radius * 0.3, y - radius * 0.3)
+      .lineTo(x + radius, y)
+      .lineTo(x + radius * 0.3, y + radius * 0.3)
+      .lineTo(x, y + radius)
+      .lineTo(x - radius * 0.3, y + radius * 0.3)
+      .lineTo(x - radius, y)
+      .lineTo(x - radius * 0.3, y - radius * 0.3)
+      .closePath()
+      .fill({ color });
+  }
+
   private update(ticker: Ticker): void {
     if (this.destroyed) return;
 
     if (this.useSpriteRenderer && this.agentRenderer) {
-      this.agentRenderer.tick();
+      this.agentRenderer.tick(ticker.deltaMS);
 
-      // 持续刷新效果层（blocked/working/approval）；reduceMotion 在 renderer 内部控制脉冲
-      if (this.currentProjection && this.currentLayout) {
+      // 持续刷新效果层（blocked/working/approval）；reduceMotion 下只渲染一次，不逐帧刷新
+      if (!this.reduceMotion && this.currentProjection && this.currentLayout) {
         this.effectRenderer?.render(this.currentProjection, this.currentLayout, ticker.deltaMS);
       }
       return;
+    }
+
+    if (!this.reduceMotion) {
+      this.overlayPulsePhase += ticker.deltaMS;
+      this.idlePhase += ticker.deltaMS;
+      this.blockedPulsePhase += ticker.deltaMS;
+      this.sparklePhase += ticker.deltaMS;
     }
 
     // 平滑移动 agent 到目标位置
     for (const sprite of this.agentSprites.values()) {
       const dx = sprite.targetX - sprite.currentX;
       const dy = sprite.targetY - sprite.currentY;
-      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-        sprite.currentX += dx * 0.1;
-        sprite.currentY += dy * 0.1;
+      const isMoving = Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
+
+      if (isMoving) {
+        if (this.reduceMotion || sprite.walkDuration === 0) {
+          sprite.currentX = sprite.targetX;
+          sprite.currentY = sprite.targetY;
+        } else {
+          sprite.walkElapsed += ticker.deltaMS;
+          const progress = Math.min(sprite.walkElapsed / sprite.walkDuration, 1);
+          sprite.currentX = sprite.walkStartX + (sprite.targetX - sprite.walkStartX) * progress;
+          sprite.currentY = sprite.walkStartY + (sprite.targetY - sprite.walkStartY) * progress;
+        }
         sprite.container.x = sprite.currentX;
         sprite.container.y = sprite.currentY;
+        sprite.container.scale.set(1, 1);
+        continue;
+      }
+
+      // 静止 idle 时应用呼吸动画
+      if (this.reduceMotion) {
+        sprite.container.scale.set(1, 1);
+        sprite.container.y = sprite.currentY;
+      } else if (this.currentProjection) {
+        const agent = this.currentProjection.agents.find((a) => a.agentId === sprite.agentId);
+        if (agent && computeAgentPresentationState(agent, this.currentProjection) === "idle") {
+          const t = Math.sin((this.idlePhase / IDLE_BREATHE_PERIOD_MS) * Math.PI * 2);
+          sprite.container.y = sprite.currentY + t * -1;
+          sprite.container.scale.set(1 + t * 0.01, 1 + t * 0.03);
+        } else {
+          sprite.container.scale.set(1, 1);
+          sprite.container.y = sprite.currentY;
+        }
       }
     }
 
-    // 如果有 pendingApprovals，持续刷新 overlay 闪烁
-    if (this.currentProjection && this.currentProjection.pendingApprovals.length > 0) {
-      this.renderOverlays(this.currentProjection);
+    // 持续刷新覆盖层效果（reduceMotion 时保持静态）
+    if (!this.reduceMotion && this.currentProjection) {
+      const hasAnimatedOverlay =
+        this.currentProjection.pendingApprovals.length > 0 ||
+        this.currentProjection.agents.some((a) => {
+          const state = computeAgentPresentationState(a, this.currentProjection!);
+          return state === "working" || (state === "blocked" && a.status !== "failed");
+        });
+      if (hasAnimatedOverlay) {
+        this.renderOverlays(this.currentProjection);
+      }
     }
   }
 }

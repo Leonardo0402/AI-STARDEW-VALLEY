@@ -13,6 +13,14 @@ const PROP_COLORS: Record<string, number> = {
   signpost: 0xa07040, // warm tan
 };
 
+const APPROVAL_PROP_COLORS = {
+  counter: 0x8b5a2b,      // warm wood
+  bell: 0xe6a85c,         // --urgency
+  packageSlot: 0x3d3530,  // --warm-700
+  sconce: 0xa07040,       // warm tan
+  sconceGlow: 0xe6a85c,   // --urgency
+};
+
 const PROP_TEXTURE_NAMES: Record<string, string | null> = {
   desk: "desk-shared",
   workbench: "workbench",
@@ -27,12 +35,15 @@ export class PropRenderer {
     private assetLoader?: AssetLoader
   ) {}
 
-  render(layout: RoomLayout): void {
+  render(layout: RoomLayout, pendingApprovalsCount = 0): void {
     this.layer.removeChildren();
 
     for (const room of layout.rooms) {
       for (const prop of room.props) {
         this.drawProp(prop, room);
+      }
+      if (room.floorType === "approval_delivery" && pendingApprovalsCount > 0) {
+        this.drawApprovalRoomProps(room);
       }
     }
   }
@@ -91,5 +102,41 @@ export class PropRenderer {
       return "desk-shared";
     }
     return PROP_TEXTURE_NAMES[prop.type] ?? null;
+  }
+
+  private drawApprovalRoomProps(room: RoomLayoutEntry): void {
+    const g = new Graphics();
+    const cx = room.x + room.width / 2;
+    const counterY = room.y + room.height - 52;
+
+    // Service bell on the counter
+    const bellX = cx;
+    const bellY = counterY + 4;
+    g.circle(bellX, bellY, 6)
+      .fill({ color: APPROVAL_PROP_COLORS.bell, alpha: 0.9 })
+      .stroke({ color: 0x1a181c, width: 1 });
+    g.rect(bellX - 2, bellY - 4, 4, 3).fill({ color: 0xf2f0eb, alpha: 0.8 });
+
+    // Package slot on the right wall
+    const slotW = 10;
+    const slotH = 28;
+    const slotX = room.x + room.width - slotW - 18;
+    const slotY = room.y + 56;
+    g.rect(slotX, slotY, slotW, slotH)
+      .fill({ color: APPROVAL_PROP_COLORS.packageSlot })
+      .stroke({ color: 0x6b5f56, width: 1 });
+    g.rect(slotX + 2, slotY + 4, slotW - 4, 4).fill({ color: 0x1a181c });
+
+    // Wall sconce on the left wall
+    const sconceX = room.x + 20;
+    const sconceY = room.y + 36;
+    g.rect(sconceX, sconceY, 14, 8)
+      .fill({ color: APPROVAL_PROP_COLORS.sconce })
+      .stroke({ color: 0x1a181c, width: 1 });
+    g.circle(sconceX + 7, sconceY + 4, 3)
+      .fill({ color: APPROVAL_PROP_COLORS.sconceGlow, alpha: 0.7 })
+      .stroke({ color: 0xe6a85c, width: 1 });
+
+    this.layer.addChild(g);
   }
 }

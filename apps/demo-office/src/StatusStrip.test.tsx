@@ -86,4 +86,42 @@ describe("StatusStrip", () => {
     expect(screen.queryByRole("button", { name: /Retry/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Reload/i })).not.toBeInTheDocument();
   });
+
+  it("shows failure modifier and projection error code when failedCount is greater than zero", () => {
+    renderStrip({
+      sessionState: "connected",
+      failedCount: 1,
+      failedError: { code: "task_failed", message: "agent failed" },
+    });
+    const strip = screen.getByTestId("status-strip");
+    expect(strip.classList.contains("status-strip--failure")).toBe(true);
+    expect(screen.getByText("task_failed")).toBeInTheDocument();
+    expect(screen.getByText("agent failed")).toBeInTheDocument();
+  });
+
+  it("does not show failure modifier when session is healthy and no failed projection items", () => {
+    renderStrip({ sessionState: "connected" });
+    const strip = screen.getByTestId("status-strip");
+    expect(strip.classList.contains("status-strip--failure")).toBe(false);
+    expect(strip.classList.contains("status-strip--urgency")).toBe(false);
+  });
+
+  it("shows domain projection failure details without recovery action", () => {
+    const onRetry = vi.fn();
+    const onReload = vi.fn();
+    renderStrip({
+      sessionState: "connected",
+      failedCount: 1,
+      failedError: { code: "task_failed", message: "agent failed" },
+      retryable: true,
+      onRetry,
+      onReload,
+    });
+
+    const strip = screen.getByTestId("status-strip");
+    expect(strip.classList.contains("status-strip--failure")).toBe(true);
+    expect(screen.getByText("task_failed")).toBeInTheDocument();
+    expect(screen.getByText("agent failed")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
 });

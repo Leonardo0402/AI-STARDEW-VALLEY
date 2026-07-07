@@ -29,8 +29,17 @@ describe("RoomRenderer", () => {
     renderer.render(createDefaultLayout());
     const graphics = container.children.filter((c) => c instanceof MockGraphics) as MockGraphics[];
 
-    const fillColors = graphics.map((g) => g.fillStyle?.color);
-    expect(new Set(fillColors).size).toBe(4);
+    const floorFillColors = graphics.map((g) => {
+      const mainRectIndex = g.commands.findIndex(
+        (cmd) =>
+          cmd.type === "rect" &&
+          typeof cmd.args[2] === "number" &&
+          (cmd.args[2] as number) >= 300
+      );
+      const fillCmd = g.commands.slice(mainRectIndex).find((cmd) => cmd.type === "fill");
+      return (fillCmd?.args[0] as { color?: number } | undefined)?.color;
+    });
+    expect(new Set(floorFillColors).size).toBe(4);
   });
 
   it("draws each room at its layout position", () => {
@@ -63,6 +72,66 @@ describe("RoomRenderer", () => {
       expect(label).toBeDefined();
       expect(label!.x).toBe(room.x + 8);
       expect(label!.y).toBe(room.y + 4);
+    }
+  });
+
+  it("draws wall lines along room edges", () => {
+    const layout = createDefaultLayout();
+    renderer.render(layout);
+    const graphics = container.children.filter((c) => c instanceof MockGraphics) as MockGraphics[];
+
+    for (const room of layout.rooms) {
+      const roomGraphic = graphics.find((g) =>
+        g.commands.some(
+          (cmd) =>
+            cmd.type === "rect" &&
+            cmd.args[0] === room.x &&
+            cmd.args[1] === room.y &&
+            cmd.args[2] === room.width &&
+            cmd.args[3] === room.height
+        )
+      );
+      expect(roomGraphic).toBeDefined();
+
+      const hasTopWall = roomGraphic!.commands.some(
+        (cmd) =>
+          cmd.type === "moveTo" &&
+          cmd.args[0] === room.x &&
+          cmd.args[1] === room.y
+      );
+      expect(hasTopWall).toBe(true);
+    }
+  });
+
+  it("draws wooden doorway signs behind room labels", () => {
+    const layout = createDefaultLayout();
+    renderer.render(layout);
+    const graphics = container.children.filter((c) => c instanceof MockGraphics) as MockGraphics[];
+
+    for (const room of layout.rooms) {
+      const roomGraphic = graphics.find((g) =>
+        g.commands.some(
+          (cmd) =>
+            cmd.type === "rect" &&
+            cmd.args[0] === room.x &&
+            cmd.args[1] === room.y &&
+            cmd.args[2] === room.width &&
+            cmd.args[3] === room.height
+        )
+      );
+      expect(roomGraphic).toBeDefined();
+
+      const signRects = roomGraphic!.commands.filter(
+        (cmd) =>
+          cmd.type === "rect" &&
+          cmd.args[0] === room.x + 4 &&
+          cmd.args[1] === room.y + 2 &&
+          typeof cmd.args[2] === "number" &&
+          (cmd.args[2] as number) > 0 &&
+          typeof cmd.args[3] === "number" &&
+          (cmd.args[3] as number) > 0
+      );
+      expect(signRects.length).toBeGreaterThan(0);
     }
   });
 

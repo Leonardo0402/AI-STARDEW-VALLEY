@@ -30,11 +30,11 @@ import {
 import {
   LifeSimControlPanel,
   type LifeSimSession,
-  type ComposedOfficeProjection,
 } from "@agent-office/control-ui/life-sim";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
 import { DebriefTimeline } from "./DebriefTimeline.js";
+import { FocusModeIndicator } from "./FocusModeIndicator.js";
 import { StatusStrip } from "./StatusStrip.js";
 import { useComposedOfficeState } from "./useComposedOfficeState.js";
 
@@ -195,6 +195,25 @@ export const App: FC<AppProps> = ({
     return { type: event.type, timestamp: event.occurredAt };
   }, [eventLog]);
 
+  const failedCount = useMemo(
+    () =>
+      projection.agents.filter((a) => a.status === "failed").length +
+      projection.tasks.filter((t) => t.status === "failed").length,
+    [projection]
+  );
+
+  const failedError = useMemo(() => {
+    const err = projection.errors.find(
+      (e) => e.severity === "error" || e.severity === "critical"
+    );
+    return err
+      ? {
+          code: (err as { code?: string }).code ?? "PROJECTION_FAILURE",
+          message: err.message,
+        }
+      : null;
+  }, [projection]);
+
   const isFocus = experienceMode === "focus";
   const isDebrief = experienceMode === "debrief";
 
@@ -206,6 +225,8 @@ export const App: FC<AppProps> = ({
         diagnostics={diagnostics}
         lastEvent={lastEvent}
         retryable={retryable}
+        failedCount={failedCount}
+        failedError={failedError}
         onRetry={onRetry}
         onResync={() => {
           session.resynchronize().catch((err) =>
@@ -290,61 +311,63 @@ export const App: FC<AppProps> = ({
           {isFocus && <FocusModeIndicator projection={projection} />}
         </div>
 
-        <div className="app-panel">
-          {demoControls}
-          <LifeSimControlPanel
-            projection={projection.lifeSim}
-            onSendCommand={sendLifeSimCommand}
-          />
-          <ControlPanel
-            projection={projection}
-            eventLog={eventLog}
-            errors={errors}
-            mode={experienceMode}
-            onSendCommand={sendCommand}
-            capabilities={capabilities}
-          />
+        <div className={`app-panel ${isFocus ? "app-panel--focus" : ""}`}>
+          {isFocus ? (
+            <div className="focus-urgent-panel" data-testid="focus-urgent-panel">
+              <h3 className="focus-urgent-panel__title">Urgent Only</h3>
+              <div className="focus-urgent-panel__cards">
+                <div className="focus-urgent-panel__card focus-urgent-panel__card--urgency">
+                  <span
+                    className="focus-urgent-panel__count"
+                    data-testid="focus-urgent-count"
+                  >
+                    {projection.pendingApprovals.length}
+                  </span>
+                  <span className="focus-urgent-panel__label">
+                    Pending approvals
+                  </span>
+                </div>
+                <div className="focus-urgent-panel__card focus-urgent-panel__card--urgency">
+                  <span
+                    className="focus-urgent-panel__count"
+                    data-testid="focus-urgent-count"
+                  >
+                    {projection.blockedTasks.length}
+                  </span>
+                  <span className="focus-urgent-panel__label">
+                    Blocked tasks
+                  </span>
+                </div>
+                <div className="focus-urgent-panel__card focus-urgent-panel__card--urgency">
+                  <span
+                    className="focus-urgent-panel__count"
+                    data-testid="focus-urgent-count"
+                  >
+                    {failedCount}
+                  </span>
+                  <span className="focus-urgent-panel__label">Failed</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {demoControls}
+              <LifeSimControlPanel
+                projection={projection.lifeSim}
+                onSendCommand={sendLifeSimCommand}
+              />
+              <ControlPanel
+                projection={projection}
+                eventLog={eventLog}
+                errors={errors}
+                mode={experienceMode}
+                onSendCommand={sendCommand}
+                capabilities={capabilities}
+              />
+            </>
+          )}
         </div>
       </div>
-    </div>
-  );
-};
-
-// ─── Focus Mode 极简指示器 ────────────────────────────────────
-const FocusModeIndicator: FC<{ projection: ComposedOfficeProjection }> = ({
-  projection,
-}) => {
-  const pending = projection.pendingApprovals.length;
-  const blocked = projection.blockedTasks.length;
-  const artifacts = projection.artifacts.filter(
-    (a) => a.status === "approved" || a.status === "generated"
-  ).length;
-
-  return (
-    <div className="focus-indicator">
-      <h2 className="focus-indicator__title">Focus Mode</h2>
-      <p className="focus-indicator__hint">Agents continue working in the background; events queue quietly.</p>
-      <div className="focus-indicator__stats">
-        <div className="focus-indicator__stat">
-          <span className="focus-indicator__num focus-indicator__num--urgency">
-            {pending}
-          </span>
-          <span className="focus-indicator__label">Pending</span>
-        </div>
-        <div className="focus-indicator__stat">
-          <span className="focus-indicator__num focus-indicator__num--failure">
-            {blocked}
-          </span>
-          <span className="focus-indicator__label">Blocked</span>
-        </div>
-        <div className="focus-indicator__stat">
-          <span className="focus-indicator__num focus-indicator__num--info">
-            {artifacts}
-          </span>
-          <span className="focus-indicator__label">Artifacts</span>
-        </div>
-      </div>
-      <p className="focus-indicator__hint">Switch to Command or Debrief for details.</p>
     </div>
   );
 };

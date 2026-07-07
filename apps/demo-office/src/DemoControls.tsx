@@ -34,53 +34,25 @@ export const DemoControls: FC<DemoControlsProps> = ({ adapter, store, session })
   };
 
   return (
-    <div style={styles.section}>
-      <h3 style={styles.h3}>运行演示（Mock 专用）</h3>
-      <div style={styles.buttonRow}>
-        <button style={styles.button} onClick={() => adapter.playNormalFlow()}>
+    <div className="demo-controls panel-card">
+      <h3 className="demo-controls__title">运行演示（Mock 专用）</h3>
+      <div className="demo-controls__row">
+        <button className="demo-controls__btn" onClick={() => adapter.playNormalFlow()}>
           正常流程
         </button>
-        <button style={styles.button} onClick={() => adapter.playErrorFlow()}>
+        <button className="demo-controls__btn" onClick={() => adapter.playErrorFlow()}>
           异常: 阻塞
         </button>
-        <button style={styles.button} onClick={() => adapter.playRevisionFlow()}>
+        <button className="demo-controls__btn" onClick={() => adapter.playRevisionFlow()}>
           异常: 返工
         </button>
-        <button style={styles.button} onClick={handleReset}>
+        <button className="demo-controls__btn" onClick={handleReset}>
           重置
         </button>
-        <button style={styles.button} onClick={handleReplay}>
+        <button className="demo-controls__btn" onClick={handleReplay}>
           回放事件
         </button>
       </div>
     </div>
   );
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  section: {
-    borderBottom: "1px solid #333",
-    paddingBottom: 12,
-  },
-  h3: {
-    margin: "0 0 8px 0",
-    fontSize: 14,
-    color: "#88ccff",
-  },
-  buttonRow: {
-    display: "flex",
-    gap: 6,
-    flexWrap: "wrap" as const,
-    marginTop: 6,
-  },
-  button: {
-    padding: "4px 12px",
-    backgroundColor: "#333355",
-    color: "#cccccc",
-    border: "1px solid #555577",
-    borderRadius: 3,
-    cursor: "pointer",
-    fontSize: 12,
-    fontFamily: "monospace",
-  },
 };

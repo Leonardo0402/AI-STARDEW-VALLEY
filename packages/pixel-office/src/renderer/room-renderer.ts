@@ -20,6 +20,12 @@ const FLOOR_TEXTURE_NAMES: Record<string, string> = {
   approval_delivery: "floor-approval",
 };
 
+const WALL_COLOR = 0x3d3530; // --warm-700
+const SIGN_COLOR = 0x6b5f56; // --warm-500
+const SIGN_BORDER_COLOR = 0x3d3530; // --warm-700
+const SIGN_WIDTH = 150;
+const SIGN_HEIGHT = 18;
+
 export class RoomRenderer {
   constructor(
     private layer: Container,
@@ -54,9 +60,9 @@ export class RoomRenderer {
       .fill({ color: baseColor, alpha: floorTexture ? 0.15 : 0.4 })
       .stroke({ color: baseColor, width: 3 });
 
-    if (!floorTexture) {
-      this.drawFloorPattern(g, room, patternColor);
-    }
+    this.drawFloorPattern(g, room, patternColor, floorTexture ? 0.2 : 0.35);
+    this.drawWalls(g, room, WALL_COLOR);
+    this.drawSign(g, room, SIGN_COLOR);
 
     const label = new Text({
       text: room.name,
@@ -74,12 +80,127 @@ export class RoomRenderer {
     this.layer.addChild(label);
   }
 
-  private drawFloorPattern(g: Graphics, room: RoomLayoutEntry, color: number): void {
+  private drawWalls(g: Graphics, room: RoomLayoutEntry, color: number): void {
+    g.moveTo(room.x, room.y)
+      .lineTo(room.x + room.width, room.y)
+      .stroke({ color, width: 2 });
+    g.moveTo(room.x, room.y)
+      .lineTo(room.x, room.y + room.height)
+      .stroke({ color, width: 2 });
+  }
+
+  private drawSign(g: Graphics, room: RoomLayoutEntry, color: number): void {
+    g.rect(room.x + 4, room.y + 2, SIGN_WIDTH, SIGN_HEIGHT)
+      .fill({ color })
+      .stroke({ color: SIGN_BORDER_COLOR, width: 1 });
+  }
+
+  private drawFloorPattern(
+    g: Graphics,
+    room: RoomLayoutEntry,
+    color: number,
+    alpha: number
+  ): void {
+    switch (room.floorType) {
+      case "command":
+        this.drawWoodPlanks(g, room, color, alpha);
+        break;
+      case "execution":
+        this.drawConcreteTiles(g, room, color, alpha);
+        break;
+      case "review":
+        this.drawRug(g, room, color, alpha);
+        break;
+      case "approval_delivery":
+        this.drawPolishedWood(g, room, color, alpha);
+        break;
+      default:
+        this.drawStripes(g, room, color, alpha);
+    }
+  }
+
+  private drawWoodPlanks(g: Graphics, room: RoomLayoutEntry, color: number, alpha: number): void {
+    const plankHeight = 20;
+    for (let y = room.y + plankHeight; y < room.y + room.height; y += plankHeight) {
+      g.moveTo(room.x + 4, y)
+        .lineTo(room.x + room.width - 4, y)
+        .stroke({ color, width: 1, alpha });
+    }
+    for (let x = room.x + 40; x < room.x + room.width; x += 60) {
+      let offset = 0;
+      for (let y = room.y + 4; y < room.y + room.height; y += plankHeight * 2) {
+        offset = (offset + plankHeight) % (plankHeight * 2);
+        const startY = y + offset;
+        const endY = startY + plankHeight;
+        if (startY < room.y + room.height - 4 && endY < room.y + room.height - 4) {
+          g.moveTo(x, startY).lineTo(x, endY).stroke({ color, width: 1, alpha });
+        }
+      }
+    }
+  }
+
+  private drawConcreteTiles(g: Graphics, room: RoomLayoutEntry, color: number, alpha: number): void {
+    const tileSize = 40;
+    for (let y = room.y + tileSize; y < room.y + room.height; y += tileSize) {
+      g.moveTo(room.x + 4, y)
+        .lineTo(room.x + room.width - 4, y)
+        .stroke({ color, width: 1, alpha });
+    }
+    for (let x = room.x + tileSize; x < room.x + room.width; x += tileSize) {
+      g.moveTo(x, room.y + 4)
+        .lineTo(x, room.y + room.height - 4)
+        .stroke({ color, width: 1, alpha });
+    }
+    // Deterministic scuff marks at grid intersections.
+    const intersections: Array<[number, number]> = [];
+    for (let x = room.x + tileSize; x < room.x + room.width; x += tileSize) {
+      for (let y = room.y + tileSize; y < room.y + room.height; y += tileSize) {
+        intersections.push([x, y]);
+      }
+    }
+    for (let i = 0; i < intersections.length; i += 3) {
+      const [cx, cy] = intersections[i];
+      g.moveTo(cx - 4, cy - 2)
+        .lineTo(cx + 2, cy + 4)
+        .stroke({ color, width: 1, alpha: alpha * 0.7 });
+    }
+  }
+
+  private drawRug(g: Graphics, room: RoomLayoutEntry, color: number, alpha: number): void {
+    const border = 8;
+    g.rect(room.x + border, room.y + border, room.width - border * 2, room.height - border * 2)
+      .stroke({ color, width: 2, alpha });
+    const cx = room.x + room.width / 2;
+    const cy = room.y + room.height / 2;
+    g.moveTo(room.x + border + 4, cy)
+      .lineTo(room.x + room.width - border - 4, cy)
+      .stroke({ color, width: 1, alpha: alpha * 0.8 });
+    g.moveTo(cx, room.y + border + 4)
+      .lineTo(cx, room.y + room.height - border - 4)
+      .stroke({ color, width: 1, alpha: alpha * 0.8 });
+  }
+
+  private drawPolishedWood(g: Graphics, room: RoomLayoutEntry, color: number, alpha: number): void {
+    const plankHeight = 16;
+    for (let y = room.y + plankHeight; y < room.y + room.height; y += plankHeight) {
+      g.moveTo(room.x + 4, y)
+        .lineTo(room.x + room.width - 4, y)
+        .stroke({ color, width: 1, alpha });
+      const highlightY = y + Math.floor(plankHeight / 2);
+      if (highlightY < room.y + room.height - 4) {
+        g.moveTo(room.x + 4, highlightY)
+          .lineTo(room.x + room.width - 4, highlightY)
+          .stroke({ color: 0xa89788, width: 1, alpha: alpha * 0.6 });
+      }
+    }
+  }
+
+  private drawStripes(g: Graphics, room: RoomLayoutEntry, color: number, alpha: number): void {
     const step = 20;
     for (let y = room.y + step; y < room.y + room.height; y += step) {
       g.moveTo(room.x + 4, y)
         .lineTo(room.x + room.width - 4, y)
-        .stroke({ color, width: 1, alpha: 0.3 });
+        .stroke({ color, width: 1, alpha });
     }
   }
 }

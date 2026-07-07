@@ -9,6 +9,7 @@
 | Token | Hex | Usage |
 |-------|-----|-------|
 | `--base-900` | `#131014` | Deepest background, status strip. |
+| `--base-850` | `#161418` | Secondary deep background, canvas overlays. |
 | `--base-800` | `#1a181c` | App canvas background. |
 | `--base-700` | `#25222a` | Panel surface, floating cards. |
 | `--base-600` | `#322e36` | Hover states, secondary surfaces. |

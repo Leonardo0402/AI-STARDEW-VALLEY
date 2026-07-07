@@ -73,6 +73,14 @@ export class MockContainer {
   public children: unknown[] = [];
   public x = 0;
   public y = 0;
+  public scale = {
+    x: 1,
+    y: 1,
+    set: vi.fn((x: number, y: number) => {
+      this.scale.x = x;
+      this.scale.y = y;
+    }),
+  };
   public removed = false;
 
   addChild(child: unknown): unknown {
@@ -161,7 +169,14 @@ export class MockSprite extends MockContainer {
   public width = 0;
   public height = 0;
   public anchor = { set: vi.fn(), x: 0, y: 0 };
-  public scale = { set: vi.fn(), x: 1, y: 1 };
+  public scale = {
+    x: 1,
+    y: 1,
+    set: vi.fn((x: number, y: number) => {
+      this.scale.x = x;
+      this.scale.y = y;
+    }),
+  };
   public visible = true;
 
   constructor(texture?: MockTexture) {

@@ -5,6 +5,7 @@ import React from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { App } from "./App.js";
+import { DemoControls } from "./DemoControls.js";
 import { ControlPanel } from "@agent-office/control-ui";
 import { LifeSimControlPanel } from "@agent-office/control-ui/life-sim";
 import { PixelOfficeScene } from "@agent-office/pixel-office";
@@ -190,11 +191,12 @@ describe("App shell", () => {
     expect(screen.getByTestId("control-panel")).toBeInTheDocument();
   });
 
-  it("mode switcher updates the ControlPanel mode", () => {
+  it("mode switcher updates the ControlPanel mode and hides it in focus mode", () => {
     renderApp();
     expect(screen.getByTestId("control-panel").getAttribute("data-mode")).toBe("command");
     fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
-    expect(screen.getByTestId("control-panel").getAttribute("data-mode")).toBe("focus");
+    expect(screen.queryByTestId("control-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("focus-urgent-panel")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Debrief" }));
     expect(screen.getByTestId("control-panel").getAttribute("data-mode")).toBe("debrief");
   });
@@ -243,6 +245,36 @@ describe("App shell", () => {
     expect(screen.getByText("Focus Mode")).toBeInTheDocument();
   });
 
+  it("focus mode collapses the right panel to urgent-only counts", () => {
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: {
+        ...baseState.projection,
+        pendingApprovals: [{ approvalId: "a1" }, { approvalId: "a2" }] as any,
+        blockedTasks: [{ taskId: "t1" }] as any,
+        agents: [{ status: "failed" }] as any,
+        tasks: [{ status: "failed" }, { status: "working" }] as any,
+      },
+    });
+
+    renderApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
+
+    expect(screen.queryByTestId("demo-controls")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("life-sim-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("control-panel")).not.toBeInTheDocument();
+
+    const counts = screen.getAllByTestId("focus-urgent-count");
+    expect(counts.map((el) => el.textContent)).toEqual(["2", "1", "2"]);
+
+    const urgentPanel = screen.getByTestId("focus-urgent-panel");
+    expect(urgentPanel).toHaveTextContent("Pending approvals");
+    expect(urgentPanel).toHaveTextContent("Blocked tasks");
+    expect(urgentPanel).toHaveTextContent("Failed");
+
+    expect(screen.queryByTestId("focus-indicator-count")).not.toBeInTheDocument();
+  });
+
   it("debrief mode replaces the canvas with the DebriefTimeline", () => {
     renderApp();
     fireEvent.click(screen.getByRole("tab", { name: "Debrief" }));
@@ -270,6 +302,30 @@ describe("App shell", () => {
     const retryBtn = screen.getByRole("button", { name: /Retry/i });
     fireEvent.click(retryBtn);
     expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("surfaces the real projection error code in the status strip", () => {
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: {
+        ...baseState.projection,
+        agents: [{ status: "failed" }] as any,
+        errors: [
+          {
+            taskId: "t-1",
+            agentId: null,
+            message: "agent not found",
+            severity: "error",
+            code: "entity_not_found",
+          },
+        ],
+      },
+    });
+
+    renderApp();
+    expect(screen.getByText("entity_not_found")).toBeInTheDocument();
+    expect(screen.getByText("agent not found")).toBeInTheDocument();
+    expect(screen.queryByText("PROJECTION_FAILURE")).not.toBeInTheDocument();
   });
 
   it("auto-switches to list view when the body becomes narrow and restores when wide", async () => {
@@ -349,5 +405,87 @@ describe("App shell", () => {
       key: "Home",
     });
     expect(tabs[0]).toHaveFocus();
+  });
+
+  it("marks the active mode tab with the segmented-control active class", () => {
+    renderApp();
+    const commandTab = screen.getByRole("tab", { name: "Command" });
+    const focusTab = screen.getByRole("tab", { name: "Focus" });
+    const debriefTab = screen.getByRole("tab", { name: "Debrief" });
+
+    expect(commandTab.classList.contains("mode-switcher__btn--active")).toBe(true);
+    expect(focusTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+    expect(debriefTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+
+    fireEvent.click(focusTab);
+    expect(commandTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+    expect(focusTab.classList.contains("mode-switcher__btn--active")).toBe(true);
+    expect(debriefTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+  });
+});
+
+describe("DemoControls panel card", () => {
+  const mockAdapter = {
+    playNormalFlow: vi.fn(),
+    playErrorFlow: vi.fn(),
+    playRevisionFlow: vi.fn(),
+    reset: vi.fn(),
+  };
+
+  const mockStore = { reset: vi.fn(), rebuildFromLog: vi.fn() };
+  const mockSession = { resynchronize: vi.fn().mockResolvedValue(undefined) };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders as a design-system panel card", () => {
+    render(
+      <DemoControls
+        adapter={mockAdapter as any}
+        store={mockStore as any}
+        session={mockSession as any}
+      />
+    );
+
+    const card = document.querySelector(".demo-controls");
+    expect(card).toBeInTheDocument();
+    expect(card?.classList.contains("panel-card")).toBe(true);
+    expect(screen.getByText("运行演示（Mock 专用）")).toBeInTheDocument();
+  });
+
+  it("uses token-driven button styles instead of inline styles", () => {
+    render(
+      <DemoControls
+        adapter={mockAdapter as any}
+        store={mockStore as any}
+        session={mockSession as any}
+      />
+    );
+
+    const button = screen.getByRole("button", { name: "正常流程" });
+    expect(button.classList.contains("demo-controls__btn")).toBe(true);
+    expect(button).not.toHaveAttribute("style");
+  });
+
+  it("still invokes adapter and store actions on button clicks", () => {
+    render(
+      <DemoControls
+        adapter={mockAdapter as any}
+        store={mockStore as any}
+        session={mockSession as any}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "正常流程" }));
+    expect(mockAdapter.playNormalFlow).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "重置" }));
+    expect(mockAdapter.reset).toHaveBeenCalled();
+    expect(mockStore.reset).toHaveBeenCalled();
+    expect(mockSession.resynchronize).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "回放事件" }));
+    expect(mockStore.rebuildFromLog).toHaveBeenCalled();
   });
 });
