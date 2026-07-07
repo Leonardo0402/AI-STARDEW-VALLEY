@@ -465,6 +465,64 @@
   backdrop-filter: blur(2px);
 }
 
+/* ─── Focus Urgent Panel ──────────────────────────────────── */
+
+.app-panel--focus {
+  align-items: stretch;
+  justify-content: center;
+  padding: var(--space-lg);
+  background: var(--base-850);
+}
+
+.focus-urgent-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.focus-urgent-panel__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--base-100);
+  text-align: center;
+}
+
+.focus-urgent-panel__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.focus-urgent-panel__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  background: var(--base-700);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-md);
+}
+
+.focus-urgent-panel__card--urgency {
+  border-color: var(--urgency);
+  box-shadow: inset 0 0 0 1px var(--urgency-dim), 0 0 12px var(--glow-urgency);
+}
+
+.focus-urgent-panel__count {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--urgency);
+}
+
+.focus-urgent-panel__label {
+  font-size: 11px;
+  color: var(--base-300);
+  text-align: center;
+}
+
 /* ─── Approval Drawer overrides ───────────────────────────── */
 
 .approval-drawer__title::before {
@@ -496,6 +554,57 @@
   font-size: 18px;
   font-weight: 600;
   color: var(--info);
+}
+
+.debrief-timeline__subtitle {
+  margin: var(--space-lg) 0 var(--space-md);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--base-300);
+}
+
+.debrief-summary__cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+}
+
+.debrief-summary__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  background: var(--base-800);
+  border: 1px solid var(--base-500);
+  border-radius: var(--radius-md);
+}
+
+.debrief-summary__count {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--base-100);
+}
+
+.debrief-summary__count--success {
+  color: var(--success);
+}
+
+.debrief-summary__count--urgency {
+  color: var(--urgency);
+}
+
+.debrief-summary__count--info {
+  color: var(--info);
+}
+
+.debrief-summary__count--base {
+  color: var(--base-300);
+}
+
+.debrief-summary__label {
+  font-size: 11px;
+  color: var(--base-400);
 }
 
 .debrief-timeline__list {

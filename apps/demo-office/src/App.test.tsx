@@ -191,11 +191,12 @@ describe("App shell", () => {
     expect(screen.getByTestId("control-panel")).toBeInTheDocument();
   });
 
-  it("mode switcher updates the ControlPanel mode", () => {
+  it("mode switcher updates the ControlPanel mode and hides it in focus mode", () => {
     renderApp();
     expect(screen.getByTestId("control-panel").getAttribute("data-mode")).toBe("command");
     fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
-    expect(screen.getByTestId("control-panel").getAttribute("data-mode")).toBe("focus");
+    expect(screen.queryByTestId("control-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("focus-urgent-panel")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Debrief" }));
     expect(screen.getByTestId("control-panel").getAttribute("data-mode")).toBe("debrief");
   });
@@ -242,6 +243,34 @@ describe("App shell", () => {
     expect(document.querySelector("canvas")).not.toBeInTheDocument();
     expect(screen.getByText("Dashboard 视图（传统列表）")).toBeInTheDocument();
     expect(screen.getByText("Focus Mode")).toBeInTheDocument();
+  });
+
+  it("focus mode collapses the right panel to urgent-only counts", () => {
+    (useComposedOfficeState as Mock).mockReturnValue({
+      ...baseState,
+      projection: {
+        ...baseState.projection,
+        pendingApprovals: [{ approvalId: "a1" }, { approvalId: "a2" }] as any,
+        blockedTasks: [{ taskId: "t1" }] as any,
+        agents: [{ status: "failed" }] as any,
+        tasks: [{ status: "failed" }, { status: "working" }] as any,
+      },
+    });
+
+    renderApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
+
+    expect(screen.queryByTestId("demo-controls")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("life-sim-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("control-panel")).not.toBeInTheDocument();
+
+    const counts = screen.getAllByTestId("focus-urgent-count");
+    expect(counts.map((el) => el.textContent)).toEqual(["2", "1", "2"]);
+
+    const urgentPanel = screen.getByTestId("focus-urgent-panel");
+    expect(urgentPanel).toHaveTextContent("Pending approvals");
+    expect(urgentPanel).toHaveTextContent("Blocked tasks");
+    expect(urgentPanel).toHaveTextContent("Failed");
   });
 
   it("debrief mode replaces the canvas with the DebriefTimeline", () => {
