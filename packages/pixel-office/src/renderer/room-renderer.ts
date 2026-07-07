@@ -25,12 +25,27 @@ const SIGN_COLOR = 0x6b5f56; // --warm-500
 const SIGN_BORDER_COLOR = 0x3d3530; // --warm-700
 const SIGN_WIDTH = 150;
 const SIGN_HEIGHT = 18;
+const HIGHLIGHT_COLOR = 0xe6a85c;
 
 export class RoomRenderer {
+  private selectedIds = new Set<string>();
+
   constructor(
     private layer: Container,
     private assetLoader?: AssetLoader
   ) {}
+
+  selectRoom(roomId: string): void {
+    this.selectedIds.add(roomId);
+  }
+
+  clearSelection(): void {
+    this.selectedIds.clear();
+  }
+
+  getSelectedIds(): Set<string> {
+    return new Set(this.selectedIds);
+  }
 
   render(layout: RoomLayout): void {
     this.layer.removeChildren();
@@ -59,6 +74,11 @@ export class RoomRenderer {
     g.rect(room.x, room.y, room.width, room.height)
       .fill({ color: baseColor, alpha: floorTexture ? 0.15 : 0.4 })
       .stroke({ color: baseColor, width: 3 });
+
+    if (this.selectedIds.has(room.roomId)) {
+      g.rect(room.x - 2, room.y - 2, room.width + 4, room.height + 4)
+        .stroke({ color: HIGHLIGHT_COLOR, width: 4 });
+    }
 
     this.drawFloorPattern(g, room, patternColor, floorTexture ? 0.2 : 0.35);
     this.drawWalls(g, room, WALL_COLOR);

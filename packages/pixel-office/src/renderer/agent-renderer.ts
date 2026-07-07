@@ -19,6 +19,7 @@ export interface AgentSprite {
   container: Container;
   nameText: Text;
   statusText: Text;
+  highlight?: Graphics;
   agentId: string;
   role: string;
   treatment: AgentVisualTreatment;
@@ -65,11 +66,14 @@ export function resolveAgentTreatment(agent: AgentView): AgentVisualTreatment {
   };
 }
 
+const HIGHLIGHT_COLOR = 0xe6a85c;
+
 export class AgentRenderer {
   private sprites = new Map<string, AgentSprite>();
   private lastProjection: OfficeProjection | null = null;
   private lastLayout: RoomLayout | null = null;
   private reduceMotion = false;
+  private selectedIds = new Set<string>();
 
   constructor(
     private layer: Container,
@@ -81,6 +85,29 @@ export class AgentRenderer {
 
   setReduceMotion(value: boolean): void {
     this.reduceMotion = value;
+  }
+
+  selectAgent(agentId: string): void {
+    this.selectedIds.add(agentId);
+    const sprite = this.sprites.get(agentId);
+    if (sprite) {
+      this.updateHighlight(sprite);
+    }
+  }
+
+  clearSelection(): void {
+    const previous = new Set(this.selectedIds);
+    this.selectedIds.clear();
+    for (const id of previous) {
+      const sprite = this.sprites.get(id);
+      if (sprite) {
+        this.removeHighlight(sprite);
+      }
+    }
+  }
+
+  getSelectedIds(): Set<string> {
+    return new Set(this.selectedIds);
   }
 
   render(agents: AgentView[], layout: RoomLayout, projection: OfficeProjection): void {
@@ -206,6 +233,31 @@ export class AgentRenderer {
 
     sprite.lastStatus = agent.status;
     this.applyVisual(sprite, agent);
+    this.updateHighlight(sprite);
+  }
+
+  private updateHighlight(sprite: AgentSprite): void {
+    const isSelected = this.selectedIds.has(sprite.agentId);
+    if (!isSelected) {
+      this.removeHighlight(sprite);
+      return;
+    }
+    if (!sprite.highlight) {
+      sprite.highlight = new Graphics();
+      sprite.container.addChild(sprite.highlight);
+    }
+    const g = sprite.highlight;
+    g.clear();
+    g.rect(-20, -30, 40, 50)
+      .stroke({ color: HIGHLIGHT_COLOR, width: 2 })
+      .fill({ color: HIGHLIGHT_COLOR, alpha: 0.05 });
+  }
+
+  private removeHighlight(sprite: AgentSprite): void {
+    if (sprite.highlight) {
+      sprite.container.removeChild(sprite.highlight);
+      sprite.highlight = undefined;
+    }
   }
 
   private applyVisual(sprite: AgentSprite, agent: AgentView): void {

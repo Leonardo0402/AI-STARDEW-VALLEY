@@ -84,6 +84,7 @@ export class PixelOfficeScene {
   private agentRenderer?: AgentRenderer;
   private effectRenderer?: EffectRenderer;
   private assetLoader?: AssetLoader;
+  private onSelectCallback: ((selection: { kind: string; id: string }) => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement, options: PixelOfficeSceneOptions = {}) {
     this.useSpriteRenderer = options.useSpriteRenderer ?? true;
@@ -227,6 +228,23 @@ export class PixelOfficeScene {
       }
     }
     this.initialized = false;
+  }
+
+  selectAgent(agentId: string): void {
+    this.agentRenderer?.selectAgent(agentId);
+  }
+
+  selectRoom(roomId: string): void {
+    this.roomRenderer?.selectRoom(roomId);
+  }
+
+  clearSelection(): void {
+    this.agentRenderer?.clearSelection();
+    this.roomRenderer?.clearSelection();
+  }
+
+  setOnSelect(callback: (selection: { kind: string; id: string }) => void): void {
+    this.onSelectCallback = callback;
   }
 
   // ─── 内部渲染方法 ──────────────────────────────────────────

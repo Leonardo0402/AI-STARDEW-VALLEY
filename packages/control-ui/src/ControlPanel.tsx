@@ -13,6 +13,7 @@ import type {
   TaskView,
 } from "@agent-office/protocol";
 import { CommandType } from "@agent-office/protocol";
+import type { OfficeSelection } from "@agent-office/pixel-office";
 import { EventLogViewer } from "./EventLogViewer.js";
 import { Card } from "./components/Card.js";
 import { Badge, type BadgeIntent } from "./components/Badge.js";
@@ -39,6 +40,8 @@ interface ControlPanelProps {
   ) => Promise<void>;
   /** Adapter capabilities — unsupported commands disable their buttons. */
   capabilities?: AdapterCapabilities;
+  selection?: OfficeSelection | null;
+  onSelect?: (selection: OfficeSelection) => void;
 }
 
 export const ControlPanel: FC<ControlPanelProps> = ({
@@ -48,6 +51,8 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   mode,
   onSendCommand,
   capabilities,
+  selection = null,
+  onSelect,
 }) => {
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
@@ -139,6 +144,25 @@ export const ControlPanel: FC<ControlPanelProps> = ({
     (a) => a.role === "worker" && a.status === "idle" && !a.blockedReason
   );
 
+  const isSelected = (kind: OfficeSelection["kind"], id: string): boolean =>
+    selection?.kind === kind && selection?.id === id;
+
+  const handleSelect =
+    (kind: OfficeSelection["kind"], id: string) =>
+    (e?: { stopPropagation?: () => void }): void => {
+      e?.stopPropagation?.();
+      onSelect?.({ kind, id });
+    };
+
+  const handleCardKeyDown =
+    (kind: OfficeSelection["kind"], id: string) =>
+    (e: import("react").KeyboardEvent<HTMLDivElement>): void => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelect?.({ kind, id });
+      }
+    };
+
   return (
     <div className="control-panel">
       {visibleErrors.length > 0 && (
@@ -178,7 +202,14 @@ export const ControlPanel: FC<ControlPanelProps> = ({
           <div className="panel-section">
             <SectionHeader title="Agents" count={projection.agents.length} countIntent="idle" />
             {projection.agents.map((agent) => (
-              <Card key={agent.agentId}>
+              <Card
+                key={agent.agentId}
+                selectable={Boolean(onSelect) || selection !== null}
+                selected={isSelected("agent", agent.agentId)}
+                ariaLabel={`Select agent ${agent.name}`}
+                onClick={handleSelect("agent", agent.agentId)}
+                onKeyDown={handleCardKeyDown("agent", agent.agentId)}
+              >
                 <div className="card-row">
                   <div>
                     <div className="card-title">{agent.name}</div>
@@ -193,7 +224,10 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 <div className="card-footer">
                   <button
                     className="btn btn--secondary btn--small"
-                    onClick={() => handlePauseAgent(agent.agentId)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePauseAgent(agent.agentId);
+                    }}
                     disabled={
                       agent.status === "paused" ||
                       agent.status === "offline" ||
@@ -205,7 +239,10 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                   </button>
                   <button
                     className="btn btn--secondary btn--small"
-                    onClick={() => handleResumeAgent(agent.agentId)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleResumeAgent(agent.agentId);
+                    }}
                     disabled={
                       agent.status !== "paused" || !isSupported(CommandType.AGENT_RESUME)
                     }
@@ -226,7 +263,14 @@ export const ControlPanel: FC<ControlPanelProps> = ({
           <div className="panel-section">
             <SectionHeader title="Tasks" count={projection.tasks.length} countIntent="info" />
             {projection.tasks.map((task) => (
-              <Card key={task.taskId}>
+              <Card
+                key={task.taskId}
+                selectable={Boolean(onSelect) || selection !== null}
+                selected={isSelected("task", task.taskId)}
+                ariaLabel={`Select task ${task.title}`}
+                onClick={handleSelect("task", task.taskId)}
+                onKeyDown={handleCardKeyDown("task", task.taskId)}
+              >
                 <div className="card-row">
                   <div>
                     <div className="card-title">{task.title}</div>
@@ -243,7 +287,10 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                       <button
                         key={a.agentId}
                         className="btn btn--primary btn--small"
-                        onClick={() => handleAssignTask(task.taskId, a.agentId)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAssignTask(task.taskId, a.agentId);
+                        }}
                       >
                         Assign to {a.name}
                       </button>
@@ -275,7 +322,14 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                 const openError = actionErrors[`open-${art.artifactId}`];
 
                 return (
-                  <Card key={art.artifactId}>
+                  <Card
+                    key={art.artifactId}
+                    selectable={Boolean(onSelect) || selection !== null}
+                    selected={isSelected("artifact", art.artifactId)}
+                    ariaLabel={`Select artifact ${art.title}`}
+                    onClick={handleSelect("artifact", art.artifactId)}
+                    onKeyDown={handleCardKeyDown("artifact", art.artifactId)}
+                  >
                     <div className="card-row">
                       <div>
                         <div className="card-title">{art.title}</div>
@@ -293,7 +347,10 @@ export const ControlPanel: FC<ControlPanelProps> = ({
                     <div className="card-footer">
                       <button
                         className="btn btn--secondary btn--small"
-                        onClick={() => handleOpenArtifact(art.artifactId)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenArtifact(art.artifactId);
+                        }}
                         disabled={!canOpen}
                         title={
                           !artifactOpenSupported

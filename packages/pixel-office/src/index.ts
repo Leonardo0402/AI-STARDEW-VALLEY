@@ -21,3 +21,4 @@ export {
   type Position,
   type PropType,
 } from "./layout.js";
+export { type OfficeSelection, type OfficeSelectionKind } from "./selection.js";

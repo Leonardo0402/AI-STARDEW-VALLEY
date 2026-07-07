@@ -11,7 +11,7 @@
  * │                                       │                  │
  * └──────────────────────────────────────┴──────────────────┘
  */
-import {
+import React, {
   useState,
   useEffect,
   useRef,
@@ -22,7 +22,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
-import type { AdapterCapabilities } from "@agent-office/protocol";
+import type { AdapterCapabilities, OfficeProjection } from "@agent-office/protocol";
 import {
   ControlPanel,
   type ExperienceMode,
@@ -31,7 +31,10 @@ import {
   LifeSimControlPanel,
   type LifeSimSession,
 } from "@agent-office/control-ui/life-sim";
-import { PixelOfficeScene } from "@agent-office/pixel-office";
+import {
+  PixelOfficeScene,
+  type OfficeSelection,
+} from "@agent-office/pixel-office";
 import { ListView } from "./ListView.js";
 import { DebriefTimeline } from "./DebriefTimeline.js";
 import { FocusModeIndicator } from "./FocusModeIndicator.js";
@@ -66,6 +69,54 @@ function formatModeLabel(mode: ExperienceMode): string {
   return mode.charAt(0).toUpperCase() + mode.slice(1);
 }
 
+type CanvasSelection = { kind: "agent" | "room"; id: string } | null;
+
+function resolveCanvasSelection(
+  selection: OfficeSelection | null,
+  projection: OfficeProjection
+): CanvasSelection {
+  if (!selection) return null;
+
+  if (selection.kind === "agent") {
+    return { kind: "agent", id: selection.id };
+  }
+
+  if (selection.kind === "room") {
+    return { kind: "room", id: selection.id };
+  }
+
+  if (selection.kind === "task") {
+    const task = projection.tasks.find((t) => t.taskId === selection.id);
+    if (task?.assigneeId) return { kind: "agent", id: task.assigneeId };
+    if (task?.roomId) return { kind: "room", id: task.roomId };
+    return null;
+  }
+
+  if (selection.kind === "artifact") {
+    const artifact = projection.artifacts.find((a) => a.artifactId === selection.id);
+    if (artifact?.producerAgentId) return { kind: "agent", id: artifact.producerAgentId };
+    const task = artifact?.taskId
+      ? projection.tasks.find((t) => t.taskId === artifact.taskId)
+      : undefined;
+    if (task?.assigneeId) return { kind: "agent", id: task.assigneeId };
+    if (task?.roomId) return { kind: "room", id: task.roomId };
+    return null;
+  }
+
+  if (selection.kind === "approval") {
+    const approval = projection.approvals.find((a) => a.approvalId === selection.id);
+    if (approval?.requestedBy) return { kind: "agent", id: approval.requestedBy };
+    const task = approval?.taskId
+      ? projection.tasks.find((t) => t.taskId === approval.taskId)
+      : undefined;
+    if (task?.assigneeId) return { kind: "agent", id: task.assigneeId };
+    if (task?.roomId) return { kind: "room", id: task.roomId };
+    return null;
+  }
+
+  return null;
+}
+
 export const App: FC<AppProps> = ({
   session,
   store,
@@ -97,11 +148,14 @@ export const App: FC<AppProps> = ({
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("command");
   const [view, setView] = useState<ViewMode>("pixel");
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [selection, setSelection] = useState<OfficeSelection | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PixelOfficeScene | null>(null);
   const appBodyRef = useRef<HTMLDivElement>(null);
   const modeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const lastManualViewRef = useRef<ViewMode>("pixel");
+  const prevSelectionRef = useRef<OfficeSelection | null>(null);
+  const prevCanvasSelectionRef = useRef<CanvasSelection>(null);
 
   // 初始化 PixelOfficeScene
   useEffect(() => {
@@ -110,6 +164,18 @@ export const App: FC<AppProps> = ({
 
     const scene = new PixelOfficeScene(canvasRef.current, { reduceMotion });
     sceneRef.current = scene;
+    scene.setOnSelect((s) => setSelection(s as OfficeSelection));
+
+    const canvasSelection = resolveCanvasSelection(selection, projection);
+    if (!canvasSelection) {
+      scene.clearSelection();
+    } else if (canvasSelection.kind === "agent") {
+      scene.selectAgent(canvasSelection.id);
+    } else if (canvasSelection.kind === "room") {
+      scene.selectRoom(canvasSelection.id);
+    }
+    prevSelectionRef.current = selection;
+    prevCanvasSelectionRef.current = canvasSelection;
     scene.init(canvasRef.current).catch((err) => {
       console.error("[App] PixelOfficeScene 初始化失败：", err);
     });
@@ -162,6 +228,14 @@ export const App: FC<AppProps> = ({
     setView(next);
   }, []);
 
+  const demoControlsWithReset = useMemo(() => {
+    if (!demoControls || !React.isValidElement(demoControls)) return demoControls;
+    return React.cloneElement(
+      demoControls as React.ReactElement<{ onReset?: () => void }>,
+      { onReset: () => setSelection(null) }
+    );
+  }, [demoControls]);
+
   const handleModeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const buttons = modeButtonRefs.current.filter(Boolean) as HTMLButtonElement[];
     const index = buttons.findIndex((b) => b === document.activeElement);
@@ -188,6 +262,60 @@ export const App: FC<AppProps> = ({
       sceneRef.current.updateProjection(projection);
     }
   }, [projection, view]);
+
+  // 将当前选择同步到场景渲染层
+  useEffect(() => {
+    if (!sceneRef.current) return;
+
+    const canvasSelection = resolveCanvasSelection(selection, projection);
+    const prev = prevCanvasSelectionRef.current;
+    if (
+      prev?.kind === canvasSelection?.kind &&
+      prev?.id === canvasSelection?.id
+    ) {
+      return;
+    }
+    prevCanvasSelectionRef.current = canvasSelection;
+    prevSelectionRef.current = selection;
+
+    if (!canvasSelection) {
+      sceneRef.current.clearSelection();
+      return;
+    }
+
+    if (canvasSelection.kind === "agent") {
+      sceneRef.current.selectAgent(canvasSelection.id);
+    } else if (canvasSelection.kind === "room") {
+      sceneRef.current.selectRoom(canvasSelection.id);
+    }
+  }, [selection, projection]);
+
+  // 当已选实体从 projection 中消失时清除选择
+  useEffect(() => {
+    if (!selection) return;
+
+    const exists =
+      (selection.kind === "agent" && projection.agents.some((a) => a.agentId === selection.id)) ||
+      (selection.kind === "task" && projection.tasks.some((t) => t.taskId === selection.id)) ||
+      (selection.kind === "artifact" && projection.artifacts.some((a) => a.artifactId === selection.id)) ||
+      (selection.kind === "approval" && projection.approvals.some((a) => a.approvalId === selection.id)) ||
+      (selection.kind === "room" && projection.rooms.some((r) => r.roomId === selection.id));
+
+    if (!exists) {
+      setSelection(null);
+    }
+  }, [projection, selection]);
+
+  // Escape 清除选择
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelection(null);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const lastEvent = useMemo(() => {
     const event = eventLog[eventLog.length - 1];
@@ -295,7 +423,7 @@ export const App: FC<AppProps> = ({
             view === "pixel" ? (
               <DebriefTimeline events={eventLog} />
             ) : (
-              <ListView projection={projection} />
+              <ListView projection={projection} selection={selection} onSelect={setSelection} />
             )
           ) : view === "pixel" ? (
             <canvas
@@ -306,7 +434,7 @@ export const App: FC<AppProps> = ({
               aria-label="Pixel office map showing agent rooms and tasks"
             />
           ) : (
-            <ListView projection={projection} />
+            <ListView projection={projection} selection={selection} onSelect={setSelection} />
           )}
           {isFocus && <FocusModeIndicator projection={projection} />}
         </div>
@@ -351,7 +479,7 @@ export const App: FC<AppProps> = ({
             </div>
           ) : (
             <>
-              {demoControls}
+              {demoControlsWithReset}
               <LifeSimControlPanel
                 projection={projection.lifeSim}
                 onSendCommand={sendLifeSimCommand}
@@ -363,6 +491,8 @@ export const App: FC<AppProps> = ({
                 mode={experienceMode}
                 onSendCommand={sendCommand}
                 capabilities={capabilities}
+                selection={selection}
+                onSelect={setSelection}
               />
             </>
           )}

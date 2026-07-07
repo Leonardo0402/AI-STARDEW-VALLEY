@@ -556,3 +556,56 @@ describe("ControlPanel", () => {
     expect(screen.queryByRole("heading", { name: /^Tasks$/i })).not.toBeInTheDocument();
   });
 });
+
+describe("ControlPanel selection", () => {
+  it("calls onSelect when clicking an agent card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Orchestrator").closest(".card") as HTMLElement;
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "agent", id: "agent-1" });
+  });
+
+  it("calls onSelect when clicking a task card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Write Q3 report").closest(".card") as HTMLElement;
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "task", id: "task-1" });
+  });
+
+  it("calls onSelect when clicking an artifact card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Q3-report-v2.md").closest(".card") as HTMLElement;
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "artifact", id: "art-1" });
+  });
+
+  it("marks the selected card with highlight attributes", () => {
+    renderPanel({
+      selection: { kind: "agent", id: "agent-1" },
+    });
+    const card = screen.getByText("Orchestrator").closest(".card") as HTMLElement;
+    expect(card).toHaveAttribute("aria-pressed", "true");
+    expect(card.classList.contains("card--selected")).toBe(true);
+  });
+
+  it("supports Enter key selection on a focused card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Worker-1").closest(".card") as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith({ kind: "agent", id: "agent-2" });
+  });
+
+  it("supports Space key selection on a focused card", () => {
+    const onSelect = vi.fn();
+    renderPanel({ onSelect });
+    const card = screen.getByText("Write Q3 report").closest(".card") as HTMLElement;
+    card.focus();
+    fireEvent.keyDown(card, { key: " " });
+    expect(onSelect).toHaveBeenCalledWith({ kind: "task", id: "task-1" });
+  });
+});
