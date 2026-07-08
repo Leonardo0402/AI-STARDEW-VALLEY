@@ -63,21 +63,13 @@ async function assertScreenshot(page, filePath, viewportWidth, viewportHeight) {
   }
 }
 
-async function assertCanvasRendered(page, stateName) {
-  const box = await page.locator("canvas.app-canvas").boundingBox();
-  if (!box) {
-    throw new Error(`Canvas element not found for ${stateName}`);
-  }
-
-  // Capture the composited browser output for the canvas region. Reading the
-  // WebGL back buffer directly is unreliable because the browser may clear it
-  // after presentation unless preserveDrawingBuffer is enabled.
+async function computeClipVariation(page, box) {
   const screenshotBuffer = await page.screenshot({
     clip: { x: box.x, y: box.y, width: box.width, height: box.height },
     type: "png",
   });
 
-  const result = await page.evaluate(async (base64) => {
+  return page.evaluate(async (base64) => {
     const img = new Image();
     const blob = await fetch(`data:image/png;base64,${base64}`).then((r) => r.blob());
     const url = URL.createObjectURL(blob);
@@ -126,18 +118,36 @@ async function assertCanvasRendered(page, stateName) {
 
     return { ok: true, width: canvas.width, height: canvas.height, pixels, variation };
   }, screenshotBuffer.toString("base64"));
+}
 
-  if (result.error) {
-    throw new Error(`Canvas render check failed for ${stateName}: ${result.error}`);
+async function assertCanvasRendered(page, stateName) {
+  const box = await page.locator("canvas.app-canvas").boundingBox();
+  if (!box) {
+    throw new Error(`Canvas element not found for ${stateName}`);
   }
 
-  // A truly blank canvas has near-zero color variation. The idle office has
-  // distinct room colors and agents, so expect meaningful variation.
-  if (result.variation < 100) {
-    throw new Error(
-      `Canvas appears blank for ${stateName} (variation=${result.variation}). Sampled pixels: ${JSON.stringify(result.pixels)}`
-    );
+  // Capture the composited browser output for the canvas region. Reading the
+  // WebGL back buffer directly is unreliable because the browser may clear it
+  // after presentation unless preserveDrawingBuffer is enabled.
+  // Retry a few times: headless SwiftShader WebGL presentation can be delayed,
+  // so the first composited frame may still be the clear color.
+  let lastResult = null;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (attempt > 0) {
+      await sleep(500);
+    }
+    lastResult = await computeClipVariation(page, box);
+    if (lastResult.error) {
+      throw new Error(`Canvas render check failed for ${stateName}: ${lastResult.error}`);
+    }
+    if (lastResult.variation >= 100) {
+      return;
+    }
   }
+
+  throw new Error(
+    `Canvas appears blank for ${stateName} (variation=${lastResult.variation}). Sampled pixels: ${JSON.stringify(lastResult.pixels)}`
+  );
 }
 
 async function capture(page, outDir, name, viewportWidth, viewportHeight) {
@@ -193,8 +203,6 @@ async function clickTaskCard(page, title) {
   await card.click();
 }
 
-let browser;
-
 const skippedStates = [];
 
 function skipState(name, reason) {
@@ -206,14 +214,17 @@ function skipState(name, reason) {
 }
 
 try {
-  browser = await chromium.launch({
-    headless: true,
-    // WebGL is required for PixiJS. Headless Chromium uses SwiftShader software
-    // WebGL by default; do not pass --disable-gpu or --disable-software-rasterizer.
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
-
   for (const { width, height } of RESOLUTIONS) {
+    // Launch a fresh browser per resolution. Headless Chromium / SwiftShader can
+    // accumulate WebGL contexts across contexts, causing the canvas to stay
+    // blank on later resolutions even after previous contexts are closed.
+    const browser = await chromium.launch({
+      headless: true,
+      // WebGL is required for PixiJS. Headless Chromium uses SwiftShader software
+      // WebGL by default; do not pass --disable-gpu or --disable-software-rasterizer.
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    });
+
     const outDir = path.join(BASE_OUT_DIR, `${width}x${height}`);
     fs.mkdirSync(outDir, { recursive: true });
 
@@ -330,6 +341,7 @@ try {
     await captureHere("14-artifact-unsupported-open");
 
     await context.close();
+    await browser.close();
     console.log(`Resolution ${width}x${height} complete.`);
   }
 
@@ -349,8 +361,4 @@ try {
 } catch (err) {
   console.error("Screenshot capture failed:", err);
   process.exitCode = 1;
-} finally {
-  if (browser) {
-    await browser.close();
-  }
 }

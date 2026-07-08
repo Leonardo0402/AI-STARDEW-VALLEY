@@ -5,7 +5,7 @@
  *
  * 这一层测试跨包协作，但不涉及 React/PixiJS（避免 DOM 依赖）。
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
 import {
   SnapshotStore,
@@ -82,13 +82,15 @@ describe("集成测试: 完整链路", () => {
     adapter.playNormalFlow();
 
     // 等待所有事件处理（脚本有 12 步，每步通过 setTimeout(0) 调度）
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await vi.waitFor(() => {
+      const pending = store.getSnapshot().approvals.filter((a) => a.status === "requested");
+      expect(pending.length).toBe(1);
+    });
 
     const snapBeforeApprove = store.getSnapshot();
     const pendingApprovals = snapBeforeApprove.approvals.filter(
       (a) => a.status === "requested"
     );
-    expect(pendingApprovals.length).toBe(1);
 
     // 用户批准
     const approveCmd: OfficeCommand = {
@@ -120,11 +122,13 @@ describe("集成测试: 完整链路", () => {
 
   it("完整链路：用户拒绝审批 → 任务进入 revision_required", async () => {
     adapter.playNormalFlow();
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await vi.waitFor(() => {
+      const pending = store.getSnapshot().approvals.find((a) => a.status === "requested");
+      expect(pending).toBeDefined();
+    });
 
     const snap = store.getSnapshot();
     const pendingApproval = snap.approvals.find((a) => a.status === "requested");
-    expect(pendingApproval).toBeDefined();
 
     const rejectCmd: OfficeCommand = {
       commandId: "cmd-int-reject",
@@ -157,8 +161,23 @@ describe("集成测试: 完整链路", () => {
   it("完整链路：返工 → 新版本 Artifact → 重新审查通过 → 审批 → 任务完成", async () => {
     // 播放返工流程（包含完整返工周期：拒绝 → 返工 → v2 Artifact → 重新审查通过 → 审批请求）
     adapter.playRevisionFlow();
-    // 返工流程步骤较多（约 20 步），等待稍长
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // 返工流程步骤较多（约 20 步），使用轮询等待最终状态稳定
+    await vi.waitFor(() => {
+      const snap = store.getSnapshot();
+      const artifacts = snap.artifacts;
+      expect(artifacts.length).toBe(2);
+      const v1 = artifacts.find((a) => a.version === 1);
+      const v2 = artifacts.find((a) => a.version === 2);
+      expect(v1).toBeDefined();
+      expect(v2).toBeDefined();
+      expect(v1!.status).toBe("revision_required");
+      expect(v2!.status).toBe("approved");
+      const pendingApprovals = snap.approvals.filter((a) => a.status === "requested");
+      expect(pendingApprovals.length).toBe(1);
+      const approvalTask = snap.tasks.find((t) => t.approvalId === pendingApprovals[0].approvalId);
+      expect(approvalTask).toBeDefined();
+      expect(approvalTask!.status).toBe("waiting_approval");
+    });
 
     const snapBeforeApprove = store.getSnapshot();
 
@@ -215,7 +234,9 @@ describe("集成测试: 完整链路", () => {
 
   it("完整链路：Adapter 重置后 Store 也可重置", async () => {
     adapter.playNormalFlow();
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await vi.waitFor(() => {
+      expect(store.getSnapshot().tasks.length).toBeGreaterThan(0);
+    });
 
     expect(store.getSnapshot().tasks.length).toBeGreaterThan(0);
 
@@ -231,7 +252,9 @@ describe("集成测试: 完整链路", () => {
 
   it("完整链路：replay 后 snapshot 一致（事件可重建部分）", async () => {
     adapter.playNormalFlow();
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await vi.waitFor(() => {
+      expect(store.getSnapshot().tasks.length).toBeGreaterThan(0);
+    });
 
     const before = store.getSnapshot();
 
