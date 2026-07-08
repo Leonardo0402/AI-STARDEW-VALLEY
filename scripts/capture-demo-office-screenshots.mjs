@@ -330,7 +330,7 @@ try {
     await sleep(500);
     await captureHere("13-artifact-failed-open");
 
-    // 14. Artifact unsupported open (no demo button; driven via dev-only adapter hook)
+    // 14. Artifact open rejected (no demo button; driven via dev-only adapter hook)
     await clickButton(page, "重置");
     await sleep(1000);
     await runAdapterFlow(page, "playArtifactUnsupportedOpenFlow");
@@ -338,7 +338,7 @@ try {
     await clickViewButtonForArtifact(page, "旧版二进制产物");
     await waitForText(page, "Open failed.");
     await sleep(500);
-    await captureHere("14-artifact-unsupported-open");
+    await captureHere("14-artifact-open-rejected");
 
     await context.close();
     await browser.close();

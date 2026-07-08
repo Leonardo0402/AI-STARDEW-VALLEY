@@ -45,7 +45,7 @@ This audit therefore splits the evidence into two sections:
 - `revision_required`, `rejected`, `blocked`, and `failed` are now visually distinct on both canvas and panel (`revision_required` shows a rework cue, `rejected` uses a dedicated decision intent).
 - `ControlPanel` explicitly renders artifact content states: `content-available`, `metadata-only`, `unavailable`, `loading`, `failed-open`, and `unsupported-open`.
 - `artifactId` is never treated as a URI; missing content references render as metadata-only/unavailable rather than invented content.
-- Issue #27 Task 1 baselined the truthful artifact failure states: `unavailable` (12), `failed-open` (13), and `unsupported-open` (14). `metadata-only` remains unbaselined because the mock adapter always creates artifacts with a URI or content reference.
+- Issue #27 Task 1 baselined the truthful artifact failure states: `unavailable` (12), `failed-open` (13), and `open-rejected` (14). State 14 is renamed from `unsupported-open` to `open-rejected` to honestly reflect what the screenshot proves: the adapter supports `ARTIFACT_OPEN` but the command returns a profile-mismatch rejection, producing the `failed-open` visual. The `unsupported-open` state (adapter does not support `ARTIFACT_OPEN` at all) remains unbaselined because the mock adapter always supports it. `metadata-only` remains unbaselined because the mock adapter always creates artifacts with a URI or content reference.
 
 ### 3. Multi-resolution layout hardening
 
@@ -104,7 +104,7 @@ This section records the visual QA evidence after PR #24 and Task 3. All ten bas
 | 11 | Runtime failed | `baseline/1440x900/11-runtime-failed.png` | `11-runtime-failed-annotated.png` |
 | 12 | Artifact unavailable | `baseline/1440x900/12-artifact-unavailable.png` | `12-artifact-unavailable-annotated.png` |
 | 13 | Artifact failed open | `baseline/1440x900/13-artifact-failed-open.png` | `13-artifact-failed-open-annotated.png` |
-| 14 | Artifact unsupported open | `baseline/1440x900/14-artifact-unsupported-open.png` | `14-artifact-unsupported-open-annotated.png` |
+| 14 | Artifact open rejected | `baseline/1440x900/14-artifact-open-rejected.png` | `14-artifact-open-rejected-annotated.png` |
 
 ### Visual upgrades verified
 
@@ -124,7 +124,7 @@ The mock adapter cannot independently trigger a genuine runtime `failed` / runti
 
 ## Issue #27 truthful-state pass
 
-Issue #27 Task 0 extended the mock adapter with scripted scenarios for runtime failure, runtime degradation, artifact unavailability, artifact failed-open, and artifact unsupported-open. Task 1 captured the states that can be truthfully produced and documented the ones that cannot.
+Issue #27 Task 0 extended the mock adapter with scripted scenarios for runtime failure, runtime degradation, artifact unavailability, artifact failed-open, and artifact open-rejected. Task 1 captured the states that can be truthfully produced and documented the ones that cannot.
 
 ### Baselined states
 
@@ -133,7 +133,7 @@ Issue #27 Task 0 extended the mock adapter with scripted scenarios for runtime f
 | 11 | Runtime failed | `MockRuntimeAdapter.playRuntimeFailureFlow()` emits `ERROR_RAISED`, `TASK_FAILED`, and `AGENT_STATUS_CHANGED` with `failed` status. Status strip and agent/task cards render the failure. |
 | 12 | Artifact unavailable | `MockRuntimeAdapter.playArtifactUnavailableFlow()` creates an artifact with `uri: null`; `ControlPanel` renders `Content unavailable`. |
 | 13 | Artifact failed open | `MockRuntimeAdapter.playArtifactFailedOpenFlow()` marks the artifact as failed-open; clicking View produces the `failed-open` error and preview. |
-| 14 | Artifact unsupported open | `MockRuntimeAdapter.playArtifactUnsupportedOpenFlow()` creates a `legacy_binary` artifact in the execution room, whose Profile does not accept that type; clicking View produces an `unsupported-open` command rejection. `ControlPanel` renders the `failed-open` preview ('Open failed.') and the action-error banner with the profile-mismatch message. |
+| 14 | Artifact open rejected | `MockRuntimeAdapter.playArtifactUnsupportedOpenFlow()` creates a `legacy_binary` artifact in the execution room, whose Profile does not accept that type; clicking View produces a command rejection. `ControlPanel` renders the `failed-open` preview ('Open failed.') and the action-error banner with the profile-mismatch message. State renamed from `unsupported-open` to `open-rejected` to honestly reflect the `failed-open` visual. |
 
 State 14 has no demo button; the screenshot script drives it through the dev-only `window.__mockAdapter` hook added in `apps/demo-office/src/main.tsx`.
 

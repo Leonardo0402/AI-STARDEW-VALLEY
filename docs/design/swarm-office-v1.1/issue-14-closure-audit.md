@@ -35,7 +35,7 @@
 | 11 Runtime failed | `baseline/1440x900/11-runtime-failed.png` | #27 Task 0 真实失败状态 |
 | 12 Artifact unavailable | `baseline/1440x900/12-artifact-unavailable.png` | `uri: null` 真实产物 |
 | 13 Artifact failed open | `baseline/1440x900/13-artifact-failed-open.png` | 打开失败真实产物 |
-| 14 Artifact unsupported open | `baseline/1440x900/14-artifact-unsupported-open.png` | MIME 类型不支持 |
+| 14 Artifact open rejected | `baseline/1440x900/14-artifact-open-rejected.png` | MIME 类型不支持，命令被拒绝 |
 
 完整三分辨率目录：
 
@@ -48,7 +48,7 @@
 每个状态对应一份标注图：
 
 - `docs/design/swarm-office-v1.1/annotated-comparisons/01-idle-office-annotated.png`
-- ... 至 `14-artifact-unsupported-open-annotated.png`
+- ... 至 `14-artifact-open-rejected-annotated.png`
 
 生成命令：
 
