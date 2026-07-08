@@ -151,10 +151,13 @@ export const App: FC<AppProps> = ({
   const [selection, setSelection] = useState<OfficeSelection | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<PixelOfficeScene | null>(null);
+  const sceneLifecycleRef = useRef<Promise<void>>(Promise.resolve());
+  const sceneReadyRef = useRef(false);
   const appBodyRef = useRef<HTMLDivElement>(null);
   const modeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const lastManualViewRef = useRef<ViewMode>("pixel");
   const prevCanvasSelectionRef = useRef<CanvasSelection>(null);
+  const prevSelectionRef = useRef<OfficeSelection | null>(null);
 
   const applyCanvasSelection = useCallback(
     (scene: PixelOfficeScene, canvasSelection: CanvasSelection) => {
@@ -181,18 +184,54 @@ export const App: FC<AppProps> = ({
 
     const scene = new PixelOfficeScene(canvasRef.current, { reduceMotion });
     sceneRef.current = scene;
+    sceneReadyRef.current = false;
     scene.setOnSelect((s) => setSelection(s as OfficeSelection));
 
-    const canvasSelection = resolveCanvasSelection(selection, projection);
-    applyCanvasSelection(scene, canvasSelection);
-    prevCanvasSelectionRef.current = canvasSelection;
-    scene.init(canvasRef.current).catch((err) => {
-      console.error("[App] PixelOfficeScene 初始化失败：", err);
-    });
+    let cancelled = false;
+
+    // Serialize scene init/destroy so React StrictMode (or rapid view toggles)
+    // cannot create a second WebGL context on the same canvas before the first
+    // instance has finished cleaning up. Overlapping contexts cause the browser
+    // to lose the active context and leave the Pixel view blank.
+    const lifecycle = sceneLifecycleRef.current
+      .catch(() => {})
+      .then(async () => {
+        if (cancelled) return;
+        await scene.init(canvasRef.current!);
+        if (cancelled) {
+          scene.destroy();
+          if (sceneRef.current === scene) sceneRef.current = null;
+          return;
+        }
+        // Only push the first projection and selection after init completes;
+        // before init the renderers do not exist and selection calls are no-ops.
+        sceneReadyRef.current = true;
+        scene.updateProjection(projection);
+        const canvasSelection = resolveCanvasSelection(selection, projection);
+        applyCanvasSelection(scene, canvasSelection);
+        prevCanvasSelectionRef.current = canvasSelection;
+      })
+      .catch((err) => {
+        console.error("[App] PixelOfficeScene 初始化失败：", err);
+      });
+
+    sceneLifecycleRef.current = lifecycle;
 
     return () => {
-      scene.destroy();
-      sceneRef.current = null;
+      cancelled = true;
+      sceneReadyRef.current = false;
+      // Clear the ref synchronously so React StrictMode (or any rapid remount)
+      // does not see the old instance and skip creating the replacement scene.
+      // The async destroy still runs after the current lifecycle promise to
+      // keep WebGL context creation serialized.
+      if (sceneRef.current === scene) {
+        sceneRef.current = null;
+      }
+      sceneLifecycleRef.current = lifecycle
+        .catch(() => {})
+        .then(() => {
+          scene.destroy();
+        });
     };
   }, [view]);
 
@@ -266,9 +305,9 @@ export const App: FC<AppProps> = ({
     }
   };
 
-  // 当 projection 变化时更新场景
+  // 当 projection 变化时更新场景（必须等 init 完成，否则 updateProjection 是 no-op）
   useEffect(() => {
-    if (sceneRef.current && view === "pixel") {
+    if (sceneRef.current && sceneReadyRef.current && view === "pixel") {
       sceneRef.current.updateProjection(projection);
     }
   }, [projection, view]);
@@ -279,14 +318,20 @@ export const App: FC<AppProps> = ({
 
     const canvasSelection = resolveCanvasSelection(selection, projection);
     const prev = prevCanvasSelectionRef.current;
+    const rawSelectionChanged =
+      prevSelectionRef.current?.kind !== selection?.kind ||
+      prevSelectionRef.current?.id !== selection?.id;
+
     if (
+      !rawSelectionChanged &&
       prev?.kind === canvasSelection?.kind &&
       prev?.id === canvasSelection?.id
     ) {
       return;
     }
-    prevCanvasSelectionRef.current = canvasSelection;
 
+    prevCanvasSelectionRef.current = canvasSelection;
+    prevSelectionRef.current = selection;
     applyCanvasSelection(sceneRef.current, canvasSelection);
   }, [selection, projection, applyCanvasSelection]);
 
@@ -417,7 +462,12 @@ export const App: FC<AppProps> = ({
         </div>
       </header>
 
-      <div className="app-body" ref={appBodyRef}>
+      <div
+        className="app-body"
+        ref={appBodyRef}
+        role="main"
+        aria-label="Swarm Office workspace"
+      >
         <div className={`app-stage ${isFocus ? "app-stage--dimmed" : ""}`}>
           {isDebrief ? (
             view === "pixel" ? (

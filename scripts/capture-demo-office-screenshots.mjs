@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
 
-const BASE_URL = "http://localhost:5173/";
+const BASE_URL = process.env.DEMO_OFFICE_URL || "http://localhost:5173/";
 const BASE_OUT_DIR = process.argv[2] || path.join(process.cwd(), "docs/design/swarm-office-v1.1/baseline");
 
 const RESOLUTIONS = [
@@ -63,10 +63,90 @@ async function assertScreenshot(page, filePath, viewportWidth, viewportHeight) {
   }
 }
 
+async function assertCanvasRendered(page, stateName) {
+  const box = await page.locator("canvas.app-canvas").boundingBox();
+  if (!box) {
+    throw new Error(`Canvas element not found for ${stateName}`);
+  }
+
+  // Capture the composited browser output for the canvas region. Reading the
+  // WebGL back buffer directly is unreliable because the browser may clear it
+  // after presentation unless preserveDrawingBuffer is enabled.
+  const screenshotBuffer = await page.screenshot({
+    clip: { x: box.x, y: box.y, width: box.width, height: box.height },
+    type: "png",
+  });
+
+  const result = await page.evaluate(async (base64) => {
+    const img = new Image();
+    const blob = await fetch(`data:image/png;base64,${base64}`).then((r) => r.blob());
+    const url = URL.createObjectURL(blob);
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = url;
+    });
+    URL.revokeObjectURL(url);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { error: "No 2D context" };
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    const samples = [
+      { x: Math.floor(canvas.width * 0.25), y: Math.floor(canvas.height * 0.25) },
+      { x: Math.floor(canvas.width * 0.75), y: Math.floor(canvas.height * 0.25) },
+      { x: Math.floor(canvas.width * 0.25), y: Math.floor(canvas.height * 0.75) },
+      { x: Math.floor(canvas.width * 0.75), y: Math.floor(canvas.height * 0.75) },
+      { x: Math.floor(canvas.width * 0.5), y: Math.floor(canvas.height * 0.5) },
+    ];
+    const pixels = [];
+    for (const { x, y } of samples) {
+      const idx = (y * canvas.width + x) * 4;
+      pixels.push({ x, y, rgba: [data[idx], data[idx + 1], data[idx + 2], data[idx + 3]] });
+    }
+
+    let variation = 0;
+    const step = Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) / 16));
+    let previous = null;
+    for (let y = 0; y < canvas.height; y += step) {
+      for (let x = 0; x < canvas.width; x += step) {
+        const idx = (y * canvas.width + x) * 4;
+        const rgba = [data[idx], data[idx + 1], data[idx + 2], data[idx + 3]];
+        if (previous) {
+          variation += Math.abs(rgba[0] - previous[0]) + Math.abs(rgba[1] - previous[1]) + Math.abs(rgba[2] - previous[2]);
+        }
+        previous = rgba;
+      }
+    }
+
+    return { ok: true, width: canvas.width, height: canvas.height, pixels, variation };
+  }, screenshotBuffer.toString("base64"));
+
+  if (result.error) {
+    throw new Error(`Canvas render check failed for ${stateName}: ${result.error}`);
+  }
+
+  // A truly blank canvas has near-zero color variation. The idle office has
+  // distinct room colors and agents, so expect meaningful variation.
+  if (result.variation < 100) {
+    throw new Error(
+      `Canvas appears blank for ${stateName} (variation=${result.variation}). Sampled pixels: ${JSON.stringify(result.pixels)}`
+    );
+  }
+}
+
 async function capture(page, outDir, name, viewportWidth, viewportHeight) {
   const filePath = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: filePath, fullPage: true });
   await assertScreenshot(page, filePath, viewportWidth, viewportHeight);
+  if (name === "01-idle-office") {
+    await assertCanvasRendered(page, name);
+  }
   console.log(`Captured: ${filePath}`);
 }
 
@@ -128,7 +208,9 @@ function skipState(name, reason) {
 try {
   browser = await chromium.launch({
     headless: true,
-    args: ["--disable-gpu", "--disable-software-rasterizer", "--no-sandbox", "--disable-dev-shm-usage"],
+    // WebGL is required for PixiJS. Headless Chromium uses SwiftShader software
+    // WebGL by default; do not pass --disable-gpu or --disable-software-rasterizer.
+    args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });
 
   for (const { width, height } of RESOLUTIONS) {

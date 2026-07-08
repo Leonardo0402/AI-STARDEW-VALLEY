@@ -855,3 +855,80 @@ describe("PixelOfficeScene selection API", () => {
     scene.destroy();
   });
 });
+
+describe("PixelOfficeScene representative agent loads", () => {
+  let canvas: HTMLCanvasElement;
+
+  beforeEach(() => {
+    canvas = document.createElement("canvas");
+    MockAssets.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const ROOM_IDS = ["command", "execution", "review", "approval_delivery"] as const;
+
+  function makeLoadProjection(agentCount: number): OfficeProjection {
+    const rooms = ROOM_IDS.map((type, i) =>
+      createRoom(type, type as import("@agent-office/protocol").RoomView["type"], (i % 2) * 420, Math.floor(i / 2) * 320)
+    );
+
+    const agents: import("@agent-office/protocol").AgentView[] = Array.from({ length: agentCount }, (_, i) => ({
+      agentId: `agent-${i}`,
+      name: `Agent ${i}`,
+      role: ["orchestrator", "worker", "reviewer"][i % 3] as import("@agent-office/protocol").AgentView["role"],
+      status: ["idle", "working", "blocked", "failed"][i % 4] as import("@agent-office/protocol").AgentView["status"],
+      currentTaskId: null,
+      currentRoomId: ROOM_IDS[i % ROOM_IDS.length],
+      blockedReason: i % 4 === 2 ? "stuck" : null,
+    }));
+
+    return {
+      ...baseProjection,
+      rooms,
+      agents,
+    };
+  }
+
+  function getAgentLayer(scene: PixelOfficeScene): MockContainer {
+    return (scene as unknown as { contentRoot: MockContainer }).contentRoot
+      .children[2] as MockContainer;
+  }
+
+  function tick(scene: PixelOfficeScene, deltaMS: number): void {
+    (scene as unknown as { update: (ticker: { deltaMS: number }) => void }).update({ deltaMS } as unknown as import("pixi.js").Ticker);
+  }
+
+  it.each([4, 12, 30])("renders %i agents without throwing", async (count) => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true, reduceMotion: true });
+    await scene.init(canvas);
+
+    const projection = makeLoadProjection(count);
+
+    expect(() => scene.updateProjection(projection)).not.toThrow();
+
+    const agentLayer = getAgentLayer(scene);
+    expect(agentLayer.children.length).toBe(count);
+
+    // Simulate several animation frames; reduced motion should keep effects static.
+    expect(() => tick(scene, 16)).not.toThrow();
+    expect(() => tick(scene, 16)).not.toThrow();
+    expect(() => tick(scene, 16)).not.toThrow();
+
+    scene.destroy();
+  });
+
+  it("cleans up all agent sprites after destroy", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true, reduceMotion: true });
+    await scene.init(canvas);
+
+    scene.updateProjection(makeLoadProjection(12));
+    expect(getAgentLayer(scene).children.length).toBe(12);
+
+    scene.destroy();
+
+    expect(() => scene.updateProjection(makeLoadProjection(4))).not.toThrow();
+  });
+});

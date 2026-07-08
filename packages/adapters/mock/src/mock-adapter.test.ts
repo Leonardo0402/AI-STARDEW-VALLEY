@@ -234,7 +234,12 @@ describe("MockRuntimeAdapter", () => {
     expect(blockedTask).toBeDefined();
     expect(blockedTask!.blockedReason).toContain("数据源");
 
-    const blockedAgent = snap.agents.find((a) => a.status === "blocked");
+    await vi.waitFor(() => {
+      expect(
+        store.getSnapshot().agents.some((a) => a.status === "blocked")
+      ).toBe(true);
+    });
+    const blockedAgent = store.getSnapshot().agents.find((a) => a.status === "blocked");
     expect(blockedAgent).toBeDefined();
   });
 

@@ -7,6 +7,9 @@ dist/
 debug*.png
 debug*.log
 
+# Issue-specific evidence / scratch directories
+.issue-*-evidence/
+
 # Review / diff artifacts
 *-review.txt
 *.diff
