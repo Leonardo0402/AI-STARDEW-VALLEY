@@ -877,8 +877,12 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
   }
 
   /**
-   * 播放运行时失败流程：产生 agent.status === "failed" 与 task.status === "failed"。
+   * 播放 domain 任务/Agent 失败流程：产生 agent.status === "failed" 与 task.status === "failed"。
    * 通过 ERROR_RAISED + TASK_FAILED + AGENT_STATUS_CHANGED 现有事件 truthful 产生。
+   *
+   * NOTE: This is a domain-level task/agent failure, NOT a session/transport failure.
+   * Session transport failures (disconnected/failed) are surfaced via StatusStrip
+   * and the RuntimeSession state machine, not via this flow.
    */
   playRuntimeFailureFlow(): void {
     const steps: Array<() => DomainEvent> = [

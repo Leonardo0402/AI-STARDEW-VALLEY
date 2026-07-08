@@ -304,13 +304,13 @@ try {
 
     // 10. Selected task card is captured earlier (uses active task from state 02)
 
-    // 11. Runtime failed
+    // 11. Domain task / agent failed (domain-level failure, not session transport failure)
     await clickButton(page, "重置");
     await sleep(1000);
-    await clickButton(page, "异常: 运行失败");
+    await clickButton(page, "异常: 任务失败");
     await waitForText(page, "failed");
     await sleep(500);
-    await captureHere("11-runtime-failed");
+    await captureHere("11-domain-task-agent-failed");
 
     // 12. Artifact unavailable
     await clickButton(page, "重置");

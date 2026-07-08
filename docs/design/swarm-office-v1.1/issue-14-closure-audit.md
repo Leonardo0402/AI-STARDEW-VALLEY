@@ -32,7 +32,7 @@
 | 08 Debrief mode | `baseline/1440x900/08-debrief-mode.png` | 会话总结 |
 | 09 Selected agent | `baseline/1440x900/09-selected-agent.png` | 画布/面板双向选中 |
 | 10 Selected task card | `baseline/1440x900/10-selected-task-card.png` | 任务卡片联动 |
-| 11 Runtime failed | `baseline/1440x900/11-runtime-failed.png` | #27 Task 0 真实失败状态 |
+| 11 Domain task / agent failed | `baseline/1440x900/11-domain-task-agent-failed.png` | #27 Task 0 真实 domain 失败状态 |
 | 12 Artifact unavailable | `baseline/1440x900/12-artifact-unavailable.png` | `uri: null` 真实产物 |
 | 13 Artifact failed open | `baseline/1440x900/13-artifact-failed-open.png` | 打开失败真实产物 |
 | 14 Artifact open rejected | `baseline/1440x900/14-artifact-open-rejected.png` | MIME 类型不支持，命令被拒绝 |

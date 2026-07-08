@@ -50,7 +50,7 @@ export const DemoControls: FC<DemoControlsProps> = ({ adapter, store, session, o
           异常: 返工
         </button>
         <button className="demo-controls__btn" onClick={() => adapter.playRuntimeFailureFlow()}>
-          异常: 运行失败
+          异常: 任务失败
         </button>
         <button className="demo-controls__btn" onClick={() => adapter.playRuntimeDegradedFlow()}>
           异常: 运行降级
