@@ -16,3 +16,6 @@ apps/demo-office/public/assets/
 
 # Isolated feature worktrees
 .worktrees/
+
+# SDD scratch files
+.superpowers/
