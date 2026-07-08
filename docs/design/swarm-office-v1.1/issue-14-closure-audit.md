@@ -111,3 +111,19 @@ node scripts/generate-annotated-comparisons.mjs    # 14 annotated comparisons
 - `scripts/capture-demo-office-screenshots.mjs`
 - `scripts/generate-annotated-comparisons.mjs`
 - `apps/demo-office/src/integration.test.ts`
+
+## 7. Scope clarification
+
+本审计的关闭标准以 [`docs/superpowers/plans/2026-07-07-issue-14-phase3-swarm-office-v1.1.md`](../../superpowers/plans/2026-07-07-issue-14-phase3-swarm-office-v1.1.md) 第 92-97 行定义的 4 项 evidence 为准（见第 1 节 A/B/C/D）。
+
+#23（Swarm Office V1.1 实现）、#25（follow-up hardening）和 #27（final gate）是围绕 #14 派生的实现、修复和 hardening issue。它们的交付物作为 supporting evidence 记录在下方附录中，但**不反向扩大 #14 的 closure criteria**。
+
+具体而言，layered pixel renderer、approval/blocked/failed/paused 真实状态、scene ↔ panel selection、truthful artifact experience、Command/Focus/Debrief refinement、accessibility/reduced-motion、renderer lifecycle、representative performance、visual QA gate、tests/build 等要求属于 #23/#25/#27 的验收范围，不是 #14 的关闭条件。
+
+## 8. Supporting evidence appendix
+
+| Issue | 范围 | 交付状态 |
+|---|---|---|
+| #23 | Swarm Office V1.1 实现：canvas foundation、role sprites、approval/blocked/failed moments、focus/debrief refinement、micro-animation/reduced-motion、visual QA gate | 已交付（PR #24） |
+| #25 | Follow-up hardening：关联选中、artifact 真实状态、多分辨率视觉 QA 加固 | 已交付（PR #25） |
+| #27 | Final gate：truthful artifact experience、accessibility baseline、renderer lifecycle/performance evidence、#14 closure audit | 已交付（PR #30） |
