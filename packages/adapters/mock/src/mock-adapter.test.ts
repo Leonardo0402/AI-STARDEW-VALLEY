@@ -374,6 +374,11 @@ describe("MockRuntimeAdapter", () => {
     const artifact = snap.artifacts.find((a) => a.type === "legacy_binary");
     expect(artifact).toBeDefined();
 
+    // 关键：任务必须留在不支持 legacy_binary 的房间，避免依赖 ROOM_REVIEW 的 profile
+    const task = snap.tasks.find((t) => t.taskId === artifact!.taskId);
+    expect(task).toBeDefined();
+    expect(task!.roomId).toBe("room-execution");
+
     const cmd = makeCommand(
       CommandType.ARTIFACT_OPEN,
       { artifactId: artifact!.artifactId },

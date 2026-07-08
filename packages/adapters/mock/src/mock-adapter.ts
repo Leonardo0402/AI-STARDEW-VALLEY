@@ -283,15 +283,11 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
       case CommandType.ARTIFACT_OPEN:
         return this.handleArtifactOpen(command);
       default:
-        return {
-          commandId: command.commandId,
-          status: "rejected",
-          error: {
-            code: "UNSUPPORTED_COMMAND",
-            message: `Command ${command.commandType} not supported`,
-          },
-          affectedEventIds: [],
-        };
+        return this.rejectCommand(
+          command,
+          `Command ${command.commandType} not supported`,
+          "UNSUPPORTED_COMMAND"
+        );
     }
   }
 
@@ -465,15 +461,11 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
 
     // 模拟打开失败
     if (this.failedOpenArtifactIds.has(artifact.artifactId)) {
-      return {
-        commandId: command.commandId,
-        status: "rejected",
-        error: {
-          code: "failed-open",
-          message: `Artifact ${artifact.artifactId} open failed (mock)`,
-        },
-        affectedEventIds: [],
-      };
+      return this.rejectCommand(
+        command,
+        `Artifact ${artifact.artifactId} open failed (mock)`,
+        "failed-open"
+      );
     }
 
     // 校验当前房间绑定 Profile 的 inputArtifactTypes
@@ -484,15 +476,11 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
       profile.inputArtifactTypes.length > 0 &&
       !profile.inputArtifactTypes.includes(artifact.type)
     ) {
-      return {
-        commandId: command.commandId,
-        status: "rejected",
-        error: {
-          code: "unsupported-open",
-          message: `Artifact type ${artifact.type} is not supported by profile ${profile.profileId}`,
-        },
-        affectedEventIds: [],
-      };
+      return this.rejectCommand(
+        command,
+        `Artifact type ${artifact.type} is not supported by profile ${profile.profileId}`,
+        "unsupported-open"
+      );
     }
 
     // artifact.open 是只读命令，不产生事件
@@ -1075,35 +1063,6 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
           version: 1,
         });
       },
-      () => {
-        const taskId = `task-${this.taskCounter}`;
-        return this.createEvent(EventType.TASK_ASSIGNED, {
-          taskId,
-          agentId: AGENT_REVIEWER,
-          roomId: ROOM_REVIEW,
-        });
-      },
-      () => {
-        return this.createEvent(EventType.AGENT_STATUS_CHANGED, {
-          agentId: AGENT_WORKER_1,
-          oldStatus: "working" as const,
-          newStatus: "idle" as const,
-        });
-      },
-      () => {
-        return this.createEvent(EventType.AGENT_STATUS_CHANGED, {
-          agentId: AGENT_REVIEWER,
-          oldStatus: "idle" as const,
-          newStatus: "reviewing" as const,
-        });
-      },
-      () => {
-        const taskId = `task-${this.taskCounter}`;
-        return this.createEvent(EventType.TASK_STARTED, {
-          taskId,
-          agentId: AGENT_REVIEWER,
-        });
-      },
     ];
 
     this.playScript(steps);
@@ -1393,11 +1352,15 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     return undefined;
   }
 
-  private rejectCommand(command: OfficeCommand, message: string): CommandResult {
+  private rejectCommand(
+    command: OfficeCommand,
+    message: string,
+    code: string = "MOCK_ERROR"
+  ): CommandResult {
     return {
       commandId: command.commandId,
       status: "rejected",
-      error: { code: "MOCK_ERROR", message },
+      error: { code, message },
       affectedEventIds: [],
     };
   }

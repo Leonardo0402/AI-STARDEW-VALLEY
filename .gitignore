@@ -13,3 +13,6 @@ debug*.log
 
 # Copied pixel assets (source of truth is packages/pixel-office/assets)
 apps/demo-office/public/assets/
+
+# Isolated feature worktrees
+.worktrees/
