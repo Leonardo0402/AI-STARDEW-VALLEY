@@ -49,6 +49,18 @@ export const DemoControls: FC<DemoControlsProps> = ({ adapter, store, session, o
         <button className="demo-controls__btn" onClick={() => adapter.playRevisionFlow()}>
           异常: 返工
         </button>
+        <button className="demo-controls__btn" onClick={() => adapter.playRuntimeFailureFlow()}>
+          异常: 运行失败
+        </button>
+        <button className="demo-controls__btn" onClick={() => adapter.playRuntimeDegradedFlow()}>
+          异常: 运行降级
+        </button>
+        <button className="demo-controls__btn" onClick={() => adapter.playArtifactUnavailableFlow()}>
+          异常: 工件不可用
+        </button>
+        <button className="demo-controls__btn" onClick={() => adapter.playArtifactFailedOpenFlow()}>
+          异常: 打开失败
+        </button>
         <button className="demo-controls__btn" onClick={handleReset}>
           重置
         </button>

@@ -317,4 +317,77 @@ describe("MockRuntimeAdapter", () => {
     // earlier events should still be present
     expect(log2.slice(0, len1)).toEqual(log1);
   });
+
+  it("should play runtime failure flow (agent or task failed)", async () => {
+    adapter.playRuntimeFailureFlow();
+    await new Promise((r) => setTimeout(r, 200));
+
+    const snap = store.getSnapshot();
+    const hasFailedAgent = snap.agents.some((a) => a.status === "failed");
+    const hasFailedTask = snap.tasks.some((t) => t.status === "failed");
+    expect(hasFailedAgent || hasFailedTask).toBe(true);
+  });
+
+  it("should play artifact unavailable flow (uri is null)", async () => {
+    adapter.playArtifactUnavailableFlow();
+    await new Promise((r) => setTimeout(r, 100));
+
+    const snap = store.getSnapshot();
+    expect(snap.artifacts.length).toBeGreaterThan(0);
+    const unavailable = snap.artifacts.find((a) => a.uri === null);
+    expect(unavailable).toBeDefined();
+    expect(unavailable!.title).toContain("不可用");
+  });
+
+  it("should reject artifact.open with unsupported-open for unsupported type", async () => {
+    adapter.playArtifactUnsupportedOpenFlow();
+    await new Promise((r) => setTimeout(r, 100));
+
+    const snap = store.getSnapshot();
+    const artifact = snap.artifacts.find((a) => a.type === "legacy_binary");
+    expect(artifact).toBeDefined();
+
+    const cmd = makeCommand(
+      CommandType.ARTIFACT_OPEN,
+      { artifactId: artifact!.artifactId },
+      artifact!.artifactId
+    );
+    const result = await gateway.execute(cmd);
+    expect(result.status).toBe("rejected");
+    expect(result.error?.code).toBe("unsupported-open");
+  });
+
+  it("should reject artifact.open with failed-open for failed-open artifact", async () => {
+    adapter.playArtifactFailedOpenFlow();
+    await new Promise((r) => setTimeout(r, 100));
+
+    const snap = store.getSnapshot();
+    const artifact = snap.artifacts.find((a) => a.type === "report");
+    expect(artifact).toBeDefined();
+
+    const cmd = makeCommand(
+      CommandType.ARTIFACT_OPEN,
+      { artifactId: artifact!.artifactId },
+      artifact!.artifactId
+    );
+    const result = await gateway.execute(cmd);
+    expect(result.status).toBe("rejected");
+    expect(result.error?.code).toBe("failed-open");
+  });
+
+  it("should emit a recoverable stream error from playRuntimeDegradedFlow", async () => {
+    const onError = vi.fn();
+    const sub = adapter.subscribe({
+      onEvent: () => {},
+      onError,
+    });
+    await sub.ready;
+
+    adapter.playRuntimeDegradedFlow();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].recoverable).toBe(true);
+    sub.close();
+  });
 });
