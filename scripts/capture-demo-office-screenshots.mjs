@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
 
-const BASE_URL = "http://127.0.0.1:5173/";
+const BASE_URL = "http://localhost:5173/";
 const BASE_OUT_DIR = process.argv[2] || path.join(process.cwd(), "docs/design/swarm-office-v1.1/baseline");
 
 const RESOLUTIONS = [
@@ -81,6 +81,22 @@ async function waitForText(page, text, timeout = 10000) {
 async function clickButton(page, label) {
   const button = page.locator(`button:has-text("${label}")`).first();
   await button.click();
+}
+
+async function clickViewButtonForArtifact(page, artifactTitle) {
+  const card = page.locator(`.card:has(.card-title:text-is("${artifactTitle}"))`).first();
+  const button = card.locator("button:text-is('View')").first();
+  await button.click();
+}
+
+async function runAdapterFlow(page, methodName) {
+  await page.evaluate((method) => {
+    const adapter = window.__mockAdapter;
+    if (!adapter || typeof adapter[method] !== "function") {
+      throw new Error(`MockRuntimeAdapter.${method} is not available`);
+    }
+    adapter[method]();
+  }, methodName);
 }
 
 async function waitForStable(page) {
@@ -193,24 +209,58 @@ try {
     await sleep(500);
     await captureHere("09-selected-agent");
 
+    // 10. Selected task card is captured earlier (uses active task from state 02)
+
+    // 11. Runtime failed
+    await clickButton(page, "重置");
+    await sleep(1000);
+    await clickButton(page, "异常: 运行失败");
+    await waitForText(page, "failed");
+    await sleep(500);
+    await captureHere("11-runtime-failed");
+
+    // 12. Artifact unavailable
+    await clickButton(page, "重置");
+    await sleep(1000);
+    await clickButton(page, "异常: 工件不可用");
+    await waitForText(page, "Content unavailable");
+    await sleep(500);
+    await captureHere("12-artifact-unavailable");
+
+    // 13. Artifact failed open
+    await clickButton(page, "重置");
+    await sleep(1000);
+    await clickButton(page, "异常: 打开失败");
+    await waitForText(page, "报告（打开会失败）");
+    await clickViewButtonForArtifact(page, "报告（打开会失败）");
+    await waitForText(page, "Open failed.");
+    await sleep(500);
+    await captureHere("13-artifact-failed-open");
+
+    // 14. Artifact unsupported open (no demo button; driven via dev-only adapter hook)
+    await clickButton(page, "重置");
+    await sleep(1000);
+    await runAdapterFlow(page, "playArtifactUnsupportedOpenFlow");
+    await waitForText(page, "旧版二进制产物");
+    await clickViewButtonForArtifact(page, "旧版二进制产物");
+    await waitForText(page, "Open failed.");
+    await sleep(500);
+    await captureHere("14-artifact-unsupported-open");
+
     await context.close();
     console.log(`Resolution ${width}x${height} complete.`);
   }
 
-  // New states that cannot be truthfully produced by the current mock adapter.
+  // States that remain impossible to truthfully produce after Task 0.
   skipState(
-    "artifact-metadata-only / unavailable / unsupported-open",
-    "MockRuntimeAdapter always creates artifacts with a URI and reports ARTIFACT_OPEN as supported; " +
-    "there is no truthful path to metadata-only, unavailable, or unsupported-open artifact content."
+    "artifact-metadata-only",
+    "MockRuntimeAdapter always creates artifacts with either a URI or content reference; " +
+    "there is no truthful path to a metadata-only artifact that has neither URI nor content."
   );
   skipState(
-    "runtime-degraded",
-    "MockRuntimeAdapter has no API or scripted scenario that emits a genuine runtime/session degraded state."
-  );
-  skipState(
-    "runtime-failed",
-    "MockRuntimeAdapter can emit blocked agents/tasks and revision_required artifacts, " +
-    "but cannot independently trigger a genuine runtime-failed / runtime-error state."
+    "runtime-degraded (persistent)",
+    "MockRuntimeAdapter can emit a recoverable stream error, but the degraded state is transient; " +
+    "a persistent runtime-degraded/session-degraded state requires protocol or session changes not yet implemented."
   );
 
   console.log("All screenshots captured.");

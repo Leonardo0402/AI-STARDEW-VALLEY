@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>12 — Artifact Unavailable</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #131014; color: #f2f0eb; font-family: Inter, system-ui, sans-serif; }
+    .header { padding: 16px 24px; border-bottom: 1px solid #322e36; }
+    .header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+    .header p { margin: 4px 0 0; font-size: 11px; color: #b8b0bc; }
+    .wrap { position: relative; display: inline-block; }
+    .wrap img { display: block; max-width: 100%; }
+    .container { padding: 16px 24px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>12 — Artifact Unavailable</h1>
+    <p>Baseline screenshot with current Issue #25 gaps annotated. Reference: docs/design/swarm-office-v1.1/gap-audit.md</p>
+  </div>
+  <div class="container">
+    <div class="wrap" id="wrap">
+      <img src="../baseline/1440x900/12-artifact-unavailable.png" id="targetImg" />
+      <svg id="overlay" style="position:absolute;top:0;left:0;pointer-events:none;" xmlns="http://www.w3.org/2000/svg">
+        
+      <g transform="translate(1090, 640)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">1</text>
+      </g>
+      <line x1="1090" y1="640" x2="1120" y2="600" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1125" y="570" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">1.</strong> Artifact preview truthfully renders 'Content unavailable' because the artifact uri is null.
+        </div>
+      </foreignObject>
+      <g transform="translate(1090, 560)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">2</text>
+      </g>
+      <line x1="1090" y1="560" x2="1120" y2="520" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1125" y="490" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">2.</strong> View button is disabled; the artifact has no openable content.
+        </div>
+      </foreignObject>
+      <g transform="translate(560, 300)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">3</text>
+      </g>
+      <line x1="560" y1="300" x2="590" y2="260" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="595" y="230" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">3.</strong> Producer agent is still working; only the artifact content is unavailable.
+        </div>
+      </foreignObject>
+      <g transform="translate(360, 120)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">4</text>
+      </g>
+      <line x1="360" y1="120" x2="390" y2="80" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="395" y="50" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">4.</strong> Truthfully produced by MockRuntimeAdapter.playArtifactUnavailableFlow().
+        </div>
+      </foreignObject>
+      </svg>
+    </div>
+  </div>
+  <script>
+    const img = document.getElementById('targetImg');
+    const svg = document.getElementById('overlay');
+    img.onload = () => {
+      svg.setAttribute('width', img.naturalWidth);
+      svg.setAttribute('height', img.naturalHeight);
+      document.getElementById('wrap').style.width = img.naturalWidth + 'px';
+    };
+    if (img.complete) img.onload();
+  </script>
+</body>
+</html>

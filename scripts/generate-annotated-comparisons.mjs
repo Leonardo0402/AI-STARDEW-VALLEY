@@ -108,6 +108,46 @@ const annotations = [
       { x: 360, y: 120, label: "Resolution hardening: selection ring and panel width." },
     ],
   },
+  {
+    name: "11-runtime-failed",
+    title: "11 — Runtime Failed",
+    notes: [
+      { x: 360, y: 40, label: "Status strip truthfully shows failure styling, error code, and the failed agent reason produced by playRuntimeFailureFlow()." },
+      { x: 1090, y: 320, label: "Worker-2 agent card displays the failed badge with the critical error reason." },
+      { x: 1090, y: 560, label: "Task card displays failed status; this is a genuine runtime failure, not blocked or revision_required." },
+      { x: 560, y: 300, label: "Canvas renders the failed agent marker/posture distinct from blocked." },
+    ],
+  },
+  {
+    name: "12-artifact-unavailable",
+    title: "12 — Artifact Unavailable",
+    notes: [
+      { x: 1090, y: 640, label: "Artifact preview truthfully renders 'Content unavailable' because the artifact uri is null." },
+      { x: 1090, y: 560, label: "View button is disabled; the artifact has no openable content." },
+      { x: 560, y: 300, label: "Producer agent is still working; only the artifact content is unavailable." },
+      { x: 360, y: 120, label: "Truthfully produced by MockRuntimeAdapter.playArtifactUnavailableFlow()." },
+    ],
+  },
+  {
+    name: "13-artifact-failed-open",
+    title: "13 — Artifact Failed Open",
+    notes: [
+      { x: 1090, y: 640, label: "Artifact preview shows 'Open failed.' after the user clicks View." },
+      { x: 1090, y: 720, label: "Action error banner shows the failed-open error returned by the adapter." },
+      { x: 1090, y: 560, label: "View button remains enabled so the user can retry opening the artifact." },
+      { x: 360, y: 120, label: "Truthfully produced by MockRuntimeAdapter.playArtifactFailedOpenFlow()." },
+    ],
+  },
+  {
+    name: "14-artifact-unsupported-open",
+    title: "14 — Artifact Unsupported Open",
+    notes: [
+      { x: 1090, y: 640, label: "Artifact preview shows 'Open failed.' after the user clicks View." },
+      { x: 1090, y: 720, label: "Action error banner shows the unsupported-open error from the room Profile inputArtifactTypes mismatch." },
+      { x: 1090, y: 560, label: "View button stays enabled for retry; title reads 'Open failed — click to retry'." },
+      { x: 360, y: 120, label: "No demo button exists for this flow; captured via dev-only window.__mockAdapter.playArtifactUnsupportedOpenFlow()." },
+    ],
+  },
 ];
 
 function buildHtml(item) {
