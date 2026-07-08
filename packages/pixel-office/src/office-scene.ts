@@ -59,7 +59,7 @@ export interface PixelOfficeSceneOptions {
 }
 
 export class PixelOfficeScene {
-  private app: Application;
+  private app!: Application;
   private contentRoot: Container;
   private roomLayer: Container;
   private propLayer: Container;
@@ -89,7 +89,9 @@ export class PixelOfficeScene {
   constructor(canvas: HTMLCanvasElement, options: PixelOfficeSceneOptions = {}) {
     this.useSpriteRenderer = options.useSpriteRenderer ?? true;
     this.reduceMotion = options.reduceMotion ?? false;
-    this.app = new Application();
+    // Application is created lazily in init() so that React StrictMode
+    // mount/unmount cycles do not allocate a WebGL context that is never
+    // cleaned up and starves the real instance.
     this.contentRoot = new Container();
     this.roomLayer = new Container();
     this.propLayer = new Container();
@@ -115,6 +117,9 @@ export class PixelOfficeScene {
 
   async init(canvas: HTMLCanvasElement): Promise<void> {
     if (this.destroyed) return;
+    console.log("[PixelOfficeScene] init start");
+    this.app = new Application();
+    console.log("[PixelOfficeScene] app created");
     await this.app.init({
       canvas,
       width: canvas.clientWidth || 800,
@@ -124,13 +129,24 @@ export class PixelOfficeScene {
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
     });
+    console.log("[PixelOfficeScene] app.init resolved", { destroyed: this.destroyed, hasRenderer: !!this.app.renderer });
     if (this.destroyed) {
       // 在 init 期间被 destroy 了
+      console.log("[PixelOfficeScene] cleaning up app after init because destroyed");
       try { this.app.destroy({ removeView: false }); } catch { /* ignore */ }
       return;
     }
 
     this.app.stage.addChild(this.contentRoot);
+    console.log("[PixelOfficeScene] init complete", {
+      rendererType: (this.app.renderer as any)?.type,
+      width: this.app.renderer?.width,
+      height: this.app.renderer?.height,
+      stageChildren: this.app.stage.children.length,
+      contentRootChildren: this.contentRoot.children.length,
+    });
+    (globalThis as any).__pixiApp = this.app;
+    (globalThis as any).__pixelOfficeScene = this;
 
     // Responsive: scale the 800×600 design content to fit the stage while
     // preserving aspect ratio, and re-center when the parent resizes.
@@ -185,6 +201,18 @@ export class PixelOfficeScene {
       return;
     }
     this.currentProjection = projection;
+    console.log("[PixelOfficeScene] updateProjection", {
+      initialized: this.initialized,
+      roomCount: projection.rooms.length,
+      agentCount: projection.agents.length,
+      taskCount: projection.tasks.length,
+      pendingApprovalCount: projection.pendingApprovals.length,
+      blockedTaskCount: projection.blockedTasks.length,
+      contentRootChildren: this.contentRoot.children.length,
+      roomLayerChildren: this.roomLayer.children.length,
+      agentLayerChildren: this.agentLayer.children.length,
+      overlayLayerChildren: this.overlayLayer.children.length,
+    });
 
     if (this.useSpriteRenderer && this.roomRenderer && this.propRenderer && this.agentRenderer && this.effectRenderer) {
       const layout = projection.rooms.length > 0 ? createLayoutFromRoomViews(projection.rooms) : createDefaultLayout();
@@ -215,18 +243,19 @@ export class PixelOfficeScene {
   }
 
   destroy(): void {
+    console.log("[PixelOfficeScene] destroy", { initialized: this.initialized, destroyed: this.destroyed, hasApp: !!this.app, hasRenderer: !!this.app?.renderer });
     this.destroyed = true;
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
-    if (this.initialized) {
-      try {
-        // Keep the <canvas> element in the DOM so React can unmount/reuse it.
-        this.app.destroy({ removeView: false });
-      } catch {
-        // PixiJS destroy 可能抛错（如 StrictMode 双调用），忽略
-      }
+    try {
+      // Keep the <canvas> element in the DOM so React can unmount/reuse it.
+      // Destroy even if init() never completed: a partially-created
+      // Application can still hold a WebGL context that must be released.
+      this.app?.destroy({ removeView: false });
+    } catch {
+      // PixiJS destroy 可能抛错（如 StrictMode 双调用），忽略
     }
     this.initialized = false;
   }

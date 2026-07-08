@@ -157,6 +157,8 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
   private artifactCounter = 0;
   private approvalCounter = 0;
   private grantCounter = 0;
+  /** 记录应返回 failed-open 的 artifactId（playArtifactFailedOpenFlow 使用） */
+  private failedOpenArtifactIds: Set<string> = new Set();
 
   constructor(options: MockAdapterOptions = {}) {
     this.options = { eventDelayMs: 0, autoPlay: false, ...options };
@@ -281,15 +283,11 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
       case CommandType.ARTIFACT_OPEN:
         return this.handleArtifactOpen(command);
       default:
-        return {
-          commandId: command.commandId,
-          status: "rejected",
-          error: {
-            code: "UNSUPPORTED_COMMAND",
-            message: `Command ${command.commandType} not supported`,
-          },
-          affectedEventIds: [],
-        };
+        return this.rejectCommand(
+          command,
+          `Command ${command.commandType} not supported`,
+          "UNSUPPORTED_COMMAND"
+        );
     }
   }
 
@@ -460,6 +458,31 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     if (!artifact) {
       return this.rejectCommand(command, `Artifact ${p.artifactId} not found`);
     }
+
+    // 模拟打开失败
+    if (this.failedOpenArtifactIds.has(artifact.artifactId)) {
+      return this.rejectCommand(
+        command,
+        `Artifact ${artifact.artifactId} open failed (mock)`,
+        "failed-open"
+      );
+    }
+
+    // 校验当前房间绑定 Profile 的 inputArtifactTypes
+    const task = artifact.taskId ? this.tasks.get(artifact.taskId) : undefined;
+    const profile = task?.roomId ? this.getProfileForRoom(task.roomId) : undefined;
+    if (
+      profile &&
+      profile.inputArtifactTypes.length > 0 &&
+      !profile.inputArtifactTypes.includes(artifact.type)
+    ) {
+      return this.rejectCommand(
+        command,
+        `Artifact type ${artifact.type} is not supported by profile ${profile.profileId}`,
+        "unsupported-open"
+      );
+    }
+
     // artifact.open 是只读命令，不产生事件
     return {
       commandId: command.commandId,
@@ -853,6 +876,254 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     this.playNormalFlow();
   }
 
+  /**
+   * 播放运行时失败流程：产生 agent.status === "failed" 与 task.status === "failed"。
+   * 通过 ERROR_RAISED + TASK_FAILED + AGENT_STATUS_CHANGED 现有事件 truthful 产生。
+   */
+  playRuntimeFailureFlow(): void {
+    const steps: Array<() => DomainEvent> = [
+      () => {
+        const taskId = `task-${++this.taskCounter}`;
+        return this.createEvent(EventType.TASK_CREATED, {
+          taskId,
+          title: "执行高风险数据采集",
+          description: "访问外部高风险数据源",
+          priority: "high" as Priority,
+          parentTaskId: null,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_ASSIGNED, {
+          taskId,
+          agentId: AGENT_WORKER_2,
+          roomId: ROOM_EXECUTION,
+        });
+      },
+      () => {
+        return this.createEvent(EventType.AGENT_STATUS_CHANGED, {
+          agentId: AGENT_WORKER_2,
+          oldStatus: "idle" as const,
+          newStatus: "working" as const,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_STARTED, {
+          taskId,
+          agentId: AGENT_WORKER_2,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.ERROR_RAISED, {
+          taskId,
+          agentId: AGENT_WORKER_2,
+          message: "运行时致命错误：数据源证书失效",
+          severity: "critical" as const,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_FAILED, {
+          taskId,
+          reason: "数据源证书失效，任务无法继续",
+        });
+      },
+      () => {
+        return this.createEvent(EventType.AGENT_STATUS_CHANGED, {
+          agentId: AGENT_WORKER_2,
+          oldStatus: "working" as const,
+          newStatus: "failed" as const,
+          reason: "运行时致命错误：数据源证书失效",
+        });
+      },
+    ];
+
+    this.playScript(steps);
+  }
+
+  /**
+   * 触发 adapter 流的可恢复错误，使 RuntimeSession 进入 degraded。
+   * 直接通过现有 subscribe 的 onError 通道发送 recoverable 错误。
+   */
+  playRuntimeDegradedFlow(): void {
+    const error: RuntimeStreamError = {
+      code: "stream_protocol_error",
+      message: "Mock 模拟的连接降级",
+      recoverable: true,
+    };
+    for (const observer of this.subscribers) {
+      observer.onError?.(error);
+    }
+  }
+
+  /**
+   * 播放工件不可用流程：创建 uri === null 的 artifact。
+   */
+  playArtifactUnavailableFlow(): void {
+    const steps: Array<() => DomainEvent> = [
+      () => {
+        const taskId = `task-${++this.taskCounter}`;
+        return this.createEvent(EventType.TASK_CREATED, {
+          taskId,
+          title: "生成远程报告",
+          description: "从远程存储拉取报告",
+          priority: "normal" as Priority,
+          parentTaskId: null,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_ASSIGNED, {
+          taskId,
+          agentId: AGENT_WORKER_1,
+          roomId: ROOM_EXECUTION,
+        });
+      },
+      () => {
+        return this.createEvent(EventType.AGENT_STATUS_CHANGED, {
+          agentId: AGENT_WORKER_1,
+          oldStatus: "idle" as const,
+          newStatus: "working" as const,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_STARTED, {
+          taskId,
+          agentId: AGENT_WORKER_1,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        const artifactId = `artifact-${++this.artifactCounter}`;
+        return this.createEvent(EventType.ARTIFACT_CREATED, {
+          artifactId,
+          taskId,
+          producerAgentId: AGENT_WORKER_1,
+          type: "report",
+          title: "远程报告（内容不可用）",
+          uri: null,
+          version: 1,
+        });
+      },
+    ];
+
+    this.playScript(steps);
+  }
+
+  /**
+   * 播放工件类型不支持打开流程：artifact.type 不在当前房间 Profile 的 inputArtifactTypes 中。
+   */
+  playArtifactUnsupportedOpenFlow(): void {
+    const steps: Array<() => DomainEvent> = [
+      () => {
+        const taskId = `task-${++this.taskCounter}`;
+        return this.createEvent(EventType.TASK_CREATED, {
+          taskId,
+          title: "处理旧版二进制产物",
+          description: "尝试打开旧版二进制产物",
+          priority: "normal" as Priority,
+          parentTaskId: null,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_ASSIGNED, {
+          taskId,
+          agentId: AGENT_WORKER_1,
+          roomId: ROOM_EXECUTION,
+        });
+      },
+      () => {
+        return this.createEvent(EventType.AGENT_STATUS_CHANGED, {
+          agentId: AGENT_WORKER_1,
+          oldStatus: "idle" as const,
+          newStatus: "working" as const,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_STARTED, {
+          taskId,
+          agentId: AGENT_WORKER_1,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        const artifactId = `artifact-${++this.artifactCounter}`;
+        return this.createEvent(EventType.ARTIFACT_CREATED, {
+          artifactId,
+          taskId,
+          producerAgentId: AGENT_WORKER_1,
+          type: "legacy_binary",
+          title: "旧版二进制产物",
+          uri: `mock://artifacts/${artifactId}`,
+          version: 1,
+        });
+      },
+    ];
+
+    this.playScript(steps);
+  }
+
+  /**
+   * 播放工件打开失败流程：创建 artifact 并标记其打开会返回 failed-open。
+   */
+  playArtifactFailedOpenFlow(): void {
+    const steps: Array<() => DomainEvent> = [
+      () => {
+        const taskId = `task-${++this.taskCounter}`;
+        return this.createEvent(EventType.TASK_CREATED, {
+          taskId,
+          title: "生成需要打开的报告",
+          description: "此报告在打开时会模拟失败",
+          priority: "normal" as Priority,
+          parentTaskId: null,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_ASSIGNED, {
+          taskId,
+          agentId: AGENT_WORKER_1,
+          roomId: ROOM_EXECUTION,
+        });
+      },
+      () => {
+        return this.createEvent(EventType.AGENT_STATUS_CHANGED, {
+          agentId: AGENT_WORKER_1,
+          oldStatus: "idle" as const,
+          newStatus: "working" as const,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        return this.createEvent(EventType.TASK_STARTED, {
+          taskId,
+          agentId: AGENT_WORKER_1,
+        });
+      },
+      () => {
+        const taskId = `task-${this.taskCounter}`;
+        const artifactId = `artifact-${++this.artifactCounter}`;
+        this.failedOpenArtifactIds.add(artifactId);
+        return this.createEvent(EventType.ARTIFACT_CREATED, {
+          artifactId,
+          taskId,
+          producerAgentId: AGENT_WORKER_1,
+          type: "report",
+          title: "报告（打开会失败）",
+          uri: `mock://artifacts/${artifactId}`,
+          version: 1,
+        });
+      },
+    ];
+
+    this.playScript(steps);
+  }
+
   /** 暂停脚本播放 */
   pausePlayback(): void {
     this.paused = true;
@@ -880,6 +1151,7 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     this.artifactCounter = 0;
     this.approvalCounter = 0;
     this.grantCounter = 0;
+    this.failedOpenArtifactIds.clear();
     this.agents.clear();
     this.tasks.clear();
     this.artifacts.clear();
@@ -992,6 +1264,11 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     }
   }
 
+  private getProfileForRoom(roomId: string): ExecutionProfile | undefined {
+    const binding = this.bindings.find((b) => b.roomId === roomId);
+    return binding ? this.profiles[binding.profileId] : undefined;
+  }
+
   private createEvent<P>(type: string, payload: P): DomainEvent<P> {
     const now = new Date().toISOString();
     return {
@@ -1075,11 +1352,15 @@ export class MockRuntimeAdapter implements RuntimeAdapter {
     return undefined;
   }
 
-  private rejectCommand(command: OfficeCommand, message: string): CommandResult {
+  private rejectCommand(
+    command: OfficeCommand,
+    message: string,
+    code: string = "MOCK_ERROR"
+  ): CommandResult {
     return {
       commandId: command.commandId,
       status: "rejected",
-      error: { code: "MOCK_ERROR", message },
+      error: { code, message },
       affectedEventIds: [],
     };
   }

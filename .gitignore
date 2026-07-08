@@ -7,9 +7,18 @@ dist/
 debug*.png
 debug*.log
 
+# Issue-specific evidence / scratch directories
+.issue-*-evidence/
+
 # Review / diff artifacts
 *-review.txt
 *.diff
 
 # Copied pixel assets (source of truth is packages/pixel-office/assets)
 apps/demo-office/public/assets/
+
+# Isolated feature worktrees
+.worktrees/
+
+# SDD scratch files
+.superpowers/

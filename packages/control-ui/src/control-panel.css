@@ -382,6 +382,12 @@
   background: var(--base-800);
 }
 
+.event-row:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: -2px;
+  background: var(--base-800);
+}
+
 .event-seq {
   font-family: var(--font-mono);
   color: var(--info);

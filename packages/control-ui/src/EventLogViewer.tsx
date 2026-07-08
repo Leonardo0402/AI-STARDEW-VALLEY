@@ -6,7 +6,7 @@
  * - 只读，不允许在此处修改事件
  * - 显示事件核心信息：sequence、type、摘要、occurredAt
  */
-import { useState, type FC } from "react";
+import { useState, type FC, type KeyboardEvent } from "react";
 import type { DomainEvent } from "@agent-office/protocol";
 import { EventType } from "@agent-office/protocol";
 import { SectionHeader } from "./components/SectionHeader.js";
@@ -41,11 +41,22 @@ export const EventLogViewer: FC<EventLogViewerProps> = ({ events }) => {
         )}
         {sorted.map((event) => {
           const isExpanded = expanded === event.eventId;
+          const toggle = () => setExpanded(isExpanded ? null : event.eventId);
+          const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggle();
+            }
+          };
           return (
             <div key={event.eventId} className="event-row__wrapper">
               <div
                 className="event-row"
-                onClick={() => setExpanded(isExpanded ? null : event.eventId)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={isExpanded}
+                onClick={toggle}
+                onKeyDown={handleKeyDown}
               >
                 <span className="event-seq">#{event.sequence}</span>
                 <span className="event-type">{event.type}</span>

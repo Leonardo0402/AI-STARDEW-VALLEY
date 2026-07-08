@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { App } from "./App.js";
 import { DemoControls } from "./DemoControls.js";
 import { ControlPanel } from "@agent-office/control-ui";
@@ -66,6 +66,8 @@ class ResizeObserverMock {
 }
 
 global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+const defaultPixelOfficeSceneImpl = (PixelOfficeScene as Mock).getMockImplementation();
 
 function setBodyWidth(width: number) {
   Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
@@ -191,6 +193,12 @@ describe("App shell", () => {
     resizeCallback = null;
     setBodyWidth(1280);
     (useComposedOfficeState as Mock).mockReturnValue(baseState);
+  });
+
+  afterEach(() => {
+    if (defaultPixelOfficeSceneImpl) {
+      (PixelOfficeScene as Mock).mockImplementation(defaultPixelOfficeSceneImpl);
+    }
   });
 
   it("renders status strip, header, and body regions", () => {
@@ -387,6 +395,13 @@ describe("App shell", () => {
     expect(canvas).toHaveAttribute("aria-label", "Pixel office map showing agent rooms and tasks");
   });
 
+  it("marks the app body as the main landmark", () => {
+    renderApp();
+    const body = document.querySelector(".app-body");
+    expect(body).toHaveAttribute("role", "main");
+    expect(body).toHaveAttribute("aria-label", "Swarm Office workspace");
+  });
+
   it("supports arrow-key navigation between mode tabs", () => {
     renderApp();
     const tabs = ["Command", "Focus", "Debrief"].map((name) =>
@@ -434,6 +449,68 @@ describe("App shell", () => {
     expect(commandTab.classList.contains("mode-switcher__btn--active")).toBe(false);
     expect(focusTab.classList.contains("mode-switcher__btn--active")).toBe(true);
     expect(debriefTab.classList.contains("mode-switcher__btn--active")).toBe(false);
+  });
+
+  it("pushes the initial projection and selection only after PixelOfficeScene init resolves", async () => {
+    let initResolve: (() => void) | undefined;
+    const scene = {
+      init: vi.fn().mockImplementation(() => new Promise<void>((resolve) => {
+        initResolve = resolve;
+      })),
+      destroy: vi.fn(),
+      updateProjection: vi.fn(),
+      setReduceMotion: vi.fn(),
+      selectAgent: vi.fn(),
+      selectAgents: vi.fn(),
+      selectRoom: vi.fn(),
+      clearSelection: vi.fn(),
+      setOnSelect: vi.fn(),
+    };
+    (PixelOfficeScene as Mock).mockReturnValue(scene);
+
+    renderApp();
+
+    // Wait for the effect to start init.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(scene.init).toHaveBeenCalled();
+    expect(scene.updateProjection).not.toHaveBeenCalled();
+    expect(scene.clearSelection).not.toHaveBeenCalled();
+
+    await act(async () => {
+      initResolve?.();
+      await Promise.resolve();
+    });
+
+    expect(scene.updateProjection).toHaveBeenCalledWith(baseState.projection);
+    expect(scene.clearSelection).toHaveBeenCalled();
+  });
+
+  it("creates a replacement scene when React StrictMode remounts the canvas", async () => {
+    render(
+      <React.StrictMode>
+        <App
+          session={mockSession as any}
+          store={mockStore as any}
+          gateway={mockGateway as any}
+          runtimeId="runtime-001"
+          capabilities={{ supportedCommands: Object.values({}), supportedEvents: [], features: { snapshot: true, sse: false, websocket: false, commandExecution: true, softMapping: false, hardOrchestration: false } } as any}
+          demoControls={<div data-testid="demo-controls">DemoControls</div>}
+          lifeSimSession={mockLifeSimSession as any}
+        />
+      </React.StrictMode>
+    );
+
+    // StrictMode mounts, unmounts, and remounts. If cleanup leaves sceneRef
+    // pointing at the destroyed scene, the remount early-returns and only one
+    // PixelOfficeScene is constructed, leaving the canvas blank.
+    await waitFor(() => expect(PixelOfficeScene).toHaveBeenCalledTimes(2));
+
+    const results = (PixelOfficeScene as Mock).mock.results;
+    const scene = results[results.length - 1].value as Record<string, ReturnType<typeof vi.fn>>;
+    await waitFor(() => expect(scene.updateProjection).toHaveBeenCalledWith(baseState.projection));
   });
 });
 
@@ -628,7 +705,7 @@ describe("App selection", () => {
     expect(getControlPanelProps().selection).toEqual({ kind: "agent", id: "agent-1" });
   });
 
-  it("selection survives pixel/list view switches", () => {
+  it("selection survives pixel/list view switches", async () => {
     renderApp();
     const props = getControlPanelProps();
     act(() => {
@@ -637,6 +714,11 @@ describe("App selection", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "List" }));
     fireEvent.click(screen.getByRole("button", { name: "Pixel" }));
+
+    // The new scene's init promise resolves asynchronously before selection is applied.
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     const scene = getSceneInstance();
     expect(scene.selectAgent).toHaveBeenCalledWith("agent-1");

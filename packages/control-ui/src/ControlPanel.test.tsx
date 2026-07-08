@@ -312,7 +312,8 @@ describe("ControlPanel", () => {
       artifacts: [{ ...baseProjection.artifacts[0], uri: "file:///q3-report.md" }],
     };
     const { props } = renderPanel({ projection });
-    const viewBtn = screen.getByRole("button", { name: /View/i });
+    const artifactCard = screen.getByText("Q3-report-v2.md").closest(".card") as HTMLElement;
+    const viewBtn = within(artifactCard).getByRole("button", { name: /View/i });
     expect(viewBtn).not.toBeDisabled();
     fireEvent.click(viewBtn);
 
@@ -336,7 +337,8 @@ describe("ControlPanel", () => {
 
   it("shows metadata-only state when artifact has no content or URI", () => {
     renderPanel();
-    const viewBtn = screen.getByRole("button", { name: /View/i });
+    const artifactCard = screen.getByText("Q3-report-v2.md").closest(".card") as HTMLElement;
+    const viewBtn = within(artifactCard).getByRole("button", { name: /View/i });
     expect(viewBtn).toBeDisabled();
     expect(viewBtn).toHaveAttribute("title", "Metadata only — content not loaded.");
     expect(screen.getByText(/Metadata only/i)).toBeInTheDocument();
@@ -375,7 +377,8 @@ describe("ControlPanel", () => {
       projection,
       capabilities: { ...capabilities, supportedCommands: [CommandType.TASK_CREATE] },
     });
-    const viewBtn = screen.getByRole("button", { name: /View/i });
+    const artifactCard = screen.getByText("Q3-report-v2.md").closest(".card") as HTMLElement;
+    const viewBtn = within(artifactCard).getByRole("button", { name: /View/i });
     expect(viewBtn).toBeDisabled();
     expect(viewBtn).toHaveAttribute("title", "Unsupported by adapter");
   });

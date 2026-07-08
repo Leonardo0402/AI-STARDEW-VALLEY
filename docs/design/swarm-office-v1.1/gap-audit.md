@@ -4,7 +4,7 @@
 > Baseline screenshots: `docs/design/swarm-office-v1.1/baseline/{1366x768,1440x900,1920x1080}/`
 > Annotated comparisons: `docs/design/swarm-office-v1.1/annotated-comparisons/`
 > Reference: `docs/design/swarm-office/design-system.md` + `docs/design/swarm-office/high-fidelity-designs-preview.png`
-> PR context: Task 3 of Issue #25; pre-PR #24 findings are now historical. Refs #14.
+> PR context: Task 3 of Issue #25; Issue #27 Task 1 extended the truthful-state baseline. Refs #14.
 
 ## Executive summary
 
@@ -45,7 +45,7 @@ This audit therefore splits the evidence into two sections:
 - `revision_required`, `rejected`, `blocked`, and `failed` are now visually distinct on both canvas and panel (`revision_required` shows a rework cue, `rejected` uses a dedicated decision intent).
 - `ControlPanel` explicitly renders artifact content states: `content-available`, `metadata-only`, `unavailable`, `loading`, `failed-open`, and `unsupported-open`.
 - `artifactId` is never treated as a URI; missing content references render as metadata-only/unavailable rather than invented content.
-- The mock adapter cannot truthfully produce `metadata-only`, `unavailable`, `unsupported-open`, or `failed-open` states, so those UI states are implemented but not baselined.
+- Issue #27 Task 1 baselined the truthful artifact failure states: `unavailable` (12), `failed-open` (13), and `unsupported-open` (14). `metadata-only` remains unbaselined because the mock adapter always creates artifacts with a URI or content reference.
 
 ### 3. Multi-resolution layout hardening
 
@@ -63,15 +63,15 @@ This audit therefore splits the evidence into two sections:
 - Linked selection for agent and task is therefore baselined.
 - Not yet captured: hover-only states, selected room and related active agents, selected approval/artifact cross-highlight, and selected/hovered rows in Debrief mode.
 
-### 5. Runtime degraded / failed state capture limited by mock adapter
+### 5. Runtime degraded / failed state capture
 
 - The mock adapter can produce `blocked` agents/tasks and `revision_required` artifacts through its scripted scenarios.
-- It cannot independently trigger a genuine runtime `failed` / runtime-error state, nor a runtime-degraded/session-degraded state.
-- Visual QA for these states must be skipped rather than fabricated; screenshots are only captured if the adapter truthfully supports the state.
+- Issue #27 Task 0 added `playRuntimeFailureFlow()`, which truthfully produces `failed` agent/task states using existing `ERROR_RAISED`, `TASK_FAILED`, and `AGENT_STATUS_CHANGED` events; state `11-runtime-failed` is now baselined.
+- A persistent `runtime-degraded` / `session-degraded` state is still not truthfully reachable; `playRuntimeDegradedFlow()` emits a recoverable stream error but the degraded state is transient and would require protocol/session changes to persist.
 
 ## Accepted deviations
 
-The mock adapter used by `apps/demo-office` cannot independently trigger a genuine runtime `failed` / runtime-error state or a runtime-degraded state. The V1.1 demo therefore honestly labels state 05 as **blocked task / agent** and state 06 as **revision / rework required**, rather than claiming true runtime failures. Screenshots for runtime failed/degraded states will only be added if the underlying adapter or Runtime session can truthfully produce them.
+The mock adapter used by `apps/demo-office` can now truthfully produce a runtime `failed` state via `playRuntimeFailureFlow()`, so state `11-runtime-failed` is baselined. It still cannot produce a persistent `runtime-degraded` state (the stream error is recoverable and transient) nor a `metadata-only` artifact (all created artifacts carry a URI or content reference). The V1.1 demo keeps state 05 as **blocked task / agent** and state 06 as **revision / rework required**, and only claims screenshots for states that the adapter can truthfully reach.
 
 ## Screenshot path canonicalization
 
@@ -101,6 +101,10 @@ This section records the visual QA evidence after PR #24 and Task 3. All ten bas
 | 08 | Debrief mode | `baseline/1440x900/08-debrief-mode.png` | `08-debrief-mode-annotated.png` |
 | 09 | Selected agent | `baseline/1440x900/09-selected-agent.png` | `09-selected-agent-annotated.png` |
 | 10 | Selected task card | `baseline/1440x900/10-selected-task-card.png` | `10-selected-task-card-annotated.png` |
+| 11 | Runtime failed | `baseline/1440x900/11-runtime-failed.png` | `11-runtime-failed-annotated.png` |
+| 12 | Artifact unavailable | `baseline/1440x900/12-artifact-unavailable.png` | `12-artifact-unavailable-annotated.png` |
+| 13 | Artifact failed open | `baseline/1440x900/13-artifact-failed-open.png` | `13-artifact-failed-open-annotated.png` |
+| 14 | Artifact unsupported open | `baseline/1440x900/14-artifact-unsupported-open.png` | `14-artifact-unsupported-open-annotated.png` |
 
 ### Visual upgrades verified
 
@@ -118,6 +122,28 @@ The regenerated evidence shows the following V1.1 improvements over the original
 
 The mock adapter cannot independently trigger a genuine runtime `failed` / runtime-error state. The V1.1 demo therefore honestly labels state 06 as **revision / rework required** (triggered by the "异常：返工" scenario) rather than as a true runtime failure. The canvas and panel still communicate rework through the reviewer posture, review-room props, and related task cues.
 
+## Issue #27 truthful-state pass
+
+Issue #27 Task 0 extended the mock adapter with scripted scenarios for runtime failure, runtime degradation, artifact unavailability, artifact failed-open, and artifact unsupported-open. Task 1 captured the states that can be truthfully produced and documented the ones that cannot.
+
+### Baselined states
+
+| # | State | How it is truthfully produced |
+|---|-------|------------------------------|
+| 11 | Runtime failed | `MockRuntimeAdapter.playRuntimeFailureFlow()` emits `ERROR_RAISED`, `TASK_FAILED`, and `AGENT_STATUS_CHANGED` with `failed` status. Status strip and agent/task cards render the failure. |
+| 12 | Artifact unavailable | `MockRuntimeAdapter.playArtifactUnavailableFlow()` creates an artifact with `uri: null`; `ControlPanel` renders `Content unavailable`. |
+| 13 | Artifact failed open | `MockRuntimeAdapter.playArtifactFailedOpenFlow()` marks the artifact as failed-open; clicking View produces the `failed-open` error and preview. |
+| 14 | Artifact unsupported open | `MockRuntimeAdapter.playArtifactUnsupportedOpenFlow()` creates a `legacy_binary` artifact in the execution room, whose Profile does not accept that type; clicking View produces an `unsupported-open` command rejection. `ControlPanel` renders the `failed-open` preview ('Open failed.') and the action-error banner with the profile-mismatch message. |
+
+State 14 has no demo button; the screenshot script drives it through the dev-only `window.__mockAdapter` hook added in `apps/demo-office/src/main.tsx`.
+
+### Skipped states
+
+| State | Reason |
+|-------|--------|
+| `metadata-only` artifact | `MockRuntimeAdapter` always creates artifacts with a URI or content reference; there is no truthful path to an artifact that has neither. |
+| `runtime-degraded` (persistent) | `playRuntimeDegradedFlow()` emits a recoverable stream error, but the degraded state is transient. A persistent degraded state requires protocol/session changes not implemented in Task 0. |
+
 ## Resolution pass
 
 A dedicated per-resolution pass was run on 2026-07-08 across `1366x768`, `1440x900`, and `1920x1080` using the updated `capture-demo-office-screenshots.mjs`. The script asserts that every PNG matches the target viewport width, matches the full-page height, and that `document.documentElement.scrollWidth <= clientWidth`.
@@ -133,7 +159,7 @@ Findings:
 - All three resolutions pass the dimension and overflow assertions.
 - Full-page screenshots scale correctly with the device pixel ratio.
 - The responsive panel shrink (`360px` / `380px` / `420px`) keeps the layout balanced.
-- Gaps not resolved by this pass: artifact truth states that the mock adapter cannot produce (`metadata-only`, `unavailable`, `unsupported-open`), and runtime `degraded` / `failed` states.
+- Gaps not resolved by this pass: `metadata-only` artifact (mock adapter always gives artifacts a URI/content reference) and persistent `runtime-degraded` (the stream error is recoverable and transient).
 
 ## Appendix: artifact inventory
 

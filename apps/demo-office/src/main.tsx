@@ -16,6 +16,13 @@ import "./theme.css";
 
 const LIFE_SIM_WORLD_ID = "default";
 
+declare global {
+  interface Window {
+    /** Dev-only hook so screenshot scripts can drive MockRuntimeAdapter flows that have no UI button. */
+    __mockAdapter?: MockRuntimeAdapter;
+  }
+}
+
 function renderStartupError(
   root: ReturnType<typeof createRoot>,
   err: unknown
@@ -60,6 +67,10 @@ function renderAppComposition(
   const gateway = composition.gateway;
   const mockAdapter = config.mode === "mock" ? (composition.adapter as MockRuntimeAdapter) : null;
   const adapterCapabilities = composition.adapter.getCapabilities();
+
+  if (mockAdapter) {
+    window.__mockAdapter = mockAdapter;
+  }
 
   root.render(
     <React.StrictMode>
