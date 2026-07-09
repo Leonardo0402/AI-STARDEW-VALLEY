@@ -318,6 +318,8 @@ If any Category 2 gap remains unresolved, the PR must use `Refs #15`, not `Close
 
 **Fix scope:** 1 new test file (`issue-15-closure-assertions.test.ts`), within the ≤3 test file limit. No implementation changes.
 
+**Fix status:** All 3 Category 1 gaps fixed in commit `0ae8760`. Tests pass (3 new tests + full LifeSim suite green).
+
 ### 3.2 Category 2 gaps (implementation — closure blockers, follow-up issue)
 
 | # | Criterion | Gap | Status |
