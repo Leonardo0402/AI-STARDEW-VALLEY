@@ -57,16 +57,17 @@ Category 1 gaps (documentation/test) are fixed in #31, limited to at most 3 new 
 
 | Source PR | Commit/File | Evidence |
 |---|---|---|
-| #17 | `packages/life-sim/src/__fixtures__/schedules.ts` | Defines schedules for 3 agents: `orchestrator-1`, `worker-1`, `reviewer-1` |
+| #17 | `packages/life-sim/src/__fixtures__/schedules.ts` | Defines schedules for 3 agents: `orchestrator-1`, `worker-1`, `reviewer-1` (Phase 1 fixture) |
 | #17 | `packages/life-sim/src/day1-golden-flow.test.ts` | Golden flow test: start_day → advance → task.assigned → advance → task.completed → run_to_end_of_day → end_day. Asserts 3 active activities. |
 | #19 | `docs/life-sim/examples/sample-day.md` | Worked example documenting 3 agents |
 | #17 | `packages/life-sim/src/engine-schedule.test.ts` | 13 schedule engine tests covering transitions, overlay precedence, active activity building |
+| #31 | `packages/life-sim/src/issue-15-closure-assertions.test.ts` | 4-agent deterministic Day 1 test covering all four existing Runtime agents (orchestrator-1, worker-1, worker-2, reviewer-1 — matching the 4 agents in `qclaw-runtime.ts`). Asserts 4 active activities and Day 1 completion. |
 
-**Verification:** Golden flow test passes. It covers a deterministic Day 1 cycle (start → advance → end). However, the fixture and golden flow only exercise 3 agents, not 4.
+**Verification:** The 4-agent test proves all four existing Agents (orchestrator, worker-1, worker-2, reviewer) can complete one deterministic virtual day. The schedule engine supports any number of agents (`baseSchedules` is a config array). The Phase 1 fixture covers 3 agents for its golden flow; the #31 closure test adds explicit 4-agent coverage.
 
-**Verification status:** `partial`.
+**Verification status:** `satisfied` (after Category 1 fix — 4-agent test added in #31).
 
-**Gap:** The fixture (`schedules.ts`) and golden flow test only cover 3 agents. If #15's "four agents" refers to the 4 agent types in the Runtime system (e.g., orchestrator, worker, reviewer, + 1 more), the fixture is incomplete. This is a Category 1 test/fixture gap if the schedule engine supports 4+ agents (which it does — `baseSchedules` is a config array). Classification depends on #15's intent — see Section 3.
+**Gap:** None.
 
 ### 2.4 Criterion 4 — Schedule transitions and task overrides are factual and replay-safe
 
@@ -315,18 +316,17 @@ If any Category 2 gap remains unresolved, the PR must use `Refs #15`, not `Close
 | 1 | 5 (Restart restores mid-day state) | `store.test.ts` only round-trips empty snapshot; no mid-day reload test covering populated tail, cursors, command results | Add mid-day reload test asserting snapshot + tail + cursors survive `FileLifeSimStore` reload | `packages/life-sim/src/issue-15-closure-assertions.test.ts` (new) |
 | 2 | 7 (Day 2 without losing Day 1 history) | `engine-world.test.ts` has Day 1→Day 2 transition test but does not assert `completedDaySummaries` / tail retention | Add Day 1→Day 2 retention assertion test | `packages/life-sim/src/issue-15-closure-assertions.test.ts` (new, same file) |
 | 3 | 8 (No truth fabricated by schedule engine) | No negative assertion test that schedule commands do not emit Runtime business-truth event types | Add negative assertion test against all 13 `EventType` constants | `packages/life-sim/src/issue-15-closure-assertions.test.ts` (new, same file) |
+| 4 | 3 (Four agents complete one deterministic virtual day) | Phase 1 fixture/golden flow only cover 3 agents; no test proves 4 agents complete a deterministic day | Add 4-agent deterministic Day 1 test (orchestrator-1, worker-1, worker-2, reviewer-1) | `packages/life-sim/src/issue-15-closure-assertions.test.ts` (new, same file) |
 
 **Fix scope:** 1 new test file (`issue-15-closure-assertions.test.ts`), within the ≤3 test file limit. No implementation changes.
 
-**Fix status:** All 3 Category 1 gaps fixed in commit `0ae8760`. Tests pass (3 new tests + full LifeSim suite green).
+**Fix status:** All 4 Category 1 gaps fixed. Criteria 5, 7, 8 fixed in commit `0ae8760`; Criterion 3 fixed in this commit. Tests pass (4 new tests + full LifeSim suite green).
 
 ### 3.2 Category 2 gaps (implementation — closure blockers, follow-up issue)
 
 | # | Criterion | Gap | Status |
 |---|---|---|---|
 | — | — | No Category 2 gaps found. All 10 criteria are satisfied by the implementation. | — |
-
-**Criterion 3 note:** The golden flow fixture covers 3 agents, not 4. The schedule engine supports any number of agents (`baseSchedules` is a config array). If #15's "four agents" is literal, this is a fixture/test gap (Category 1), but updating the fixture risks breaking the golden flow test's assertions. This is recorded as a deferred Category 1 gap — a follow-up issue should add a 4th agent to the fixture and update the golden flow test. It does not block closure because the engine itself supports 4+ agents.
 
 ## 4. Closure Decision
 
@@ -335,7 +335,7 @@ If any Category 2 gap remains unresolved, the PR must use `Refs #15`, not `Close
 **Rationale:**
 - Criterion 1: satisfied (PR #13 merged).
 - Criterion 2: satisfied (ADR-0006 Accepted, #16 merged before #17).
-- Criterion 3: satisfied (engine supports 4+ agents; golden flow covers 3 — deferred fixture gap, not a blocker).
+- Criterion 3: satisfied after Category 1 fix (4-agent deterministic Day 1 test added).
 - Criterion 4: satisfied (deterministic transitions + overrides from applied runtime events + snapshot-based persistence per ADR-0006).
 - Criterion 5: satisfied after Category 1 fix (mid-day reload test added in Task 5).
 - Criterion 6: satisfied (typed DaySummary, generated at day-end, persisted in snapshot).
@@ -344,7 +344,7 @@ If any Category 2 gap remains unresolved, the PR must use `Refs #15`, not `Close
 - Criterion 9: satisfied (RuntimeAdapter/Snapshot/DomainEvent untouched, build + tests pass).
 - Criterion 10: satisfied (all tests + build pass).
 - No Category 2 gaps.
-- All Category 1 gaps fixed in #31 (1 new test file, within ≤3 limit).
+- All Category 1 gaps fixed in #31 (1 new test file, 4 tests, within ≤3 limit).
 
 **PR body recommendation:** `Closes #31 / Closes #15`
 

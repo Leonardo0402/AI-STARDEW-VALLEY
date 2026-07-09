@@ -106,3 +106,40 @@ describe("Issue #15 closure: Criterion 7 — Day 1 history survives Day 2 start"
     expect(afterDay2Start.eventLogTail.length).toBeGreaterThanOrEqual(day1TailLength);
   });
 });
+
+describe("Issue #15 closure: Criterion 3 — four agents complete one deterministic virtual day", () => {
+  it("a 4-agent schedule produces 4 active activities and completes Day 1 deterministically", async () => {
+    const fourAgentConfig: LifeSimEngineConfig = {
+      worldId: "closure-audit",
+      startOfDayMinute: 480,
+      endOfDayMinute: 1110,
+      baseSchedules: [
+        { entryId: "four-orch-arrive", agentId: "orchestrator-1", startMinute: 480, endMinute: 510, activity: "arrive", roomId: "room-command", priority: 1, source: "base" },
+        { entryId: "four-orch-work", agentId: "orchestrator-1", startMinute: 510, endMinute: 1110, activity: "work", roomId: "room-command", priority: 1, source: "base" },
+        { entryId: "four-worker-1-arrive", agentId: "worker-1", startMinute: 480, endMinute: 510, activity: "arrive", roomId: "room-command", priority: 1, source: "base" },
+        { entryId: "four-worker-1-work", agentId: "worker-1", startMinute: 510, endMinute: 1110, activity: "work", roomId: "room-execution", priority: 1, source: "base" },
+        { entryId: "four-worker-2-arrive", agentId: "worker-2", startMinute: 480, endMinute: 510, activity: "arrive", roomId: "room-command", priority: 1, source: "base" },
+        { entryId: "four-worker-2-work", agentId: "worker-2", startMinute: 510, endMinute: 1110, activity: "work", roomId: "room-execution", priority: 1, source: "base" },
+        { entryId: "four-reviewer-arrive", agentId: "reviewer-1", startMinute: 480, endMinute: 510, activity: "arrive", roomId: "room-command", priority: 1, source: "base" },
+        { entryId: "four-reviewer-review", agentId: "reviewer-1", startMinute: 510, endMinute: 1110, activity: "review", roomId: "room-review", priority: 1, source: "base" },
+      ],
+    };
+
+    const engine = await createLifeSimEngine(fourAgentConfig, { store: new InMemoryLifeSimStore() });
+
+    await engine.execute(makeCommand("world.start_day", { day: 1 }));
+    await engine.execute(makeCommand("world.advance_time", { minutes: 60 }));
+
+    const midDay = engine.getSnapshot();
+    expect(midDay.snapshot.activeActivities).toHaveLength(4);
+    const activeAgentIds = new Set(midDay.snapshot.activeActivities.map((a) => a.agentId));
+    expect(activeAgentIds).toEqual(new Set(["orchestrator-1", "worker-1", "worker-2", "reviewer-1"]));
+
+    await engine.execute(makeCommand("world.run_to_end_of_day", {}));
+    await engine.execute(makeCommand("world.end_day", {}));
+
+    const afterDay = engine.getSnapshot();
+    expect(afterDay.snapshot.completedDaySummaries).toHaveLength(1);
+    expect(afterDay.snapshot.completedDaySummaries[0].day).toBe(1);
+  });
+});
