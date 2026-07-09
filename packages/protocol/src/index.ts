@@ -275,6 +275,27 @@ export interface ArtifactReviewedPayload {
   comment: string;
 }
 
+export interface ArtifactDraftedPayload {
+  artifactId: Id;
+  taskId: Id;
+  producerAgentId: Id | null;   // GitHub 无 office agent，用 null + evidence
+  type: string;                  // "github_pr"
+  title: string;
+  uri: string | null;            // PR url
+  version: number;
+}
+
+export interface ArtifactReviewRequestedPayload {
+  artifactId: Id;
+  reviewerIds: Id[];             // GitHub login 列表（external actor refs）
+}
+
+export interface ArtifactDeliveredPayload {
+  artifactId: Id;
+  mergeCommitSha: string | null;
+  mergedBy: Id;                   // GitHub login（external actor ref）
+}
+
 export interface ApprovalRequestedPayload {
   approvalId: Id;
   taskId: Id;
@@ -308,7 +329,10 @@ export const EventType = {
   TASK_COMPLETED: "task.completed",
   TASK_FAILED: "task.failed",
   ARTIFACT_CREATED: "artifact.created",
+  ARTIFACT_DRAFTED: "artifact.drafted",
+  ARTIFACT_REVIEW_REQUESTED: "artifact.review_requested",
   ARTIFACT_REVIEWED: "artifact.reviewed",
+  ARTIFACT_DELIVERED: "artifact.delivered",
   APPROVAL_REQUESTED: "approval.requested",
   APPROVAL_RESOLVED: "approval.resolved",
   ERROR_RAISED: "error.raised",

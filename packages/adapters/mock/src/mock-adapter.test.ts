@@ -73,7 +73,7 @@ describe("MockRuntimeAdapter", () => {
     expect(caps.features.snapshot).toBe(true);
     expect(caps.features.commandExecution).toBe(true);
     expect(caps.supportedCommands.length).toBe(7);
-    expect(caps.supportedEvents.length).toBe(13);
+    expect(caps.supportedEvents.length).toBe(16);
   });
 
   it("should handle task.create command", async () => {
