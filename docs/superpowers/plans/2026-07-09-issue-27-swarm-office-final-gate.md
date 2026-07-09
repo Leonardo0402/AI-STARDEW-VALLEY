@@ -102,10 +102,10 @@ Add screenshots and annotations for the truthful states produced in Task 0. Skip
 1. `scripts/capture-demo-office-screenshots.mjs`
    - Add capture steps for each new truthful scenario button added in Task 0.
    - Name new screenshots consistently:
-     - `11-runtime-failed`
+     - `11-domain-task-agent-failed`
      - `12-artifact-unavailable`
      - `13-artifact-failed-open`
-     - `14-artifact-unsupported-open` (if reachable)
+     - `14-artifact-open-rejected` (if reachable)
    - Keep the existing 01–10 states.
    - Keep dimension / overflow assertions for every captured state.
    - Update the `skippedStates` list at the bottom:

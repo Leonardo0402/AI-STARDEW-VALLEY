@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>14 — Artifact Unsupported Open</title>
+  <title>11 — Domain task / agent failed</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; background: #131014; color: #f2f0eb; font-family: Inter, system-ui, sans-serif; }
@@ -17,32 +17,32 @@
 </head>
 <body>
   <div class="header">
-    <h1>14 — Artifact Unsupported Open</h1>
+    <h1>11 — Domain task / agent failed</h1>
     <p>Baseline screenshot with current Issue #25 gaps annotated. Reference: docs/design/swarm-office-v1.1/gap-audit.md</p>
   </div>
   <div class="container">
     <div class="wrap" id="wrap">
-      <img src="../baseline/1440x900/14-artifact-unsupported-open.png" id="targetImg" />
+      <img src="../baseline/1440x900/11-domain-task-agent-failed.png" id="targetImg" />
       <svg id="overlay" style="position:absolute;top:0;left:0;pointer-events:none;" xmlns="http://www.w3.org/2000/svg">
         
-      <g transform="translate(1090, 640)">
+      <g transform="translate(360, 40)">
         <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
         <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">1</text>
       </g>
-      <line x1="1090" y1="640" x2="1120" y2="600" stroke="#e6a85c" stroke-width="2" />
-      <foreignObject x="1125" y="570" width="340" height="80">
+      <line x1="360" y1="40" x2="390" y2="0" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="395" y="-30" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">1.</strong> Artifact preview shows 'Open failed.' after the user clicks View.
+          <strong style="color:#e6a85c">1.</strong> Status strip truthfully shows failure styling, error code, and the failed agent reason produced by playRuntimeFailureFlow().
         </div>
       </foreignObject>
-      <g transform="translate(1090, 720)">
+      <g transform="translate(1090, 320)">
         <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
         <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">2</text>
       </g>
-      <line x1="1090" y1="720" x2="1120" y2="680" stroke="#e6a85c" stroke-width="2" />
-      <foreignObject x="1125" y="650" width="340" height="80">
+      <line x1="1090" y1="320" x2="1120" y2="280" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1125" y="250" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">2.</strong> Action error banner shows the unsupported-open error from the room Profile inputArtifactTypes mismatch.
+          <strong style="color:#e6a85c">2.</strong> Worker-2 agent card displays the failed badge with the critical error reason.
         </div>
       </foreignObject>
       <g transform="translate(1090, 560)">
@@ -52,17 +52,17 @@
       <line x1="1090" y1="560" x2="1120" y2="520" stroke="#e6a85c" stroke-width="2" />
       <foreignObject x="1125" y="490" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">3.</strong> View button stays enabled for retry; title reads 'Open failed — click to retry'.
+          <strong style="color:#e6a85c">3.</strong> Task card displays failed status; this is a genuine domain task/agent failure, not a session transport failure, not blocked or revision_required.
         </div>
       </foreignObject>
-      <g transform="translate(360, 120)">
+      <g transform="translate(560, 300)">
         <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
         <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">4</text>
       </g>
-      <line x1="360" y1="120" x2="390" y2="80" stroke="#e6a85c" stroke-width="2" />
-      <foreignObject x="395" y="50" width="340" height="80">
+      <line x1="560" y1="300" x2="590" y2="260" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="595" y="230" width="340" height="80">
         <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
-          <strong style="color:#e6a85c">4.</strong> No demo button exists for this flow; captured via dev-only window.__mockAdapter.playArtifactUnsupportedOpenFlow().
+          <strong style="color:#e6a85c">4.</strong> Canvas renders the failed agent marker/posture distinct from blocked.
         </div>
       </foreignObject>
       </svg>

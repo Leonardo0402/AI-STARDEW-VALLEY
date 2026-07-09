@@ -45,7 +45,7 @@ This audit therefore splits the evidence into two sections:
 - `revision_required`, `rejected`, `blocked`, and `failed` are now visually distinct on both canvas and panel (`revision_required` shows a rework cue, `rejected` uses a dedicated decision intent).
 - `ControlPanel` explicitly renders artifact content states: `content-available`, `metadata-only`, `unavailable`, `loading`, `failed-open`, and `unsupported-open`.
 - `artifactId` is never treated as a URI; missing content references render as metadata-only/unavailable rather than invented content.
-- Issue #27 Task 1 baselined the truthful artifact failure states: `unavailable` (12), `failed-open` (13), and `unsupported-open` (14). `metadata-only` remains unbaselined because the mock adapter always creates artifacts with a URI or content reference.
+- Issue #27 Task 1 baselined the truthful artifact failure states: `unavailable` (12), `failed-open` (13), and `open-rejected` (14). State 14 is renamed from `unsupported-open` to `open-rejected` to honestly reflect what the screenshot proves: the adapter supports `ARTIFACT_OPEN` but the command returns a profile-mismatch rejection, producing the `failed-open` visual. The `unsupported-open` state (adapter does not support `ARTIFACT_OPEN` at all) remains unbaselined because the mock adapter always supports it. `metadata-only` remains unbaselined because the mock adapter always creates artifacts with a URI or content reference.
 
 ### 3. Multi-resolution layout hardening
 
@@ -66,12 +66,12 @@ This audit therefore splits the evidence into two sections:
 ### 5. Runtime degraded / failed state capture
 
 - The mock adapter can produce `blocked` agents/tasks and `revision_required` artifacts through its scripted scenarios.
-- Issue #27 Task 0 added `playRuntimeFailureFlow()`, which truthfully produces `failed` agent/task states using existing `ERROR_RAISED`, `TASK_FAILED`, and `AGENT_STATUS_CHANGED` events; state `11-runtime-failed` is now baselined.
+- Issue #27 Task 0 added `playRuntimeFailureFlow()`, which truthfully produces `failed` agent/task states using existing `ERROR_RAISED`, `TASK_FAILED`, and `AGENT_STATUS_CHANGED` events; state `11-domain-task-agent-failed` is now baselined. This is a domain-level task/agent failure, not a session/transport failure — session transport failures are surfaced via StatusStrip's `failed`/`disconnected` states.
 - A persistent `runtime-degraded` / `session-degraded` state is still not truthfully reachable; `playRuntimeDegradedFlow()` emits a recoverable stream error but the degraded state is transient and would require protocol/session changes to persist.
 
 ## Accepted deviations
 
-The mock adapter used by `apps/demo-office` can now truthfully produce a runtime `failed` state via `playRuntimeFailureFlow()`, so state `11-runtime-failed` is baselined. It still cannot produce a persistent `runtime-degraded` state (the stream error is recoverable and transient) nor a `metadata-only` artifact (all created artifacts carry a URI or content reference). The V1.1 demo keeps state 05 as **blocked task / agent** and state 06 as **revision / rework required**, and only claims screenshots for states that the adapter can truthfully reach.
+The mock adapter used by `apps/demo-office` can now truthfully produce a domain task/agent `failed` state via `playRuntimeFailureFlow()`, so state `11-domain-task-agent-failed` is baselined. This is a domain-level failure (ERROR_RAISED + TASK_FAILED + AGENT_STATUS_CHANGED→failed), not a session/transport failure. It still cannot produce a persistent `runtime-degraded` state (the stream error is recoverable and transient) nor a `metadata-only` artifact (all created artifacts carry a URI or content reference). The V1.1 demo keeps state 05 as **blocked task / agent** and state 06 as **revision / rework required**, and only claims screenshots for states that the adapter can truthfully reach.
 
 ## Screenshot path canonicalization
 
@@ -101,10 +101,10 @@ This section records the visual QA evidence after PR #24 and Task 3. All ten bas
 | 08 | Debrief mode | `baseline/1440x900/08-debrief-mode.png` | `08-debrief-mode-annotated.png` |
 | 09 | Selected agent | `baseline/1440x900/09-selected-agent.png` | `09-selected-agent-annotated.png` |
 | 10 | Selected task card | `baseline/1440x900/10-selected-task-card.png` | `10-selected-task-card-annotated.png` |
-| 11 | Runtime failed | `baseline/1440x900/11-runtime-failed.png` | `11-runtime-failed-annotated.png` |
+| 11 | Domain task / agent failed | `baseline/1440x900/11-domain-task-agent-failed.png` | `11-domain-task-agent-failed-annotated.png` |
 | 12 | Artifact unavailable | `baseline/1440x900/12-artifact-unavailable.png` | `12-artifact-unavailable-annotated.png` |
 | 13 | Artifact failed open | `baseline/1440x900/13-artifact-failed-open.png` | `13-artifact-failed-open-annotated.png` |
-| 14 | Artifact unsupported open | `baseline/1440x900/14-artifact-unsupported-open.png` | `14-artifact-unsupported-open-annotated.png` |
+| 14 | Artifact open rejected | `baseline/1440x900/14-artifact-open-rejected.png` | `14-artifact-open-rejected-annotated.png` |
 
 ### Visual upgrades verified
 
@@ -124,16 +124,16 @@ The mock adapter cannot independently trigger a genuine runtime `failed` / runti
 
 ## Issue #27 truthful-state pass
 
-Issue #27 Task 0 extended the mock adapter with scripted scenarios for runtime failure, runtime degradation, artifact unavailability, artifact failed-open, and artifact unsupported-open. Task 1 captured the states that can be truthfully produced and documented the ones that cannot.
+Issue #27 Task 0 extended the mock adapter with scripted scenarios for runtime failure, runtime degradation, artifact unavailability, artifact failed-open, and artifact open-rejected. Task 1 captured the states that can be truthfully produced and documented the ones that cannot.
 
 ### Baselined states
 
 | # | State | How it is truthfully produced |
 |---|-------|------------------------------|
-| 11 | Runtime failed | `MockRuntimeAdapter.playRuntimeFailureFlow()` emits `ERROR_RAISED`, `TASK_FAILED`, and `AGENT_STATUS_CHANGED` with `failed` status. Status strip and agent/task cards render the failure. |
+| 11 | Domain task / agent failed | `MockRuntimeAdapter.playRuntimeFailureFlow()` emits `ERROR_RAISED`, `TASK_FAILED`, and `AGENT_STATUS_CHANGED` with `failed` status. This is a domain-level failure, not a session/transport failure. Status strip and agent/task cards render the failure. |
 | 12 | Artifact unavailable | `MockRuntimeAdapter.playArtifactUnavailableFlow()` creates an artifact with `uri: null`; `ControlPanel` renders `Content unavailable`. |
 | 13 | Artifact failed open | `MockRuntimeAdapter.playArtifactFailedOpenFlow()` marks the artifact as failed-open; clicking View produces the `failed-open` error and preview. |
-| 14 | Artifact unsupported open | `MockRuntimeAdapter.playArtifactUnsupportedOpenFlow()` creates a `legacy_binary` artifact in the execution room, whose Profile does not accept that type; clicking View produces an `unsupported-open` command rejection. `ControlPanel` renders the `failed-open` preview ('Open failed.') and the action-error banner with the profile-mismatch message. |
+| 14 | Artifact open rejected | `MockRuntimeAdapter.playArtifactUnsupportedOpenFlow()` creates a `legacy_binary` artifact in the execution room, whose Profile does not accept that type; clicking View produces a command rejection. `ControlPanel` renders the `failed-open` preview ('Open failed.') and the action-error banner with the profile-mismatch message. State renamed from `unsupported-open` to `open-rejected` to honestly reflect the `failed-open` visual. |
 
 State 14 has no demo button; the screenshot script drives it through the dev-only `window.__mockAdapter` hook added in `apps/demo-office/src/main.tsx`.
 

@@ -109,12 +109,12 @@ const annotations = [
     ],
   },
   {
-    name: "11-runtime-failed",
-    title: "11 — Runtime Failed",
+    name: "11-domain-task-agent-failed",
+    title: "11 — Domain task / agent failed",
     notes: [
       { x: 360, y: 40, label: "Status strip truthfully shows failure styling, error code, and the failed agent reason produced by playRuntimeFailureFlow()." },
       { x: 1090, y: 320, label: "Worker-2 agent card displays the failed badge with the critical error reason." },
-      { x: 1090, y: 560, label: "Task card displays failed status; this is a genuine runtime failure, not blocked or revision_required." },
+      { x: 1090, y: 560, label: "Task card displays failed status; this is a genuine domain task/agent failure, not a session transport failure, not blocked or revision_required." },
       { x: 560, y: 300, label: "Canvas renders the failed agent marker/posture distinct from blocked." },
     ],
   },
@@ -139,8 +139,8 @@ const annotations = [
     ],
   },
   {
-    name: "14-artifact-unsupported-open",
-    title: "14 — Artifact Unsupported Open",
+    name: "14-artifact-open-rejected",
+    title: "14 — Artifact open rejected",
     notes: [
       { x: 1090, y: 640, label: "Artifact preview shows 'Open failed.' after the user clicks View." },
       { x: 1090, y: 720, label: "Action error banner shows the unsupported-open error from the room Profile inputArtifactTypes mismatch." },

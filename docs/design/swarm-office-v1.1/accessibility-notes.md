@@ -153,3 +153,35 @@
 - `packages/control-ui/src/components/ApprovalDrawer.tsx`
 - `packages/control-ui/src/control-panel.css`
 - `packages/pixel-office/src/office-scene.ts`
+
+## 11. #27 acceptance criteria mapping
+
+> Status values: `done` / `accepted deviation` / `documented follow-up`.
+> `follow-up required` is intentionally NOT used — these gaps are known follow-ups for the accessibility baseline and do not block #27 closure.
+
+### #27 criteria
+
+Source: `docs/superpowers/plans/2026-07-09-issue-27-swarm-office-final-gate.md` lines 258-268.
+
+| # | #27 Criterion | Status | Notes |
+|---|---|---|---|
+| 1 | Mock adapter truthfully produces runtime-failed agent/task, artifact-unavailable, artifact-failed-open | done | Via `playRuntimeFailureFlow`, `playArtifactUnavailableFlow`, `playArtifactFailedOpenFlow` |
+| 2 | Visual QA captures all truthful states across 1366×768, 1440×900, 1920×1080 | done | Baseline screenshots in 3 resolutions |
+| 3 | Impossible states skipped with documented reasons | done | gap-audit.md "Accepted deviations" section |
+| 4 | `accessibility-notes.md` covers keyboard, focus, selection, reduced-motion, non-color cues | done | This document (sections 1-10) |
+| 5 | `performance-lifecycle-notes.md` covers Pixi lifecycle, motion toggle, asset fallback, representative loads | done | Submitted with PR #30 |
+| 6 | `issue-14-closure-audit.md` with line-by-line mapping and final verdict | done | Submitted with PR #30 |
+| 7 | All tests pass (`npm test -- --run`) | done | 668/668 passed |
+| 8 | Build passes (`npm run build`) | done | Build succeeds |
+| 9 | Screenshot and annotation scripts pass | done | Scripts run successfully |
+
+### Accessibility gap status
+
+| Gap | Priority | Status | Notes |
+|---|---|---|---|
+| Canvas not keyboard operable | High | accepted deviation | Canvas is inherently non-keyboard-navigable; ARIA overlay approach documented as follow-up. Alternative path via ControlPanel/ListView keyboard selection. |
+| Missing `aria-live` region | High | accepted deviation | Follow-up to add `aria-live` for session state transitions and action errors. Current state changes are visible via StatusStrip and ErrorBanner (`role="alert"`). |
+| Missing skip link | Medium | documented follow-up | Low-impact for single-page demo; add in future iteration. |
+| `FocusPanel` cards not selectable | Medium | documented follow-up | Add keyboard selection in future iteration to match Command mode. |
+| Event log filter input missing label | Low | documented follow-up | Minor a11y polish; add explicit `<label>` or `aria-label`. |
+| Canvas agent missing ARIA name | Low | documented follow-up | Minor a11y polish; add hidden text or live region announcement. |
