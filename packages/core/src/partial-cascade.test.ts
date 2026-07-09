@@ -189,11 +189,11 @@ describe("partial-cascade: transactional commit prevents partial mutations (Task
     it("should not commit partial domain mutations", () => {
       const CP_SEQ = 100;
       const store = new SnapshotStore(RUNTIME_ID);
-      // checkpoint: task t-1 in "created" + artifact a-1 linked to t-1 in "generated"
-      // state-machine.ts: created: ["queued", "assigned", "cancelled"] — 不能 → revision_required
+      // checkpoint: task t-1 in "queued" + artifact a-1 linked to t-1 in "generated"
+      // state-machine.ts: queued: ["assigned", "cancelled"] — 不能 → revision_required
       // generated: ["under_review", "approved", "revision_required", "rejected"] — artifact 转换合法
       const cp = makeCheckpoint(CP_SEQ, {
-        tasks: [makeTask({ taskId: "t-1", status: "created" })],
+        tasks: [makeTask({ taskId: "t-1", status: "queued" })],
         artifacts: [
           makeArtifact({ artifactId: "a-1", taskId: "t-1", status: "generated" }),
         ],
@@ -216,11 +216,11 @@ describe("partial-cascade: transactional commit prevents partial mutations (Task
       expect(result.reducerErrors![0].code).toBe("invalid_transition");
       expect(result.reducerErrors![0].entityPath).toBe("tasks:t-1");
 
-      // 2. 无 partial mutation：artifact.status 仍为 generated，reviewResult 仍为 null，task.status 仍为 created
+      // 2. 无 partial mutation：artifact.status 仍为 generated，reviewResult 仍为 null，task.status 仍为 queued
       const snap = store.getSnapshot();
       expect(snap.artifacts[0].status).toBe("generated");
       expect(snap.artifacts[0].reviewResult).toBeNull();
-      expect(snap.tasks[0].status).toBe("created");
+      expect(snap.tasks[0].status).toBe("queued");
 
       // 3. transport 已接受：sequence / log 推进
       expect(store.getLastSequence()).toBe(evt.sequence);
@@ -232,7 +232,7 @@ describe("partial-cascade: transactional commit prevents partial mutations (Task
       const replayed = store.getSnapshot();
       expect(replayed.artifacts[0].status).toBe("generated");
       expect(replayed.artifacts[0].reviewResult).toBeNull();
-      expect(replayed.tasks[0].status).toBe("created");
+      expect(replayed.tasks[0].status).toBe("queued");
     });
   });
 
