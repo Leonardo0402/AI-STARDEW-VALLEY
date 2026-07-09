@@ -113,9 +113,9 @@ Category 1 gaps (documentation/test) are fixed in #31, limited to at most 3 new 
 - `nextLifeSimSequence` is correctly derived from `checkpointLifeSimSequence` + tail max on load. ✅
 - The existing `store.test.ts` only round-trips an empty snapshot. It does NOT prove that a **mid-day** snapshot (populated `activeActivities`, `activeOverlays`, `eventLogTail`, `commandResults`, `lastObservedRuntimeSequence`, `lastAppliedRuntimeSequence`, `checkpointLifeSimSequence > 0`) survives reload.
 
-**Verification status:** `partial` (Category 1 test gap).
+**Verification status:** `satisfied` (after Category 1 fix — mid-day reload test added in #31).
 
-**Gap:** Missing mid-day reload test. The implementation supports it (all fields are in `StoredWorld`), but no test proves it. → Category 1, fixed in #31 (Task 5 adds the test).
+**Gap:** None.
 
 ### 2.6 Criterion 6 — End-of-day summary is structured and persisted
 
@@ -163,9 +163,9 @@ Category 1 gaps (documentation/test) are fixed in #31, limited to at most 3 new 
 
 "History" is split into three classes: (1) Day 1 summary — retained by implementation, untested; (2) Day 1 LifeSim events / event tail — retained by implementation, untested; (3) Day 1 scheduled activity facts (agent activity records within the schedule domain — NOT agent memory/relationship/skill state, which belongs to Runtime truth) — retained via `completedDaySummaries.agentActivities`, untested.
 
-**Verification status:** `partial` (Category 1 test gap).
+**Verification status:** `satisfied` (after Category 1 fix — Day 1→Day 2 retention test added in #31).
 
-**Gap:** Missing Day 1→Day 2 history retention assertion. Implementation retains history (does not clear arrays on `start_day`), but no test proves it. → Category 1, fixed in #31 (Task 5 adds the test).
+**Gap:** None.
 
 ### 2.8 Criterion 8 — No task/artifact/approval truth fabricated by schedule engine
 
@@ -191,9 +191,9 @@ Category 1 gaps (documentation/test) are fixed in #31, limited to at most 3 new 
 
 Note: `agent.location_changed` is a LifeSim display event emitted by `schedule.ts`, NOT a Runtime `agent.status_changed` event. The negative assertion test must NOT flag `agent.location_changed` as a violation — it is not in the `EventType` constants.
 
-**Verification status:** `partial` (Category 1 test gap — implementation is correct, test is missing).
+**Verification status:** `satisfied` (after Category 1 fix — negative assertion test added in #31).
 
-**Gap:** Missing negative assertion test. → Category 1, fixed in #31 (Task 5 adds the test).
+**Gap:** None.
 
 ### 2.9 Criterion 9 — Existing RuntimeAdapter and UI modes remain compatible
 
