@@ -140,7 +140,7 @@ const annotations = [
   },
   {
     name: "14-artifact-open-rejected",
-    title: "14 — Artifact Unsupported Open",
+    title: "14 — Artifact open rejected",
     notes: [
       { x: 1090, y: 640, label: "Artifact preview shows 'Open failed.' after the user clicks View." },
       { x: 1090, y: 720, label: "Action error banner shows the unsupported-open error from the room Profile inputArtifactTypes mismatch." },
