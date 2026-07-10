@@ -43,3 +43,102 @@ describe("GitHubApiClient rawGet (via fetchIssues stub)", () => {
     expect(receivedAuth).toBe(null);
   });
 });
+
+describe("GitHubApiClient.fetchIssues", () => {
+  it("fetches issues with pagination, comments, and maps to fixture type", async () => {
+    // Page 1: 2 issues (one is a PR to be filtered), Link header to page 2
+    // Page 2: 1 real issue
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", ({ request }) => {
+        const page = new URL(request.url).searchParams.get("page") ?? "1";
+        if (page === "1") {
+          return HttpResponse.json(
+            [
+              {
+                number: 10,
+                html_url: "https://github.com/owner/repo/issues/10",
+                title: "Implement login",
+                body: "Need login page",
+                state: "open",
+                state_reason: null,
+                labels: [{ name: "priority:high" }],
+                assignees: [{ login: "octocat", url: "https://github.com/octocat" }],
+                created_at: "2026-01-02T08:00:00Z",
+                closed_at: null,
+              },
+              {
+                number: 20,
+                html_url: "https://github.com/owner/repo/pull/20",
+                title: "Add login component",
+                body: "Implements login",
+                state: "open",
+                state_reason: null,
+                labels: [],
+                assignees: [],
+                created_at: "2026-01-09T08:00:00Z",
+                closed_at: null,
+                pull_request: { url: "https://api.github.com/repos/owner/repo/pulls/20" },
+              },
+            ],
+            {
+              headers: {
+                link: '<https://api.github.com/repos/owner/repo/issues?state=all&per_page=100&page=2>; rel="next"',
+              },
+            },
+          );
+        }
+        return HttpResponse.json([
+          {
+            number: 11,
+            html_url: "https://github.com/owner/repo/issues/11",
+            title: "Closed issue",
+            body: "Done",
+            state: "closed",
+            state_reason: "completed",
+            labels: [],
+            assignees: [],
+            created_at: "2026-01-05T08:00:00Z",
+            closed_at: "2026-01-06T10:00:00Z",
+          },
+        ]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/issues/10/comments", () => {
+        return HttpResponse.json([
+          {
+            user: { login: "dev1", url: "https://github.com/dev1" },
+            body: "Started",
+            created_at: "2026-01-03T09:00:00Z",
+          },
+        ]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/issues/11/comments", () => {
+        return HttpResponse.json([]);
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const issues = await client.fetchIssues("owner", "repo");
+
+    // PR (#20) filtered out, only issues #10 and #11
+    expect(issues).toHaveLength(2);
+    expect(issues.map((i) => i.number)).toEqual([10, 11]);
+
+    // JSON → fixture mapping
+    expect(issues[0].url).toBe("https://github.com/owner/repo/issues/10");
+    expect(issues[0].title).toBe("Implement login");
+    expect(issues[0].state).toBe("open");
+    expect(issues[0].labels[0].name).toBe("priority:high");
+    expect(issues[0].assignees[0].login).toBe("octocat");
+    expect(issues[0].createdAt).toBe("2026-01-02T08:00:00Z");
+
+    // N+1 comments fetched
+    expect(issues[0].comments).toHaveLength(1);
+    expect(issues[0].comments[0].author.login).toBe("dev1");
+    expect(issues[0].comments[0].body).toBe("Started");
+    expect(issues[0].comments[0].createdAt).toBe("2026-01-03T09:00:00Z");
+
+    // stateReason preserved
+    expect(issues[1].stateReason).toBe("completed");
+    expect(issues[1].closedAt).toBe("2026-01-06T10:00:00Z");
+  });
+});
