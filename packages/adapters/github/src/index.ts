@@ -27,3 +27,5 @@ export {
 } from "./fixtures/index.js";
 export { GitHubApiClient, GitHubApiError } from "./github-api-client.js";
 export type { GitHubApiClientOptions } from "./github-api-client.js";
+export { GitHubSyncScheduler } from "./github-sync-scheduler.js";
+export type { GitHubSyncSchedulerOptions, GitHubSyncSchedulerCallbacks } from "./github-sync-scheduler.js";
