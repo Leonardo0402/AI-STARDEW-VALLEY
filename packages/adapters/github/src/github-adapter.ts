@@ -521,12 +521,58 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
 
   // ─── 内部：Delta 发射（Task 5 实现） ─────────────────────
 
-  private emitIssueDelta(_oldRef: GitHubSourceRef, _newFixture: GitHubIssueFixture): void {
-    throw new Error("emitIssueDelta not implemented yet — Task 5");
+  private emitIssueDelta(oldRef: GitHubSourceRef, newFixture: GitHubIssueFixture): void {
+    const taskId: Id = `gh-issue-${newFixture.number}`;
+
+    // Update evidence
+    this.evidence.tasks[taskId] = this.buildIssueEvidence(newFixture);
+
+    // State transition: open → closed
+    if (oldRef.rawState === "open" && newFixture.state === "closed") {
+      this.emit(EventType.TASK_COMPLETED, {
+        taskId,
+      }, "issue", newFixture.number, newFixture.closedAt ?? newFixture.createdAt);
+    }
+    // closed → reopened: no event (v0 limitation — no TASK_REOPENED EventType)
+    // unchanged: no event
   }
 
-  private emitPRDelta(_oldRef: GitHubSourceRef, _newFixture: GitHubPRFixture): void {
-    throw new Error("emitPRDelta not implemented yet — Task 5");
+  private emitPRDelta(oldRef: GitHubSourceRef, newFixture: GitHubPRFixture): void {
+    const taskId: Id = `gh-pr-task-${newFixture.number}`;
+    const artifactId: Id = `gh-pr-${newFixture.number}`;
+
+    // Update evidence
+    this.evidence.tasks[taskId] = this.buildPREvidence(newFixture);
+    this.evidence.artifacts[artifactId] = this.buildPREvidence(newFixture);
+
+    const oldWasOpen = oldRef.rawState === "open";
+    const newIsMerged = newFixture.merged;
+    const newIsClosedUnmerged = newFixture.state === "closed" && !newFixture.merged;
+
+    if (oldWasOpen && newIsMerged) {
+      // open → merged
+      this.emit(EventType.ARTIFACT_DELIVERED, {
+        artifactId,
+        mergeCommitSha: newFixture.mergeCommitSha,
+        mergedBy: newFixture.mergedBy?.login ?? "unknown",
+      }, "pr", newFixture.number, newFixture.mergedAt ?? newFixture.closedAt ?? newFixture.createdAt);
+
+      this.emit(EventType.TASK_COMPLETED, {
+        taskId,
+      }, "pr", newFixture.number, newFixture.mergedAt ?? newFixture.closedAt ?? newFixture.createdAt);
+    } else if (oldWasOpen && newIsClosedUnmerged) {
+      // open → closed-unmerged
+      this.emit(EventType.ARTIFACT_CLOSED, {
+        artifactId,
+        closedBy: null,
+        reason: "closed-unmerged",
+      }, "pr", newFixture.number, newFixture.closedAt ?? newFixture.createdAt);
+
+      this.emit(EventType.TASK_COMPLETED, {
+        taskId,
+      }, "pr", newFixture.number, newFixture.closedAt ?? newFixture.createdAt);
+    }
+    // unchanged: no event
   }
 
   // ─── 内部：事件发射 ────────────────────────────────────────
