@@ -22,6 +22,10 @@ import type {
   TaskCompletedPayload,
   TaskFailedPayload,
   ArtifactCreatedPayload,
+  ArtifactDraftedPayload,
+  ArtifactReviewRequestedPayload,
+  ArtifactDeliveredPayload,
+  ArtifactClosedPayload,
   ArtifactReviewedPayload,
   ApprovalRequestedPayload,
   ApprovalResolvedPayload,
@@ -344,6 +348,121 @@ export function reduceEvent(
       if (task && !task.artifactIds.includes(p.artifactId)) {
         task.artifactIds.push(p.artifactId);
       }
+      break;
+    }
+
+    case EventType.ARTIFACT_DRAFTED: {
+      const p = event.payload as ArtifactDraftedPayload;
+      const existing = s.artifacts.find((a) => a.artifactId === p.artifactId);
+      if (existing) {
+        errors.push({
+          code: "constraint_violation",
+          message: `Artifact ${p.artifactId} already exists`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      const artifact: ArtifactSnapshot = {
+        artifactId: p.artifactId,
+        runtimeId: s.runtimeId,
+        taskId: p.taskId,
+        producerAgentId: p.producerAgentId ?? "",
+        type: p.type,
+        title: p.title,
+        status: "draft",
+        uri: p.uri,
+        version: p.version,
+        createdAt: event.occurredAt,
+        reviewResult: null,
+      };
+      s.artifacts.push(artifact);
+      const task = s.tasks.find((t) => t.taskId === p.taskId);
+      if (task && !task.artifactIds.includes(p.artifactId)) {
+        task.artifactIds.push(p.artifactId);
+      }
+      break;
+    }
+
+    case EventType.ARTIFACT_REVIEW_REQUESTED: {
+      const p = event.payload as ArtifactReviewRequestedPayload;
+      const artifact = s.artifacts.find((a) => a.artifactId === p.artifactId);
+      if (!artifact) {
+        errors.push({
+          code: "entity_not_found",
+          message: `Artifact ${p.artifactId} not found for review request`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      if (!isValidArtifactTransition(artifact.status, "under_review")) {
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid artifact transition: ${artifact.status} → under_review for ${p.artifactId}`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      artifact.status = "under_review";
+      break;
+    }
+
+    case EventType.ARTIFACT_DELIVERED: {
+      const p = event.payload as ArtifactDeliveredPayload;
+      const artifact = s.artifacts.find((a) => a.artifactId === p.artifactId);
+      if (!artifact) {
+        errors.push({
+          code: "entity_not_found",
+          message: `Artifact ${p.artifactId} not found for delivery`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      if (!isValidArtifactTransition(artifact.status, "delivered")) {
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid artifact transition: ${artifact.status} → delivered for ${p.artifactId}`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      artifact.status = "delivered";
+      // 关联 task 若存在且可转换则置 completed
+      const task = s.tasks.find((t) => t.taskId === artifact.taskId);
+      if (task) {
+        if (isValidTaskTransition(task.status, "completed")) {
+          task.status = "completed";
+          task.completedAt = event.occurredAt;
+        } else {
+          errors.push({
+            code: "invalid_transition",
+            message: `Invalid task transition: ${task.status} → completed for ${task.taskId} (artifact ${p.artifactId} delivered but task state unchanged)`,
+            entityPath: `tasks:${task.taskId}`,
+          });
+        }
+      }
+      break;
+    }
+
+    case EventType.ARTIFACT_CLOSED: {
+      const p = event.payload as ArtifactClosedPayload;
+      const artifact = s.artifacts.find((a) => a.artifactId === p.artifactId);
+      if (!artifact) {
+        errors.push({
+          code: "entity_not_found",
+          message: `Artifact ${p.artifactId} not found for closure`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      if (!isValidArtifactTransition(artifact.status, "rejected")) {
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid artifact transition: ${artifact.status} → rejected for ${p.artifactId}`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      artifact.status = "rejected";
       break;
     }
 

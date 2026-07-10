@@ -183,9 +183,9 @@ describe("Reducer", () => {
       taskId: "t1", title: "Test", description: "",
       priority: "normal" as const, parentTaskId: null,
     })).snapshot;
-    // try to complete a "created" task (invalid)
-    const result = reduceEvent(snap, makeEvent(2, EventType.TASK_COMPLETED, {
-      taskId: "t1",
+    // try to start a "created" task (invalid — must be assigned first)
+    const result = reduceEvent(snap, makeEvent(2, EventType.TASK_STARTED, {
+      taskId: "t1", agentId: "a1",
     }));
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.snapshot.tasks[0].status).toBe("created"); // unchanged
@@ -739,9 +739,9 @@ describe("Checkpoint-aware SnapshotStore", () => {
       taskId: "t1", title: "T", description: "",
       priority: "normal" as const, parentTaskId: null,
     }));
-    // 尝试非法转换：created → completed（无效）
-    const rejected = store.applyEvent(makeEvent(2, EventType.TASK_COMPLETED, {
-      taskId: "t1",
+    // 尝试非法转换：created → running（无效）
+    const rejected = store.applyEvent(makeEvent(2, EventType.TASK_STARTED, {
+      taskId: "t1", agentId: "a1",
     }));
     expect(rejected.applied).toBe(false);
     expect(rejected.code).toBe("reducer_rejected");

@@ -22,7 +22,7 @@ const agentTransitions: Record<AgentStatus, AgentStatus[]> = {
 };
 
 const taskTransitions: Record<TaskStatus, TaskStatus[]> = {
-  created: ["queued", "assigned", "cancelled"],
+  created: ["queued", "assigned", "cancelled", "completed", "blocked", "revision_required"],
   queued: ["assigned", "cancelled"],
   assigned: ["planning", "running", "cancelled"],
   planning: ["running", "blocked", "cancelled"],
@@ -37,12 +37,12 @@ const taskTransitions: Record<TaskStatus, TaskStatus[]> = {
 };
 
 const artifactTransitions: Record<ArtifactStatus, ArtifactStatus[]> = {
-  draft: ["generated"],
-  generated: ["under_review", "approved", "revision_required", "rejected"],
-  under_review: ["approved", "revision_required", "rejected"],
-  revision_required: ["generated"],
+  draft: ["generated", "under_review"],
+  generated: ["under_review", "approved", "revision_required", "rejected", "delivered"],
+  under_review: ["approved", "revision_required", "rejected", "delivered"],
+  revision_required: ["generated", "under_review"],
   approved: ["delivered"],
-  rejected: [],
+  rejected: ["under_review"],
   delivered: [],
 };
 
