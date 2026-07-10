@@ -39,6 +39,7 @@ export interface GitHubIssueFixture {
   labels: GitHubLabel[];
   assignees: GitHubUser[];
   createdAt: string;
+  updatedAt?: string;
   closedAt: string | null;
   comments: GitHubComment[];
 }
@@ -61,6 +62,7 @@ export interface GitHubPRFixture {
   reviews: GitHubReview[];
   comments: GitHubComment[];
   createdAt: string;
+  updatedAt?: string;
   closedAt: string | null;
 }
 

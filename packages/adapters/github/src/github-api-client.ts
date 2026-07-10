@@ -221,6 +221,7 @@ export class GitHubApiClient {
       labels: (j.labels ?? []).map((l) => ({ name: l.name, color: l.color })),
       assignees: (j.assignees ?? []).map((a) => ({ login: a.login, url: a.url })),
       createdAt: j.created_at,
+      updatedAt: j.updated_at,
       closedAt: j.closed_at,
       comments: [],
     };
@@ -245,6 +246,7 @@ export class GitHubApiClient {
       reviews: [],
       comments: [],
       createdAt: j.created_at,
+      updatedAt: j.updated_at,
       closedAt: j.closed_at,
     };
   }
@@ -284,6 +286,7 @@ interface RawIssue {
   labels?: RawLabel[];
   assignees?: RawUser[];
   created_at: string;
+  updated_at: string;
   closed_at: string | null;
   pull_request?: unknown;
 }
@@ -304,5 +307,6 @@ interface RawPR {
   labels?: RawLabel[];
   requested_reviewers?: RawUser[];
   created_at: string;
+  updated_at: string;
   closed_at: string | null;
 }
