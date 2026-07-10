@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
 import { GitHubApiClient, GitHubApiError } from "./github-api-client.js";
@@ -210,5 +210,64 @@ describe("GitHubApiClient.fetchPRs", () => {
     expect(pr.reviews[0].state).toBe("APPROVED");
     expect(pr.reviews[0].body).toBe("Looks good");
     expect(pr.reviews[0].submittedAt).toBe("2026-01-14T10:00:00Z");
+  });
+});
+
+describe("GitHubApiClient rate limit handling", () => {
+  it("waits when X-RateLimit-Remaining is 0 and reset is within 60s", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const resetSec = now + 2; // 2 seconds in the future
+    let callCount = 0;
+
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", ({ request }) => {
+        callCount++;
+        const remaining = callCount === 1 ? "0" : "100";
+        return HttpResponse.json([], {
+          headers: {
+            "x-ratelimit-remaining": remaining,
+            "x-ratelimit-reset": String(resetSec),
+            link: "",
+          },
+        });
+      }),
+      http.get("https://api.github.com/repos/owner/repo/issues/*/comments", () => {
+        return HttpResponse.json([]);
+      }),
+    );
+
+    const sleepSpy = vi.spyOn(global, "setTimeout");
+    const client = new GitHubApiClient({ token: "" });
+    await client.fetchIssues("owner", "repo");
+
+    // waitForRateLimit should have been called (setTimeout with positive delay).
+    // setTimeout signature is (callback, delay) — extract delay at index 1.
+    // rawGet's AbortController timeout (30000ms) is also captured; filter for the rate-limit wait.
+    const delays = sleepSpy.mock.calls.map((c) => c[1] as number).filter((d) => d > 0);
+    expect(delays.length).toBeGreaterThan(0);
+    const rateLimitDelays = delays.filter((d) => d <= 3000);
+    expect(rateLimitDelays.length).toBeGreaterThan(0);
+    expect(rateLimitDelays[0]).toBeLessThanOrEqual(3000);
+  });
+
+  it("throws GitHubApiError when reset is more than 60s away", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const resetSec = now + 120; // 120 seconds in the future
+
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json([], {
+          headers: {
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": String(resetSec),
+            link: "",
+          },
+        });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    await expect(client.fetchIssues("owner", "repo")).rejects.toThrow(GitHubApiError);
+    await expect(client.fetchIssues("owner", "repo")).rejects.toThrow(/rate limit/i);
   });
 });

@@ -130,6 +130,7 @@ export class GitHubApiClient {
           reset !== null ? parseInt(reset, 10) : undefined,
         );
       }
+      await this.waitForRateLimit(resp.headers);
       return { body, headers: resp.headers, status: resp.status };
     } catch (err) {
       if (err instanceof GitHubApiError) throw err;
@@ -152,6 +153,32 @@ export class GitHubApiClient {
     if (!link) return {};
     const nextMatch = link.match(/<([^>]+)>;\s*rel="next"/);
     return nextMatch ? { next: nextMatch[1] } : {};
+  }
+
+  private async waitForRateLimit(headers: Headers): Promise<void> {
+    const remaining = headers.get("x-ratelimit-remaining");
+    if (remaining === null) return;
+    const remainingNum = parseInt(remaining, 10);
+    if (remainingNum > 0) return;
+
+    const reset = headers.get("x-ratelimit-reset");
+    if (reset === null) return;
+    const resetSec = parseInt(reset, 10);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const waitSec = resetSec - nowSec;
+
+    if (waitSec > 60) {
+      throw new GitHubApiError(
+        `Rate limit exhausted; reset in ${waitSec}s (exceeds 60s threshold)`,
+        403,
+        0,
+        resetSec,
+      );
+    }
+
+    if (waitSec > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, waitSec * 1000));
+    }
   }
 
   private async paginate<T>(url: string): Promise<T[]> {
