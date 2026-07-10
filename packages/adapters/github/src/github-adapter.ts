@@ -35,6 +35,7 @@ import type {
   GitHubAdapterEvidence,
   GitHubLabel,
 } from "./types.js";
+import type { GitHubApiClient } from "./github-api-client.js";
 
 const DEFAULT_RUNTIME_ID = "github-runtime-001";
 const DEFAULT_BASE_TIMESTAMP = "2026-01-01T00:00:00Z";
@@ -194,6 +195,19 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     for (const pr of sortedPRs) {
       this.processPR(pr);
     }
+  }
+
+  /**
+   * 从真实 GitHub API 拉取并投影。
+   * 委托给 GitHubApiClient 获取 fixtures，再调用 syncFromFixtures。
+   * adapter 不持有 client，不读环境变量。
+   */
+  async syncFromApi(client: GitHubApiClient, owner: string, repo: string): Promise<void> {
+    const [issues, pulls] = await Promise.all([
+      client.fetchIssues(owner, repo),
+      client.fetchPRs(owner, repo),
+    ]);
+    this.syncFromFixtures({ repo: { owner, name: repo }, issues, pulls });
   }
 
   getGitHubEvidence(): GitHubAdapterEvidence {

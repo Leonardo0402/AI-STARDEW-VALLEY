@@ -25,3 +25,5 @@ export {
   PR_MERGED,
   PR_CLOSED_UNMERGED,
 } from "./fixtures/index.js";
+export { GitHubApiClient, GitHubApiError } from "./github-api-client.js";
+export type { GitHubApiClientOptions } from "./github-api-client.js";

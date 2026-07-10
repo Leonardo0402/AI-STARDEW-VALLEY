@@ -8,7 +8,10 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "@agent-office/protocol": "1.0.0",
-    "@agent-office/core": "1.0.0"
+    "@agent-office/core": "1.0.0",
+    "@agent-office/protocol": "1.0.0"
+  },
+  "devDependencies": {
+    "msw": "^2.15.0"
   }
 }

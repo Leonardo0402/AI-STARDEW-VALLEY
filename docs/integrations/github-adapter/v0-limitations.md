@@ -91,3 +91,13 @@ reducer 将 artifact 状态置为 `rejected`。这与"有 review 但被 rejected
 ## Projection 完整性
 
 `GitHubRuntimeAdapter.getSnapshot()` 在 replay 期间收集所有 reducer errors，通过 `getLastReplayErrors()` 暴露。所有 fixture replay 测试必须断言 `adapter.getLastReplayErrors()` 返回空数组，确保 projection 无非法状态转换被静默吞掉。
+
+## API 模式限制（Phase 2.2）
+
+API 模式（`syncFromApi`）仍受 v0 只读约束：
+- `execute()` 对所有命令返回 `rejected`（与 fixture 模式一致）
+- 不实现 merge / close / approve 等写操作
+- rate limit 耗尽且 reset 超过 60 秒时抛 `GitHubApiError`（不无限等待）
+- HTTP 5xx 错误直接抛错（v0 不重试）
+- N+1 拉取：每个 issue 拉 comments，每个 PR 拉 reviews + comments（5000 req/hour 足够中小 repo）
+- 不支持 webhook 事件流或 SSE 实时推送（留给 Phase 2.3）
