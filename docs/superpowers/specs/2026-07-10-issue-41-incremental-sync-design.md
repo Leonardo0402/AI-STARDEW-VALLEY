@@ -167,7 +167,7 @@ export interface GitHubSyncSchedulerOptions {
 }
 
 export interface GitHubSyncSchedulerCallbacks {
-  onSyncSuccess?(timestamp: string, eventsEmitted: number): void;
+  onSyncSuccess?(timestamp: string): void;
   onSyncFailure?(error: Error, willResync: boolean): void;
   onResync?(): void;
 }
@@ -202,10 +202,8 @@ if (lastSyncFailed):
   callbacks.onResync?()
 else:
   try:
-    eventsBefore = adapter.getEventLog().length
     await adapter.syncIncremental(client, owner, repo)
-    eventsAfter = adapter.getEventLog().length
-    callbacks.onSyncSuccess?(adapter.getCursor(), eventsAfter - eventsBefore)
+    callbacks.onSyncSuccess?(adapter.getCursor())
   catch (err):
     lastSyncFailed = true
     callbacks.onSyncFailure?(err, true)  // willResync = true
