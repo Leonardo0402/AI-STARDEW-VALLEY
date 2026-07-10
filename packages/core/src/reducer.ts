@@ -25,6 +25,7 @@ import type {
   ArtifactDraftedPayload,
   ArtifactReviewRequestedPayload,
   ArtifactDeliveredPayload,
+  ArtifactClosedPayload,
   ArtifactReviewedPayload,
   ApprovalRequestedPayload,
   ApprovalResolvedPayload,
@@ -439,6 +440,29 @@ export function reduceEvent(
           });
         }
       }
+      break;
+    }
+
+    case EventType.ARTIFACT_CLOSED: {
+      const p = event.payload as ArtifactClosedPayload;
+      const artifact = s.artifacts.find((a) => a.artifactId === p.artifactId);
+      if (!artifact) {
+        errors.push({
+          code: "entity_not_found",
+          message: `Artifact ${p.artifactId} not found for closure`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      if (!isValidArtifactTransition(artifact.status, "rejected")) {
+        errors.push({
+          code: "invalid_transition",
+          message: `Invalid artifact transition: ${artifact.status} → rejected for ${p.artifactId}`,
+          entityPath: `artifacts:${p.artifactId}`,
+        });
+        break;
+      }
+      artifact.status = "rejected";
       break;
     }
 

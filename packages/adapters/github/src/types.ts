@@ -81,6 +81,8 @@ export interface GitHubSourceRef {
   number: number;
   url: string;
   rawState: string;
+  stateReason?: string;
+  closedAt?: string | null;
   labels: string[];
   assignees: string[];
   reviewers?: string[];

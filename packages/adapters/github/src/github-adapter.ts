@@ -25,6 +25,7 @@ import type {
   Priority,
 } from "@agent-office/protocol";
 import { EventType, ALL_EVENT_TYPES } from "@agent-office/protocol";
+import type { ReducerError } from "@agent-office/protocol";
 import { reduceEvent, createEmptySnapshot } from "@agent-office/core";
 import type {
   GitHubFixtures,
@@ -53,6 +54,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private baseTimestamp: string;
   private correlationId = "corr-gh-001";
   private traceId = "trace-gh-001";
+  private lastReplayErrors: ReducerError[] = [];
 
   constructor(options: GitHubAdapterOptions = {}) {
     this.runtimeId = options.runtimeId ?? DEFAULT_RUNTIME_ID;
@@ -76,15 +78,28 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     snapshot.createdAt = this.baseTimestamp;
     snapshot.snapshotId = `snap-gh-${this.sequence}`;
 
+    const allErrors: ReducerError[] = [];
     for (const event of this.eventLog) {
       const result = reduceEvent(snapshot, event);
       snapshot = result.snapshot;
+      if (result.errors.length > 0) {
+        allErrors.push(...result.errors);
+      }
     }
+    this.lastReplayErrors = allErrors;
     snapshot.lastEventId = this.eventLog.length > 0
       ? this.eventLog[this.eventLog.length - 1].eventId
       : "";
     snapshot.sequence = this.sequence;
     return snapshot;
+  }
+
+  /**
+   * 返回最近一次 getSnapshot() replay 期间累积的 reducer errors。
+   * 测试必须断言此方法返回空数组，以确保 projection 无非法状态转换。
+   */
+  getLastReplayErrors(): ReducerError[] {
+    return [...this.lastReplayErrors];
   }
 
   subscribe(
@@ -211,8 +226,9 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       parentTaskId: null,
     }, "issue", issue.number, issue.createdAt);
 
-    // 如果 blocked label 存在，发 task.blocked
-    if (isBlocked) {
+    // 如果 blocked label 存在且 issue 为 open，发 task.blocked
+    // closed issue 即使有 blocked label 也应直接转为 completed
+    if (isBlocked && issue.state === "open") {
       this.emit(EventType.TASK_BLOCKED, {
         taskId,
         reason: "GitHub label: blocked",
@@ -272,7 +288,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       }, "pr", pr.number, pr.mergedAt ?? pr.closedAt ?? pr.createdAt);
 
     } else if (pr.state === "closed" && !pr.merged) {
-      // closed unmerged PR：artifact.created → artifact.reviewed(rejected)
+      // closed unmerged PR：artifact.created → (artifact.reviewed(rejected) | artifact.closed) → task.completed
       this.emit(EventType.ARTIFACT_CREATED, {
         artifactId,
         taskId,
@@ -284,6 +300,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       }, "pr", pr.number, pr.createdAt);
 
       if (pr.reviews.length > 0) {
+        // 有已提交 review：用真实 reviewerId 发 artifact.reviewed(rejected)
         const review = pr.reviews[0];
         this.emit(EventType.ARTIFACT_REVIEWED, {
           artifactId,
@@ -291,6 +308,13 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
           verdict: "rejected" as const,
           comment: review.body,
         }, "pr", pr.number, review.submittedAt);
+      } else {
+        // 无 review：用 artifact.closed 表达 closure，不伪造 reviewerId
+        this.emit(EventType.ARTIFACT_CLOSED, {
+          artifactId,
+          closedBy: null,
+          reason: "closed-unmerged",
+        }, "pr", pr.number, pr.closedAt ?? pr.createdAt);
       }
 
       // task.completed（closed-unmerged 也算完成，evidence 标记）
@@ -366,6 +390,8 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       number: issue.number,
       url: issue.url,
       rawState: issue.state,
+      stateReason: issue.stateReason,
+      closedAt: issue.closedAt,
       labels: issue.labels.map((l) => l.name),
       assignees: issue.assignees.map((a) => a.login),
       comments: issue.comments.map((c) => ({
@@ -382,6 +408,8 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       number: pr.number,
       url: pr.url,
       rawState: pr.merged ? "merged" : pr.state,
+      stateReason: pr.merged ? "merged" : (pr.state === "closed" ? "closed-unmerged" : undefined),
+      closedAt: pr.merged ? pr.mergedAt : pr.closedAt,
       labels: pr.labels.map((l) => l.name),
       assignees: [],
       reviewers: pr.requestedReviewers.map((r) => r.login),

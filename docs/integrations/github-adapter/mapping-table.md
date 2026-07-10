@@ -7,6 +7,7 @@
 | open issue | `created` | `task.created`（priority 由 label 推导） | issue number / url / labels / assignees / comments |
 | open + label `blocked` | `blocked` | `task.created` + `task.blocked`（reason="GitHub label: blocked"） | label 集合 |
 | open + label `review-needed` | `created`（保持） | `task.created`；review-needed 仅作 evidence | label 集合 |
+| closed + label `blocked` | `completed` | `task.created` + `task.completed`（blocked 仅适用于 open issue，closed 直接转 completed） | closedAt / stateReason / label 集合 |
 | closed + stateReason `completed` | `completed` | `task.created` + `task.completed`（completedAt=issue.closedAt） | closedAt / stateReason |
 | closed + stateReason `not_planned` | `completed` | `task.created` + `task.completed`；evidence 标记 stateReason=not_planned | closedAt / stateReason |
 
@@ -19,7 +20,7 @@
 | `priority:low` | Priority=`low` | |
 | 无 priority label | Priority=`normal`（默认） | |
 | 其他 label | 不映射 priority | 进入 evidence.labels |
-| `blocked` | task.status=`blocked`（发 `task.blocked` 事件） | |
+| `blocked` | task.status=`blocked`（发 `task.blocked` 事件，**仅适用于 open issue**；closed issue 即使有 blocked label 也直接转 `completed`） | |
 | `review-needed` | evidence only（task 保持 created） | review 是 PR 语义 |
 | `wontfix` | evidence only | |
 
@@ -36,7 +37,8 @@
 | open + review CHANGES_REQUESTED | `revision_required` | `…` + `artifact.reviewed`(verdict=revision_required) | task `revision_required` |
 | open + review COMMENTED | `generated`（保持） | `…`（无 artifact 事件，evidence 记录 COMMENTED） | 不变 |
 | merged PR | `delivered` | `…` + `artifact.delivered`(mergeCommitSha) | task `completed` |
-| closed unmerged | `rejected` | `…` + `artifact.reviewed`(verdict=rejected) | task `completed`（evidence 标记 closed-unmerged） |
+| closed unmerged + 有已提交 review | `rejected` | `…` + `artifact.reviewed`(verdict=rejected, reviewerId=真实 reviewer login) | task `completed`（evidence 标记 closed-unmerged） |
+| closed unmerged + 无 review | `rejected` | `…` + `artifact.closed`(closedBy=null, reason="closed-unmerged") | task `completed`（evidence 标记 closed-unmerged；不伪造 reviewerId） |
 
 ## ID 映射规则
 

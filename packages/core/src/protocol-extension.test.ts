@@ -10,6 +10,7 @@ import {
   type ArtifactDraftedPayload,
   type ArtifactReviewRequestedPayload,
   type ArtifactDeliveredPayload,
+  type ArtifactClosedPayload,
   type TaskCreatedPayload,
 } from "@agent-office/protocol";
 import type { RuntimeSnapshot } from "@agent-office/protocol";
@@ -35,7 +36,7 @@ function makeEvent<P>(
   };
 }
 
-describe("Protocol extension: artifact.drafted / review_requested / delivered", () => {
+describe("Protocol extension: artifact.drafted / review_requested / delivered / closed", () => {
   function setupTaskAndArtifact(): RuntimeSnapshot {
     const empty = createEmptySnapshot("test-runtime");
     const taskPayload: TaskCreatedPayload = {
@@ -210,5 +211,47 @@ describe("Protocol extension: artifact.drafted / review_requested / delivered", 
     expect(result.errors).toHaveLength(0);
     const artifact = result.snapshot.artifacts.find((a) => a.artifactId === "gh-pr-1");
     expect(artifact!.status).toBe("delivered");
+  });
+
+  // ─── artifact.closed ───────────────────────────────────────
+
+  it("artifact.closed 将 generated artifact 转为 rejected（zero-review closed-unmerged）", () => {
+    let snap = setupTaskAndArtifact();
+    const createdPayload = {
+      artifactId: "gh-pr-1",
+      taskId: "gh-pr-task-1",
+      producerAgentId: "",
+      type: "github_pr",
+      title: "PR #1",
+      uri: "https://github.com/owner/repo/pull/1",
+      version: 1,
+    };
+    snap = reduceEvent(snap, makeEvent(EventType.ARTIFACT_CREATED, createdPayload, 2)).snapshot;
+
+    const closedPayload: ArtifactClosedPayload = {
+      artifactId: "gh-pr-1",
+      closedBy: null,
+      reason: "closed-unmerged",
+    };
+    const event = makeEvent(EventType.ARTIFACT_CLOSED, closedPayload, 3);
+    const result = reduceEvent(snap, event);
+
+    expect(result.errors).toHaveLength(0);
+    const artifact = result.snapshot.artifacts.find((a) => a.artifactId === "gh-pr-1");
+    expect(artifact!.status).toBe("rejected");
+  });
+
+  it("artifact.closed 对不存在的 artifact 返回 entity_not_found", () => {
+    const snap = setupTaskAndArtifact();
+    const payload: ArtifactClosedPayload = {
+      artifactId: "nonexistent",
+      closedBy: null,
+      reason: "closed-unmerged",
+    };
+    const event = makeEvent(EventType.ARTIFACT_CLOSED, payload, 2);
+    const result = reduceEvent(snap, event);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].code).toBe("entity_not_found");
   });
 });

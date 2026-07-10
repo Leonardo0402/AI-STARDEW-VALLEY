@@ -296,6 +296,12 @@ export interface ArtifactDeliveredPayload {
   mergedBy: Id;                   // GitHub login（external actor ref）
 }
 
+export interface ArtifactClosedPayload {
+  artifactId: Id;
+  closedBy: Id | null;           // GitHub login 或 null（v0 无精确 closer 信息）
+  reason: string;                // "closed-unmerged" 等
+}
+
 export interface ApprovalRequestedPayload {
   approvalId: Id;
   taskId: Id;
@@ -333,6 +339,7 @@ export const EventType = {
   ARTIFACT_REVIEW_REQUESTED: "artifact.review_requested",
   ARTIFACT_REVIEWED: "artifact.reviewed",
   ARTIFACT_DELIVERED: "artifact.delivered",
+  ARTIFACT_CLOSED: "artifact.closed",
   APPROVAL_REQUESTED: "approval.requested",
   APPROVAL_RESOLVED: "approval.resolved",
   ERROR_RAISED: "error.raised",

@@ -5,6 +5,7 @@
     { "path": "packages/core" },
     { "path": "packages/adapters/mock" },
     { "path": "packages/adapters/http-sse" },
+    { "path": "packages/adapters/github" },
     { "path": "packages/adapters/qclaw-swarm" },
     { "path": "packages/pixel-office" },
     { "path": "packages/control-ui" },

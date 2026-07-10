@@ -1,6 +1,8 @@
 /**
  * Determinism 测试 — 相同 fixture → 相同 snapshot + 相同 event 序列。
  * 覆盖 AC4。
+ *
+ * 所有 replay 测试断言 reducer errors === []（Fix 6）。
  */
 import { describe, it, expect } from "vitest";
 import { GitHubRuntimeAdapter } from "./index.js";
@@ -29,10 +31,12 @@ describe("GitHub adapter determinism", () => {
     const a = new GitHubRuntimeAdapter();
     a.syncFromFixtures(SAMPLE_FIXTURES);
     const snapA = await a.getSnapshot();
+    expect(a.getLastReplayErrors()).toHaveLength(0);
 
     const b = new GitHubRuntimeAdapter();
     b.syncFromFixtures(SAMPLE_FIXTURES);
     const snapB = await b.getSnapshot();
+    expect(b.getLastReplayErrors()).toHaveLength(0);
 
     expect(snapA.tasks).toEqual(snapB.tasks);
     expect(snapA.artifacts).toEqual(snapB.artifacts);
@@ -75,10 +79,12 @@ describe("GitHub adapter determinism", () => {
     const adapter = new GitHubRuntimeAdapter();
     adapter.syncFromFixtures(SAMPLE_FIXTURES);
     const snap1 = await adapter.getSnapshot();
+    expect(adapter.getLastReplayErrors()).toHaveLength(0);
     const log1 = adapter.getEventLog();
 
     adapter.syncFromFixtures(SAMPLE_FIXTURES);
     const snap2 = await adapter.getSnapshot();
+    expect(adapter.getLastReplayErrors()).toHaveLength(0);
     const log2 = adapter.getEventLog();
 
     expect(snap1.tasks).toEqual(snap2.tasks);
