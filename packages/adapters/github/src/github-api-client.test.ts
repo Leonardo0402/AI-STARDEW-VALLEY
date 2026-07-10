@@ -341,7 +341,7 @@ describe("GitHubApiClient error handling", () => {
     );
 
     const client = new GitHubApiClient({ token: "" });
-    const err = await client.fetchIssues("owner", "repo").catch((e) => e as GitHubApiError);
+    const err = (await client.fetchIssues("owner", "repo").catch((e) => e as GitHubApiError)) as GitHubApiError;
     expect(err).toBeInstanceOf(GitHubApiError);
     expect(err.rateLimitRemaining).toBe(0);
     expect(err.rateLimitReset).toBe(1690000000);
