@@ -73,7 +73,18 @@ export class GitHubApiClient {
   }
 
   async fetchPRs(owner: string, repo: string): Promise<GitHubPRFixture[]> {
-    throw new Error("not implemented");
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/pulls?state=all&per_page=100`;
+    const pages = await this.paginate<RawPR>(url);
+    const prs: GitHubPRFixture[] = [];
+    for (const json of pages) {
+      const pr = this.mapPR(json);
+      const reviews = await this.fetchReviews(owner, repo, pr.number);
+      pr.reviews = reviews;
+      const comments = await this.fetchComments(owner, repo, pr.number);
+      pr.comments = comments;
+      prs.push(pr);
+    }
+    return prs;
   }
 
   // ─── 私有方法 ───────────────────────────────────────────

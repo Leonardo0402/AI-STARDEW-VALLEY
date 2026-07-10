@@ -142,3 +142,73 @@ describe("GitHubApiClient.fetchIssues", () => {
     expect(issues[1].closedAt).toBe("2026-01-06T10:00:00Z");
   });
 });
+
+describe("GitHubApiClient.fetchPRs", () => {
+  it("fetches PRs with reviews and maps to fixture type", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/pulls", ({ request }) => {
+        const page = new URL(request.url).searchParams.get("page") ?? "1";
+        if (page === "1") {
+          return HttpResponse.json(
+            [
+              {
+                number: 25,
+                html_url: "https://github.com/owner/repo/pull/25",
+                title: "Merged PR",
+                body: "Closes #11",
+                state: "closed",
+                draft: false,
+                merged: true,
+                merged_at: "2026-01-15T12:00:00Z",
+                merged_by: { login: "octocat", url: "https://github.com/octocat" },
+                merge_commit_sha: "abc123",
+                head: { ref: "feature/login" },
+                base: { ref: "main" },
+                labels: [],
+                requested_reviewers: [],
+                created_at: "2026-01-09T08:00:00Z",
+                closed_at: "2026-01-15T12:00:00Z",
+              },
+            ],
+            { headers: { link: "" } },
+          );
+        }
+        return HttpResponse.json([]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/pulls/25/reviews", () => {
+        return HttpResponse.json([
+          {
+            user: { login: "reviewer1", url: "https://github.com/reviewer1" },
+            state: "APPROVED",
+            body: "Looks good",
+            submitted_at: "2026-01-14T10:00:00Z",
+          },
+        ]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/issues/25/comments", () => {
+        return HttpResponse.json([]);
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const prs = await client.fetchPRs("owner", "repo");
+
+    expect(prs).toHaveLength(1);
+    const pr = prs[0];
+    expect(pr.number).toBe(25);
+    expect(pr.url).toBe("https://github.com/owner/repo/pull/25");
+    expect(pr.merged).toBe(true);
+    expect(pr.mergedAt).toBe("2026-01-15T12:00:00Z");
+    expect(pr.mergedBy!.login).toBe("octocat");
+    expect(pr.mergeCommitSha).toBe("abc123");
+    expect(pr.headRef).toBe("feature/login");
+    expect(pr.baseRef).toBe("main");
+
+    // N+1 reviews fetched
+    expect(pr.reviews).toHaveLength(1);
+    expect(pr.reviews[0].author.login).toBe("reviewer1");
+    expect(pr.reviews[0].state).toBe("APPROVED");
+    expect(pr.reviews[0].body).toBe("Looks good");
+    expect(pr.reviews[0].submittedAt).toBe("2026-01-14T10:00:00Z");
+  });
+});
