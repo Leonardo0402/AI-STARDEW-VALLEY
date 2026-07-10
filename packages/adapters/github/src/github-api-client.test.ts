@@ -271,3 +271,79 @@ describe("GitHubApiClient rate limit handling", () => {
     await expect(client.fetchIssues("owner", "repo")).rejects.toThrow(/rate limit/i);
   });
 });
+
+describe("GitHubApiClient error handling", () => {
+  it("throws GitHubApiError with status 401 for unauthorized", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json(
+          { message: "Bad credentials" },
+          { status: 401 },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "invalid" });
+    await expect(client.fetchIssues("owner", "repo")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 401,
+    });
+  });
+
+  it("throws GitHubApiError with status 404 for missing repo", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json(
+          { message: "Not Found" },
+          { status: 404 },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    await expect(client.fetchIssues("owner", "repo")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 404,
+    });
+  });
+
+  it("throws GitHubApiError with status 500 for server error", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json(
+          { message: "Internal Server Error" },
+          { status: 500 },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    await expect(client.fetchIssues("owner", "repo")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 500,
+    });
+  });
+
+  it("includes rateLimitRemaining and rateLimitReset in error when present", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json(
+          { message: "Rate limit exceeded" },
+          {
+            status: 403,
+            headers: {
+              "x-ratelimit-remaining": "0",
+              "x-ratelimit-reset": "1690000000",
+            },
+          },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const err = await client.fetchIssues("owner", "repo").catch((e) => e as GitHubApiError);
+    expect(err).toBeInstanceOf(GitHubApiError);
+    expect(err.rateLimitRemaining).toBe(0);
+    expect(err.rateLimitReset).toBe(1690000000);
+  });
+});
