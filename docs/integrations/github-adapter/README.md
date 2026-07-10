@@ -63,3 +63,29 @@ const snapshot = await adapter.getSnapshot();
 const evidence = adapter.getGitHubEvidence();
 const events = adapter.getEventLog();
 ```
+
+## API 模式（Phase 2.2）
+
+除了 fixture 模式，`GitHubRuntimeAdapter` 支持直接从 GitHub REST API 拉取数据：
+
+```typescript
+import { GitHubRuntimeAdapter, GitHubApiClient } from "@agent-office/adapter-github";
+
+const client = new GitHubApiClient({
+  token: process.env.GITHUB_TOKEN!,  // 必填，从环境变量读
+});
+const adapter = new GitHubRuntimeAdapter();
+await adapter.connect();
+await adapter.syncFromApi(client, "Leonardo0402", "AI-STARDEW-VALLEY");
+
+const snapshot = await adapter.getSnapshot();
+```
+
+`GitHubApiClient` 负责：
+- Bearer token 鉴权
+- 分页（Link header，per_page=100）
+- rate limit 感知（剩余为 0 时等待，超过 60s 抛错）
+- N+1 comments / reviews 拉取
+- raw GitHub JSON → fixture 类型映射
+
+详见 [api-client.md](./api-client.md)。
