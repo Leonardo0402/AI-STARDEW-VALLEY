@@ -102,6 +102,33 @@ export class GitHubApiClient {
     return prs;
   }
 
+  async fetchPRsSince(owner: string, repo: string, since: string): Promise<GitHubPRFixture[]> {
+    if (!since) return this.fetchPRs(owner, repo);
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/pulls?state=all&per_page=100&sort=updated&direction=desc`;
+    const prs: GitHubPRFixture[] = [];
+    let currentUrl: string | undefined = url;
+
+    while (currentUrl) {
+      const result = await this.rawGet(currentUrl);
+      const items = result.body as RawPR[];
+      if (!Array.isArray(items)) break;
+
+      for (const json of items) {
+        if (json.updated_at <= since) {
+          return prs;
+        }
+        const pr = this.mapPR(json);
+        pr.reviews = await this.fetchReviews(owner, repo, pr.number);
+        pr.comments = await this.fetchComments(owner, repo, pr.number);
+        prs.push(pr);
+      }
+
+      const link = result.headers.get("link");
+      currentUrl = this.parseLinkHeader(link).next;
+    }
+    return prs;
+  }
+
   // ─── 私有方法 ───────────────────────────────────────────
 
   private buildHeaders(): Record<string, string> {
