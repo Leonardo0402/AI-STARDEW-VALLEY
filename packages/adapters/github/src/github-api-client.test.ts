@@ -347,3 +347,56 @@ describe("GitHubApiClient error handling", () => {
     expect(err.rateLimitReset).toBe(1690000000);
   });
 });
+
+describe("GitHubApiClient.fetchIssuesSince", () => {
+  it("fetches only issues updated after the since cursor", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", ({ request }) => {
+        const since = new URL(request.url).searchParams.get("since");
+        expect(since).toBe("2026-01-05T00:00:00Z");
+        return HttpResponse.json(
+          [
+            {
+              number: 10,
+              html_url: "https://github.com/owner/repo/issues/10",
+              title: "Updated issue",
+              body: "Changed",
+              state: "open",
+              state_reason: null,
+              labels: [],
+              assignees: [],
+              created_at: "2026-01-02T08:00:00Z",
+              updated_at: "2026-01-06T08:00:00Z",
+              closed_at: null,
+            },
+          ],
+          { headers: { link: "" } },
+        );
+      }),
+      http.get("https://api.github.com/repos/owner/repo/issues/10/comments", () => {
+        return HttpResponse.json([]);
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const issues = await client.fetchIssuesSince("owner", "repo", "2026-01-05T00:00:00Z");
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].number).toBe(10);
+    expect(issues[0].updatedAt).toBe("2026-01-06T08:00:00Z");
+  });
+
+  it("falls back to full fetchIssues when since is empty string", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", ({ request }) => {
+        const since = new URL(request.url).searchParams.get("since");
+        expect(since).toBeNull();
+        return HttpResponse.json([], { headers: { link: "" } });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const issues = await client.fetchIssuesSince("owner", "repo", "");
+    expect(issues).toEqual([]);
+  });
+});

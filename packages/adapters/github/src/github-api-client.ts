@@ -72,6 +72,21 @@ export class GitHubApiClient {
     return issues;
   }
 
+  async fetchIssuesSince(owner: string, repo: string, since: string): Promise<GitHubIssueFixture[]> {
+    if (!since) return this.fetchIssues(owner, repo);
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/issues?state=all&per_page=100&since=${encodeURIComponent(since)}`;
+    const pages = await this.paginate<unknown>(url);
+    const issueJsons = pages.filter((j) => !(j as { pull_request?: unknown }).pull_request);
+    const issues: GitHubIssueFixture[] = [];
+    for (const json of issueJsons) {
+      const issue = this.mapIssue(json as RawIssue);
+      const comments = await this.fetchComments(owner, repo, issue.number);
+      issue.comments = comments;
+      issues.push(issue);
+    }
+    return issues;
+  }
+
   async fetchPRs(owner: string, repo: string): Promise<GitHubPRFixture[]> {
     const url = `${this.baseUrl}/repos/${owner}/${repo}/pulls?state=all&per_page=100`;
     const pages = await this.paginate<RawPR>(url);
