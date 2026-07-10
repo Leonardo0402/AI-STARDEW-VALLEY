@@ -236,7 +236,7 @@ export class GitHubApiError extends Error {
 
 ```typescript
 // github-adapter.ts 新增方法
-syncFromApi(client: GitHubApiClient, owner: string, repo: string): Promise<void> {
+async syncFromApi(client: GitHubApiClient, owner: string, repo: string): Promise<void> {
   const [issues, pulls] = await Promise.all([
     client.fetchIssues(owner, repo),
     client.fetchPRs(owner, repo),
