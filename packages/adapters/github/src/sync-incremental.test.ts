@@ -130,3 +130,219 @@ describe("GitHubRuntimeAdapter.syncIncremental — new entity", () => {
     expect(adapter.getCursor()).toBe("2026-01-06T08:00:00Z");
   });
 });
+
+describe("GitHubRuntimeAdapter.syncIncremental — issue state transition", () => {
+  it("emits only task.completed when issue transitions open→closed", async () => {
+    let callCount = 0;
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", ({ request }) => {
+        callCount++;
+        const since = new URL(request.url).searchParams.get("since");
+        if (!since) {
+          // First sync: issue open
+          return HttpResponse.json([
+            {
+              number: 10,
+              html_url: "https://github.com/owner/repo/issues/10",
+              title: "Issue",
+              body: "",
+              state: "open",
+              state_reason: null,
+              labels: [],
+              assignees: [],
+              created_at: "2026-01-02T08:00:00Z",
+              updated_at: "2026-01-02T08:00:00Z",
+              closed_at: null,
+            },
+          ]);
+        }
+        // Incremental: issue now closed
+        return HttpResponse.json([
+          {
+            number: 10,
+            html_url: "https://github.com/owner/repo/issues/10",
+            title: "Issue",
+            body: "",
+            state: "closed",
+            state_reason: "completed",
+            labels: [],
+            assignees: [],
+            created_at: "2026-01-02T08:00:00Z",
+            updated_at: "2026-01-07T08:00:00Z",
+            closed_at: "2026-01-07T08:00:00Z",
+          },
+        ]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/issues/10/comments", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/pulls", () => HttpResponse.json([])),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const adapter = new GitHubRuntimeAdapter();
+    await adapter.connect();
+    await adapter.syncIncremental(client, "owner", "repo");
+
+    const eventsBefore = adapter.getEventLog().length;
+    await adapter.syncIncremental(client, "owner", "repo");
+    const eventsAfter = adapter.getEventLog().length;
+
+    // Only task.completed emitted (no re-emit of task.created)
+    expect(eventsAfter - eventsBefore).toBe(1);
+    const lastEvent = adapter.getEventLog()[eventsAfter - 1];
+    expect(lastEvent.type).toBe("task.completed");
+
+    const snap = await adapter.getSnapshot();
+    expect(adapter.getLastReplayErrors()).toHaveLength(0);
+    expect(adapter.getCursor()).toBe("2026-01-07T08:00:00Z");
+  });
+});
+
+describe("GitHubRuntimeAdapter.syncIncremental — PR state transitions", () => {
+  it("emits artifact.delivered + task.completed when PR transitions open→merged", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/pulls", ({ request }) => {
+        // fetchPRsSince uses sort=updated (no since param; pulls API lacks since).
+        const sort = new URL(request.url).searchParams.get("sort");
+        if (!sort) {
+          // First sync: PR open
+          return HttpResponse.json([
+            {
+              number: 20,
+              html_url: "https://github.com/owner/repo/pull/20",
+              title: "PR",
+              body: "",
+              state: "open",
+              draft: false,
+              merged: false,
+              merged_at: null,
+              merged_by: null,
+              merge_commit_sha: null,
+              head: { ref: "feature/a" },
+              base: { ref: "main" },
+              labels: [],
+              requested_reviewers: [],
+              created_at: "2026-01-03T08:00:00Z",
+              updated_at: "2026-01-03T08:00:00Z",
+              closed_at: null,
+            },
+          ]);
+        }
+        // Incremental: PR now merged
+        return HttpResponse.json([
+          {
+            number: 20,
+            html_url: "https://github.com/owner/repo/pull/20",
+            title: "PR",
+            body: "",
+            state: "closed",
+            draft: false,
+            merged: true,
+            merged_at: "2026-01-08T12:00:00Z",
+            merged_by: { login: "octocat" },
+            merge_commit_sha: "abc123",
+            head: { ref: "feature/a" },
+            base: { ref: "main" },
+            labels: [],
+            requested_reviewers: [],
+            created_at: "2026-01-03T08:00:00Z",
+            updated_at: "2026-01-08T12:00:00Z",
+            closed_at: "2026-01-08T12:00:00Z",
+          },
+        ]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/pulls/20/reviews", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/issues/20/comments", () => HttpResponse.json([])),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const adapter = new GitHubRuntimeAdapter();
+    await adapter.connect();
+    await adapter.syncIncremental(client, "owner", "repo");
+
+    const eventsBefore = adapter.getEventLog().length;
+    await adapter.syncIncremental(client, "owner", "repo");
+    const eventsAfter = adapter.getEventLog().length;
+
+    // artifact.delivered + task.completed
+    expect(eventsAfter - eventsBefore).toBe(2);
+    const newEvents = adapter.getEventLog().slice(eventsBefore);
+    expect(newEvents[0].type).toBe("artifact.delivered");
+    expect(newEvents[1].type).toBe("task.completed");
+
+    expect(adapter.getLastReplayErrors()).toHaveLength(0);
+  });
+
+  it("emits artifact.closed + task.completed when PR transitions open→closed-unmerged", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/pulls", ({ request }) => {
+        // fetchPRsSince uses sort=updated (no since param; pulls API lacks since).
+        const sort = new URL(request.url).searchParams.get("sort");
+        if (!sort) {
+          return HttpResponse.json([
+            {
+              number: 20,
+              html_url: "https://github.com/owner/repo/pull/20",
+              title: "PR",
+              body: "",
+              state: "open",
+              draft: false,
+              merged: false,
+              merged_at: null,
+              merged_by: null,
+              merge_commit_sha: null,
+              head: { ref: "feature/a" },
+              base: { ref: "main" },
+              labels: [],
+              requested_reviewers: [],
+              created_at: "2026-01-03T08:00:00Z",
+              updated_at: "2026-01-03T08:00:00Z",
+              closed_at: null,
+            },
+          ]);
+        }
+        return HttpResponse.json([
+          {
+            number: 20,
+            html_url: "https://github.com/owner/repo/pull/20",
+            title: "PR",
+            body: "",
+            state: "closed",
+            draft: false,
+            merged: false,
+            merged_at: null,
+            merged_by: null,
+            merge_commit_sha: null,
+            head: { ref: "feature/a" },
+            base: { ref: "main" },
+            labels: [],
+            requested_reviewers: [],
+            created_at: "2026-01-03T08:00:00Z",
+            updated_at: "2026-01-08T12:00:00Z",
+            closed_at: "2026-01-08T12:00:00Z",
+          },
+        ]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/pulls/20/reviews", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/issues/20/comments", () => HttpResponse.json([])),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const adapter = new GitHubRuntimeAdapter();
+    await adapter.connect();
+    await adapter.syncIncremental(client, "owner", "repo");
+
+    const eventsBefore = adapter.getEventLog().length;
+    await adapter.syncIncremental(client, "owner", "repo");
+    const eventsAfter = adapter.getEventLog().length;
+
+    // artifact.closed + task.completed
+    expect(eventsAfter - eventsBefore).toBe(2);
+    const newEvents = adapter.getEventLog().slice(eventsBefore);
+    expect(newEvents[0].type).toBe("artifact.closed");
+    expect(newEvents[1].type).toBe("task.completed");
+
+    expect(adapter.getLastReplayErrors()).toHaveLength(0);
+  });
+});
