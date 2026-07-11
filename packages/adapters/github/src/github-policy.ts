@@ -46,6 +46,11 @@ export class GitHubPolicy {
       CommandType.ISSUE_ADD_LABEL,
       CommandType.ISSUE_REMOVE_LABEL,
       CommandType.PR_REQUEST_REVIEW,
+      CommandType.ISSUE_DRAFT,
+      CommandType.COMMENT_DRAFT,
+      CommandType.DRAFT_SUBMIT,
+      CommandType.DRAFT_DISCARD,
+      CommandType.AUDIT_NOTE,
     ];
     if (!supported.includes(command.commandType)) {
       return { allowed: false, reason: "UNSUPPORTED_COMMAND_TYPE" };
@@ -97,6 +102,26 @@ export class GitHubPolicy {
         for (const r of p.reviewers) {
           if (typeof r !== "string" || r.length === 0) return "INVALID_PAYLOAD";
         }
+        return null;
+      }
+      case CommandType.ISSUE_DRAFT: {
+        if (typeof p.title !== "string" || p.title.length === 0) return "INVALID_PAYLOAD";
+        // body may be empty
+        return null;
+      }
+      case CommandType.COMMENT_DRAFT: {
+        if (typeof p.issueNumber !== "number" || p.issueNumber <= 0) return "INVALID_PAYLOAD";
+        if (typeof p.body !== "string" || p.body.length === 0) return "INVALID_PAYLOAD";
+        return null;
+      }
+      case CommandType.DRAFT_SUBMIT:
+      case CommandType.DRAFT_DISCARD: {
+        if (typeof p.draftId !== "string" || p.draftId.length === 0) return "INVALID_PAYLOAD";
+        return null;
+      }
+      case CommandType.AUDIT_NOTE: {
+        if (typeof p.body !== "string" || p.body.length === 0) return "INVALID_PAYLOAD";
+        // taskId is optional
         return null;
       }
       default:

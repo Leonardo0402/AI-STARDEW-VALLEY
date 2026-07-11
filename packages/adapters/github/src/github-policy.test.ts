@@ -123,4 +123,83 @@ describe("GitHubPolicy", () => {
       ).allowed).toBe(true);
     });
   });
+
+  describe("Phase 2.5 commands", () => {
+    it("allows the 5 new command types with valid payloads", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const payloads: Record<string, unknown> = {
+        [CommandType.ISSUE_DRAFT]: { title: "New issue", body: "body" },
+        [CommandType.COMMENT_DRAFT]: { issueNumber: 1, body: "comment" },
+        [CommandType.DRAFT_SUBMIT]: { draftId: "draft-1" },
+        [CommandType.DRAFT_DISCARD]: { draftId: "draft-1" },
+        [CommandType.AUDIT_NOTE]: { taskId: "t1", body: "audit" },
+      };
+      for (const ct of Object.keys(payloads)) {
+        const verdict = policy.validate(makeCommand(ct, "u1", payloads[ct]));
+        expect(verdict.allowed).toBe(true);
+      }
+    });
+
+    it("allows audit_note without taskId (runtime-level audit)", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const verdict = policy.validate(
+        makeCommand(CommandType.AUDIT_NOTE, "u1", { body: "runtime audit" })
+      );
+      expect(verdict.allowed).toBe(true);
+    });
+
+    it("rejects issue.draft with empty title", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const verdict = policy.validate(
+        makeCommand(CommandType.ISSUE_DRAFT, "u1", { title: "", body: "body" })
+      );
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("rejects comment.draft with empty body", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const verdict = policy.validate(
+        makeCommand(CommandType.COMMENT_DRAFT, "u1", { issueNumber: 1, body: "" })
+      );
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("rejects comment.draft with non-positive issueNumber", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const verdict = policy.validate(
+        makeCommand(CommandType.COMMENT_DRAFT, "u1", { issueNumber: 0, body: "hi" })
+      );
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("rejects draft.submit with empty draftId", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const verdict = policy.validate(
+        makeCommand(CommandType.DRAFT_SUBMIT, "u1", { draftId: "" })
+      );
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("rejects draft.discard with empty draftId", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const verdict = policy.validate(
+        makeCommand(CommandType.DRAFT_DISCARD, "u1", { draftId: "" })
+      );
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("rejects audit_note with empty body", () => {
+      const policy = new GitHubPolicy({ allowedActors: ["u1"], rateLimitPerMinute: 30 });
+      const verdict = policy.validate(
+        makeCommand(CommandType.AUDIT_NOTE, "u1", { taskId: "t1", body: "" })
+      );
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+  });
 });
