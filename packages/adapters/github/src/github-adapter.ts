@@ -93,6 +93,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private repo?: string;
   private policy?: GitHubPolicy;
   private drafts = new Map<Id, Draft>();
+  private draftCounter = 0;
 
   constructor(options: GitHubAdapterOptions = {}) {
     this.runtimeId = options.runtimeId ?? DEFAULT_RUNTIME_ID;
@@ -319,6 +320,8 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     this.sequence = 0;
     this.eventLog = [];
     this.evidence = { tasks: {}, artifacts: {}, auditNotes: [] };
+    this.drafts.clear();
+    this.draftCounter = 0;
 
     // 按 number 升序处理 issues
     const sortedIssues = [...fixtures.issues].sort((a, b) => a.number - b.number);
@@ -809,7 +812,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   // ─── Command handlers (Phase 2.5: Drafts & Audit) ────────
 
   private async executeIssueDraft(command: OfficeCommand<IssueDraftPayload>): Promise<Id> {
-    const draftId = `draft-${this.drafts.size + 1}`;
+    const draftId = `draft-${++this.draftCounter}`;
     const draft: Draft = {
       draftId,
       kind: "issue",
@@ -824,7 +827,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   }
 
   private async executeCommentDraft(command: OfficeCommand<CommentDraftPayload>): Promise<Id> {
-    const draftId = `draft-${this.drafts.size + 1}`;
+    const draftId = `draft-${++this.draftCounter}`;
     const draft: Draft = {
       draftId,
       kind: "comment",
@@ -887,8 +890,11 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
 
   private async executeDraftDiscard(command: OfficeCommand<DraftDiscardPayload>): Promise<Id> {
     const draft = this.drafts.get(command.payload.draftId);
+    if (!draft) {
+      throw new GitHubApiError(`Draft not found: ${command.payload.draftId}`, 404);
+    }
     this.drafts.delete(command.payload.draftId);
-    return draft?.draftId ?? command.payload.draftId;
+    return draft.draftId;
   }
 
   private async executeAuditNote(command: OfficeCommand<AuditNotePayload>): Promise<Id> {

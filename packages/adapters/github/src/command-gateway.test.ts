@@ -285,15 +285,15 @@ describe("GitHubRuntimeAdapter.execute — command gateway", () => {
     expect(adapter.getDraft(draftId)).toBeUndefined();
   });
 
-  it("draft.discard non-existent draftId → still succeeds (idempotent)", async () => {
+  it("draft.discard non-existent draftId → error with NOT_FOUND", async () => {
     const { adapter } = makeConfiguredAdapter();
     await adapter.connect();
 
     const result = await adapter.execute(
       makeCommand(CommandType.DRAFT_DISCARD, "u1", { draftId: "draft-nonexistent" })
     );
-    expect(result.status).toBe("accepted");
-    expect(adapter.getEventLog()).toHaveLength(0);
+    expect(result.status).toBe("error");
+    expect(result.error?.code).toBe("NOT_FOUND");
   });
 
   it("draft.submit(issue) success → calls createIssue, emits ISSUE_CREATED, draft removed", async () => {
