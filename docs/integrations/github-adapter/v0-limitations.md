@@ -113,3 +113,17 @@ API 模式（`syncFromApi`）仍受 v0 只读约束：
 - **无并发锁**：`setInterval` 不 await，假设 sync < interval；超时由 resync 兜底
 - **无 backoff**：失败后下次 interval 照常触发，resync 是安全网
 - **无 webhook / SSE**：Phase 2.3 仍是 polling
+
+## Phase 2.4: Command Gateway v0
+
+- **Dangerous operations**: merge / close / delete / force-push return `UNSUPPORTED_COMMAND`, deferred to Phase 2.5
+- **Approval flow**: no human-in-the-loop approval before command execution (Phase 2.5 or later)
+- **Multi-repo**: adapter holds a single `{owner, repo}`, no runtime switching
+- **GitHub rate_limit query**: Policy does not call `/rate_limit` API, only local counter
+- **Retry / backoff**: API failure does not auto-retry, returns error CommandResult directly
+- **Concurrency lock**: `execute()` has no concurrency guard (YAGNI, single-runtime serial assumption)
+- **Event rollback**: if API succeeds but emit fails, no rollback of GitHub operation (emit is in-memory, cannot fail)
+- **Webhook verification**: does not verify command source is a real GitHub webhook
+- **Comment author authenticity**: emitted `author` uses `command.actorId` (office-side actor), not the GitHub API-returned user
+- **Label color**: `addLabel` sends label name only; GitHub assigns default color
+- **Reducer snapshot mutation**: `ISSUE_COMMENTED` / `ISSUE_LABELED` / `ISSUE_UNLABELED` are event-trail-only no-ops on `TaskSnapshot` (which has no `labels`/`comments` field); evidence is tracked in `GitHubAdapterEvidence` only
