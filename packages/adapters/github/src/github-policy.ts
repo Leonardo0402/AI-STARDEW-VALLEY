@@ -41,7 +41,7 @@ export class GitHubPolicy {
 
   validate(command: OfficeCommand): PolicyVerdict {
     // 1. Command type allowlist
-    const supported = [
+    const supported: string[] = [
       CommandType.ISSUE_ADD_COMMENT,
       CommandType.ISSUE_ADD_LABEL,
       CommandType.ISSUE_REMOVE_LABEL,
