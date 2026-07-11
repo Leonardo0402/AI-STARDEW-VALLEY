@@ -72,8 +72,8 @@ describe("MockRuntimeAdapter", () => {
     const caps = adapter.getCapabilities();
     expect(caps.features.snapshot).toBe(true);
     expect(caps.features.commandExecution).toBe(true);
-    expect(caps.supportedCommands.length).toBe(11);
-    expect(caps.supportedEvents.length).toBe(20);
+    expect(caps.supportedCommands.length).toBe(16);
+    expect(caps.supportedEvents.length).toBe(22);
   });
 
   it("should handle task.create command", async () => {
