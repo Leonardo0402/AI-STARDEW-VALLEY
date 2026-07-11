@@ -536,3 +536,47 @@ describe("GitHubApiClient.addComment", () => {
     });
   });
 });
+
+describe("GitHubApiClient.addLabel", () => {
+  it("posts a label and returns void on success", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues/10/labels", async ({ request }) => {
+        const body = (await request.json()) as string[];
+        expect(body).toEqual(["bug"]);
+        return HttpResponse.json([{ name: "bug" }]);
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.addLabel("owner", "repo", 10, "bug");
+    expect(result).toBeUndefined();
+  });
+});
+
+describe("GitHubApiClient.removeLabel", () => {
+  it("deletes a label and returns void on success", async () => {
+    server.use(
+      http.delete("https://api.github.com/repos/owner/repo/issues/10/labels/bug", () => {
+        return HttpResponse.json({}, { status: 200 });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.removeLabel("owner", "repo", 10, "bug");
+    expect(result).toBeUndefined();
+  });
+
+  it("throws GitHubApiError(404) when label does not exist", async () => {
+    server.use(
+      http.delete("https://api.github.com/repos/owner/repo/issues/10/labels/nonexistent", () => {
+        return HttpResponse.json({ message: "Not Found" }, { status: 404 });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    await expect(client.removeLabel("owner", "repo", 10, "nonexistent")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 404,
+    });
+  });
+});
