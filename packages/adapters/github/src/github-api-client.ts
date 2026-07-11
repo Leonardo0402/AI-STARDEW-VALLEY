@@ -163,6 +163,16 @@ export class GitHubApiClient {
     await this.rawDelete(url);
   }
 
+  async requestReview(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    reviewers: string[]
+  ): Promise<void> {
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/pulls/${prNumber}/requested_reviewers`;
+    await this.rawPost(url, { reviewers });
+  }
+
   // ─── 私有方法 ───────────────────────────────────────────
 
   private buildHeaders(): Record<string, string> {

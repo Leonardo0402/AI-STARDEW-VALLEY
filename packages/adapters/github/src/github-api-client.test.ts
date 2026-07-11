@@ -580,3 +580,36 @@ describe("GitHubApiClient.removeLabel", () => {
     });
   });
 });
+
+describe("GitHubApiClient.requestReview", () => {
+  it("posts requested reviewers and returns void on success", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/pulls/5/requested_reviewers", async ({ request }) => {
+        const body = (await request.json()) as { reviewers: string[] };
+        expect(body.reviewers).toEqual(["alice", "bob"]);
+        return HttpResponse.json({ requested_reviewers: [] });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.requestReview("owner", "repo", 5, ["alice", "bob"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("throws GitHubApiError(422) when reviewer is invalid", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/pulls/5/requested_reviewers", () => {
+        return HttpResponse.json(
+          { message: "Validation Failed" },
+          { status: 422 },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    await expect(client.requestReview("owner", "repo", 5, ["nonexistent-user"])).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 422,
+    });
+  });
+});
