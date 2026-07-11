@@ -29,3 +29,5 @@ export { GitHubApiClient, GitHubApiError } from "./github-api-client.js";
 export type { GitHubApiClientOptions } from "./github-api-client.js";
 export { GitHubSyncScheduler } from "./github-sync-scheduler.js";
 export type { GitHubSyncSchedulerOptions, GitHubSyncSchedulerCallbacks } from "./github-sync-scheduler.js";
+export { GitHubPolicy } from "./github-policy.js";
+export type { GitHubPolicyOptions, PolicyVerdict } from "./github-policy.js";

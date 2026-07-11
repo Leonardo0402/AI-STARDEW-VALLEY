@@ -69,3 +69,23 @@ const client = new GitHubApiClient({
 
 - `since` 为空字符串时，两个方法都 fallback 到全量 `fetchIssues` / `fetchPRs`
 - 返回的 fixture 包含 `updatedAt` 字段，adapter 用它推进 cursor
+
+## Write Methods (Phase 2.4)
+
+### `addComment(owner, repo, issueNumber, body)`
+
+Posts a comment to an issue. Returns `{ commentId, createdAt }`.
+
+### `addLabel(owner, repo, issueNumber, label)`
+
+Adds a label to an issue. Returns `void`.
+
+### `removeLabel(owner, repo, issueNumber, label)`
+
+Removes a label from an issue. Returns `void`.
+
+### `requestReview(owner, repo, prNumber, reviewers)`
+
+Requests reviewers on a pull request. Returns `void`.
+
+All write methods throw `GitHubApiError` on non-2xx responses with `status` matching the HTTP code (401, 403, 404, 422, or 0 for network/timeout).

@@ -591,6 +591,24 @@ export function reduceEvent(
       break;
     }
 
+    case EventType.ISSUE_COMMENTED: {
+      // Event-trail only — TaskSnapshot has no comments field.
+      // Evidence is tracked in GitHubAdapterEvidence.
+      break;
+    }
+
+    case EventType.ISSUE_LABELED: {
+      // Event-trail only — TaskSnapshot has no labels field.
+      // Evidence is tracked in GitHubAdapterEvidence.
+      break;
+    }
+
+    case EventType.ISSUE_UNLABELED: {
+      // Event-trail only — TaskSnapshot has no labels field.
+      // Evidence is tracked in GitHubAdapterEvidence.
+      break;
+    }
+
     case EventType.ERROR_RAISED: {
       // error.raised 不改变 Snapshot 状态，仅记录
       // 实际的错误状态变化由 agent.status_changed 或 task.blocked 体现

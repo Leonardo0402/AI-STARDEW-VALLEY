@@ -498,3 +498,118 @@ describe("GitHubApiClient.fetchPRsSince", () => {
     expect(prs).toEqual([]);
   });
 });
+
+describe("GitHubApiClient.addComment", () => {
+  it("posts a comment and returns {commentId, createdAt}", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues/10/comments", async ({ request }) => {
+        const body = (await request.json()) as { body: string };
+        expect(body.body).toBe("Nice work");
+        return HttpResponse.json({
+          id: 12345,
+          created_at: "2026-07-11T10:00:00Z",
+        });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.addComment("owner", "repo", 10, "Nice work");
+
+    expect(result.commentId).toBe(12345);
+    expect(result.createdAt).toBe("2026-07-11T10:00:00Z");
+  });
+
+  it("throws GitHubApiError(404) when issue does not exist", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues/999/comments", () => {
+        return HttpResponse.json(
+          { message: "Not Found" },
+          { status: 404 },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    await expect(client.addComment("owner", "repo", 999, "hi")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 404,
+    });
+  });
+});
+
+describe("GitHubApiClient.addLabel", () => {
+  it("posts a label and returns void on success", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues/10/labels", async ({ request }) => {
+        const body = (await request.json()) as string[];
+        expect(body).toEqual(["bug"]);
+        return HttpResponse.json([{ name: "bug" }]);
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.addLabel("owner", "repo", 10, "bug");
+    expect(result).toBeUndefined();
+  });
+});
+
+describe("GitHubApiClient.removeLabel", () => {
+  it("deletes a label and returns void on success", async () => {
+    server.use(
+      http.delete("https://api.github.com/repos/owner/repo/issues/10/labels/bug", () => {
+        return HttpResponse.json({}, { status: 200 });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.removeLabel("owner", "repo", 10, "bug");
+    expect(result).toBeUndefined();
+  });
+
+  it("throws GitHubApiError(404) when label does not exist", async () => {
+    server.use(
+      http.delete("https://api.github.com/repos/owner/repo/issues/10/labels/nonexistent", () => {
+        return HttpResponse.json({ message: "Not Found" }, { status: 404 });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    await expect(client.removeLabel("owner", "repo", 10, "nonexistent")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 404,
+    });
+  });
+});
+
+describe("GitHubApiClient.requestReview", () => {
+  it("posts requested reviewers and returns void on success", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/pulls/5/requested_reviewers", async ({ request }) => {
+        const body = (await request.json()) as { reviewers: string[] };
+        expect(body.reviewers).toEqual(["alice", "bob"]);
+        return HttpResponse.json({ requested_reviewers: [] });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.requestReview("owner", "repo", 5, ["alice", "bob"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("throws GitHubApiError(422) when reviewer is invalid", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/pulls/5/requested_reviewers", () => {
+        return HttpResponse.json(
+          { message: "Validation Failed" },
+          { status: 422 },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    await expect(client.requestReview("owner", "repo", 5, ["nonexistent-user"])).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 422,
+    });
+  });
+});

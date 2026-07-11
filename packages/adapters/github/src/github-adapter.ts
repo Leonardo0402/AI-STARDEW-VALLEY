@@ -23,8 +23,12 @@ import type {
   SubscribeOptions,
   Id,
   Priority,
+  IssueAddCommentPayload,
+  IssueAddLabelPayload,
+  IssueRemoveLabelPayload,
+  PRRequestReviewPayload,
 } from "@agent-office/protocol";
-import { EventType, ALL_EVENT_TYPES } from "@agent-office/protocol";
+import { EventType, ALL_EVENT_TYPES, CommandType } from "@agent-office/protocol";
 import type { ReducerError } from "@agent-office/protocol";
 import { reduceEvent, createEmptySnapshot } from "@agent-office/core";
 import type {
@@ -36,6 +40,8 @@ import type {
   GitHubLabel,
 } from "./types.js";
 import type { GitHubApiClient } from "./github-api-client.js";
+import { GitHubApiError } from "./github-api-client.js";
+import type { GitHubPolicy } from "./github-policy.js";
 
 const DEFAULT_RUNTIME_ID = "github-runtime-001";
 const DEFAULT_BASE_TIMESTAMP = "2026-01-01T00:00:00Z";
@@ -43,6 +49,10 @@ const DEFAULT_BASE_TIMESTAMP = "2026-01-01T00:00:00Z";
 export interface GitHubAdapterOptions {
   runtimeId?: string;
   baseTimestamp?: string;
+  apiClient?: GitHubApiClient;
+  owner?: string;
+  repo?: string;
+  policy?: GitHubPolicy;
 }
 
 export class GitHubRuntimeAdapter implements RuntimeAdapter {
@@ -57,10 +67,18 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private traceId = "trace-gh-001";
   private lastReplayErrors: ReducerError[] = [];
   private lastUpdatedAt: string = "";
+  private apiClient?: GitHubApiClient;
+  private owner?: string;
+  private repo?: string;
+  private policy?: GitHubPolicy;
 
   constructor(options: GitHubAdapterOptions = {}) {
     this.runtimeId = options.runtimeId ?? DEFAULT_RUNTIME_ID;
     this.baseTimestamp = options.baseTimestamp ?? DEFAULT_BASE_TIMESTAMP;
+    this.apiClient = options.apiClient;
+    this.owner = options.owner;
+    this.repo = options.repo;
+    this.policy = options.policy;
   }
 
   // ─── RuntimeAdapter 接口实现 ───────────────────────────────
@@ -147,26 +165,94 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   }
 
   async execute(command: OfficeCommand): Promise<CommandResult> {
-    return {
-      commandId: command.commandId,
-      status: "rejected",
-      error: {
-        code: "UNSUPPORTED_COMMAND",
-        message: "GitHub Runtime Adapter v0 is read-only; no commands are supported",
-      },
-      affectedEventIds: [],
-    };
+    // 1. Unconfigured → UNSUPPORTED_COMMAND (fixture-only mode preserved)
+    if (!this.apiClient || !this.owner || !this.repo) {
+      return {
+        commandId: command.commandId,
+        status: "rejected",
+        error: {
+          code: "UNSUPPORTED_COMMAND",
+          message: "GitHub Runtime Adapter v0 is read-only; write path not configured",
+        },
+        affectedEventIds: [],
+      };
+    }
+
+    // 2. Policy validation (if configured)
+    if (this.policy) {
+      const verdict = this.policy.validate(command);
+      if (!verdict.allowed) {
+        return {
+          commandId: command.commandId,
+          status: "rejected",
+          error: {
+            code: verdict.reason!,
+            message: `Command rejected by policy: ${verdict.reason}`,
+          },
+          affectedEventIds: [],
+        };
+      }
+    }
+
+    // 3. Dispatch to handler
+    try {
+      let eventId: Id;
+      switch (command.commandType) {
+        case CommandType.ISSUE_ADD_COMMENT:
+          eventId = await this.executeAddComment(command as OfficeCommand<IssueAddCommentPayload>);
+          break;
+        case CommandType.ISSUE_ADD_LABEL:
+          eventId = await this.executeAddLabel(command as OfficeCommand<IssueAddLabelPayload>);
+          break;
+        case CommandType.ISSUE_REMOVE_LABEL:
+          eventId = await this.executeRemoveLabel(command as OfficeCommand<IssueRemoveLabelPayload>);
+          break;
+        case CommandType.PR_REQUEST_REVIEW:
+          eventId = await this.executeRequestReview(command as OfficeCommand<PRRequestReviewPayload>);
+          break;
+        default:
+          return {
+            commandId: command.commandId,
+            status: "rejected",
+            error: {
+              code: "UNSUPPORTED_COMMAND",
+              message: `Unknown command type: ${command.commandType}`,
+            },
+            affectedEventIds: [],
+          };
+      }
+      return {
+        commandId: command.commandId,
+        status: "accepted",
+        affectedEventIds: [eventId],
+      };
+    } catch (err) {
+      return {
+        commandId: command.commandId,
+        status: "error",
+        error: mapApiError(err),
+        affectedEventIds: [],
+      };
+    }
   }
 
   getCapabilities(): AdapterCapabilities {
+    const writeConfigured = !!(this.apiClient && this.owner && this.repo);
     return {
       supportedEvents: [...ALL_EVENT_TYPES],
-      supportedCommands: [],
+      supportedCommands: writeConfigured
+        ? [
+            CommandType.ISSUE_ADD_COMMENT,
+            CommandType.ISSUE_ADD_LABEL,
+            CommandType.ISSUE_REMOVE_LABEL,
+            CommandType.PR_REQUEST_REVIEW,
+          ]
+        : [],
       features: {
         snapshot: true,
         sse: true,
         websocket: false,
-        commandExecution: false,
+        commandExecution: writeConfigured,
         softMapping: false,
         hardOrchestration: false,
       },
@@ -575,6 +661,93 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     // unchanged: no event
   }
 
+  // ─── Command handlers (Phase 2.4) ───────────────────────
+
+  private async executeAddComment(command: OfficeCommand<IssueAddCommentPayload>): Promise<Id> {
+    const { issueNumber, body } = command.payload;
+    const result = await this.apiClient!.addComment(this.owner!, this.repo!, issueNumber, body);
+    const taskId: Id = `gh-issue-${issueNumber}`;
+    const eventId = this.emit(
+      EventType.ISSUE_COMMENTED,
+      {
+        taskId,
+        commentId: String(result.commentId),
+        author: command.actorId,
+        body,
+        createdAt: result.createdAt,
+      },
+      "issue",
+      issueNumber,
+      result.createdAt,
+    );
+    // Update evidence
+    const ref = this.evidence.tasks[taskId];
+    if (ref) {
+      ref.comments.push({ author: command.actorId, body, createdAt: result.createdAt });
+    }
+    return eventId;
+  }
+
+  private async executeAddLabel(command: OfficeCommand<IssueAddLabelPayload>): Promise<Id> {
+    const { issueNumber, label } = command.payload;
+    await this.apiClient!.addLabel(this.owner!, this.repo!, issueNumber, label);
+    const taskId: Id = `gh-issue-${issueNumber}`;
+    const eventId = this.emit(
+      EventType.ISSUE_LABELED,
+      { taskId, label, addedBy: command.actorId },
+      "issue",
+      issueNumber,
+      this.baseTimestamp,
+    );
+    const ref = this.evidence.tasks[taskId];
+    if (ref && !ref.labels.includes(label)) {
+      ref.labels.push(label);
+    }
+    return eventId;
+  }
+
+  private async executeRemoveLabel(command: OfficeCommand<IssueRemoveLabelPayload>): Promise<Id> {
+    const { issueNumber, label } = command.payload;
+    await this.apiClient!.removeLabel(this.owner!, this.repo!, issueNumber, label);
+    const taskId: Id = `gh-issue-${issueNumber}`;
+    const eventId = this.emit(
+      EventType.ISSUE_UNLABELED,
+      { taskId, label, removedBy: command.actorId },
+      "issue",
+      issueNumber,
+      this.baseTimestamp,
+    );
+    const ref = this.evidence.tasks[taskId];
+    if (ref) {
+      ref.labels = ref.labels.filter((l) => l !== label);
+    }
+    return eventId;
+  }
+
+  private async executeRequestReview(command: OfficeCommand<PRRequestReviewPayload>): Promise<Id> {
+    const { prNumber, reviewers } = command.payload;
+    await this.apiClient!.requestReview(this.owner!, this.repo!, prNumber, reviewers);
+    const artifactId: Id = `gh-pr-${prNumber}`;
+    const eventId = this.emit(
+      EventType.ARTIFACT_REVIEW_REQUESTED,
+      { artifactId, reviewerIds: reviewers },
+      "pr",
+      prNumber,
+      this.baseTimestamp,
+    );
+    const ref = this.evidence.artifacts[artifactId];
+    if (ref) {
+      const existing = ref.reviewers ?? [];
+      for (const r of reviewers) {
+        if (!existing.includes(r)) {
+          existing.push(r);
+        }
+      }
+      ref.reviewers = existing;
+    }
+    return eventId;
+  }
+
   // ─── 内部：事件发射 ────────────────────────────────────────
 
   private emit<P>(
@@ -583,7 +756,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     entityKind: "issue" | "pr",
     entityNumber: number,
     occurredAt: string
-  ): void {
+  ): string {
     const seq = ++this.sequence;
     const event: DomainEvent<P> = {
       eventId: `evt-gh-${seq}-${entityKind}-${entityNumber}`,
@@ -605,5 +778,19 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     for (const observer of this.subscribers) {
       observer.onEvent(event);
     }
+    return event.eventId;
   }
+}
+
+function mapApiError(err: unknown): { code: string; message: string } {
+  if (err instanceof GitHubApiError) {
+    switch (err.status) {
+      case 401: return { code: "UNAUTHORIZED", message: err.message };
+      case 403: return { code: "FORBIDDEN", message: err.message };
+      case 404: return { code: "NOT_FOUND", message: err.message };
+      case 422: return { code: "VALIDATION_FAILED", message: err.message };
+      default: return { code: "ADAPTER_ERROR", message: err.message };
+    }
+  }
+  return { code: "ADAPTER_ERROR", message: err instanceof Error ? err.message : String(err) };
 }

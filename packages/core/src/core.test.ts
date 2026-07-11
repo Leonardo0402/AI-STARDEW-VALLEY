@@ -33,6 +33,9 @@ import {
   type ApprovalRequestedPayload,
   type ApprovalResolvedPayload,
   type ErrorRaisedPayload,
+  type IssueCommentedPayload,
+  type IssueLabeledPayload,
+  type IssueUnlabeledPayload,
 } from "@agent-office/protocol";
 
 const RUNTIME_ID = "test-runtime";
@@ -414,6 +417,54 @@ describe("Reducer", () => {
     expect(snap.agents.find((a) => a.agentId === "r1")!.currentTaskId).toBe("t1");
     // 断言：新 Reviewer 在新 Room
     expect(snap.rooms.find((r) => r.roomId === "room-review")!.activeAgentIds).toContain("r1");
+  });
+
+  it("should pass through issue.commented event without snapshot mutation", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    const result = reduceEvent(snap, makeEvent(2, EventType.ISSUE_COMMENTED, {
+      taskId: "t1",
+      commentId: "c1",
+      author: "user1",
+      body: "Nice work",
+      createdAt: "2026-07-11T10:00:00Z",
+    } as IssueCommentedPayload));
+    expect(result.errors).toHaveLength(0);
+    expect(result.snapshot.tasks).toHaveLength(1);
+    expect(result.snapshot.tasks[0].taskId).toBe("t1");
+  });
+
+  it("should pass through issue.labeled event without snapshot mutation", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    const result = reduceEvent(snap, makeEvent(2, EventType.ISSUE_LABELED, {
+      taskId: "t1",
+      label: "bug",
+      addedBy: "user1",
+    } as IssueLabeledPayload));
+    expect(result.errors).toHaveLength(0);
+    expect(result.snapshot.tasks).toHaveLength(1);
+  });
+
+  it("should pass through issue.unlabeled event without snapshot mutation", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    const result = reduceEvent(snap, makeEvent(2, EventType.ISSUE_UNLABELED, {
+      taskId: "t1",
+      label: "bug",
+      removedBy: "user1",
+    } as IssueUnlabeledPayload));
+    expect(result.errors).toHaveLength(0);
+    expect(result.snapshot.tasks).toHaveLength(1);
   });
 });
 

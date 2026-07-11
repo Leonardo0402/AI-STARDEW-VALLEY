@@ -122,3 +122,65 @@ scheduler.stop();
 - 对每个 entity diff 旧 evidence vs 新 fixture，只 emit 状态转换事件
 - 首次同步（空 cursor）自动 fallback 到全量 `syncFromApi`
 - 网络失败时下次自动触发全量 resync
+
+## Command Gateway v0 (Phase 2.4)
+
+The adapter supports 4 safe write operations through the standard `Command → Policy → Adapter → API → Result Event` flow:
+
+| Command Type | GitHub API | Event Emitted |
+|---|---|---|
+| `issue.add_comment` | POST `/repos/{owner}/{repo}/issues/{number}/comments` | `issue.commented` |
+| `issue.add_label` | POST `/repos/{owner}/{repo}/issues/{number}/labels` | `issue.labeled` |
+| `issue.remove_label` | DELETE `/repos/{owner}/{repo}/issues/{number}/labels/{name}` | `issue.unlabeled` |
+| `pr.request_review` | POST `/repos/{owner}/{repo}/pulls/{number}/requested_reviewers` | `artifact.review_requested` |
+
+### Usage
+
+```typescript
+import { GitHubRuntimeAdapter, GitHubApiClient, GitHubPolicy } from "@agent-office/adapter-github";
+
+const client = new GitHubApiClient({ token: process.env.GITHUB_TOKEN! });
+const policy = new GitHubPolicy({
+  allowedActors: ["user-alice", "user-bob"],
+  rateLimitPerMinute: 30,
+});
+const adapter = new GitHubRuntimeAdapter({
+  apiClient: client,
+  owner: "your-org",
+  repo: "your-repo",
+  policy,
+});
+
+await adapter.connect();
+const result = await adapter.execute({
+  commandId: "cmd-1",
+  commandType: "issue.add_comment",
+  timestamp: new Date().toISOString(),
+  source: "user",
+  actorId: "user-alice",
+  runtimeId: "rt-1",
+  targetId: null,
+  payload: { issueNumber: 42, body: "Looks good!" },
+});
+// result.status === "accepted"
+```
+
+### Policy
+
+`GitHubPolicy` performs 4 checks (in order):
+1. Command type allowlist (only the 4 supported types)
+2. Actor authorization (whitelist)
+3. Payload validation (required fields, non-empty strings)
+4. Rate limit (local counter per actor, configurable window)
+
+If `policy` is omitted from options, no policy check is performed.
+
+### Error Mapping
+
+| HTTP Status | Error Code |
+|---|---|
+| 401 | `UNAUTHORIZED` |
+| 403 | `FORBIDDEN` |
+| 404 | `NOT_FOUND` |
+| 422 | `VALIDATION_FAILED` |
+| other | `ADAPTER_ERROR` |
