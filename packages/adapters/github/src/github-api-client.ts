@@ -129,6 +129,20 @@ export class GitHubApiClient {
     return prs;
   }
 
+  // ─── 写操作 ─────────────────────────────────────────────
+
+  async addComment(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    body: string
+  ): Promise<{ commentId: number; createdAt: string }> {
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/issues/${issueNumber}/comments`;
+    const result = await this.rawPost(url, { body });
+    const json = result.body as { id: number; created_at: string };
+    return { commentId: json.id, createdAt: json.created_at };
+  }
+
   // ─── 私有方法 ───────────────────────────────────────────
 
   private buildHeaders(): Record<string, string> {
@@ -174,6 +188,55 @@ export class GitHubApiClient {
       }
       await this.waitForRateLimit(resp.headers);
       return { body, headers: resp.headers, status: resp.status };
+    } catch (err) {
+      if (err instanceof GitHubApiError) throw err;
+      if (ac.signal.aborted) {
+        throw new GitHubApiError(
+          `Request timed out after ${this.timeoutMs}ms: ${url}`,
+          0,
+        );
+      }
+      throw new GitHubApiError(
+        err instanceof Error ? err.message : String(err),
+        0,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async rawPost(url: string, body: unknown): Promise<RawGetResult> {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), this.timeoutMs);
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { ...this.buildHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: ac.signal,
+      });
+      const text = await resp.text();
+      let parsed: unknown = text;
+      const ct = resp.headers.get("content-type") ?? "";
+      if (ct.includes("application/json") || text.startsWith("{") || text.startsWith("[")) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          // keep as text
+        }
+      }
+      if (!resp.ok) {
+        const remaining = resp.headers.get("x-ratelimit-remaining");
+        const reset = resp.headers.get("x-ratelimit-reset");
+        throw new GitHubApiError(
+          `GitHub API error: HTTP ${resp.status} for ${url}`,
+          resp.status,
+          remaining !== null ? parseInt(remaining, 10) : undefined,
+          reset !== null ? parseInt(reset, 10) : undefined,
+        );
+      }
+      await this.waitForRateLimit(resp.headers);
+      return { body: parsed, headers: resp.headers, status: resp.status };
     } catch (err) {
       if (err instanceof GitHubApiError) throw err;
       if (ac.signal.aborted) {
