@@ -302,6 +302,26 @@ export interface ArtifactClosedPayload {
   reason: string;                // "closed-unmerged" 等
 }
 
+export interface IssueCommentedPayload {
+  taskId: Id;
+  commentId: string;
+  author: Id;
+  body: string;
+  createdAt: string;
+}
+
+export interface IssueLabeledPayload {
+  taskId: Id;
+  label: string;
+  addedBy: Id;
+}
+
+export interface IssueUnlabeledPayload {
+  taskId: Id;
+  label: string;
+  removedBy: Id;
+}
+
 export interface ApprovalRequestedPayload {
   approvalId: Id;
   taskId: Id;
@@ -343,6 +363,9 @@ export const EventType = {
   APPROVAL_REQUESTED: "approval.requested",
   APPROVAL_RESOLVED: "approval.resolved",
   ERROR_RAISED: "error.raised",
+  ISSUE_COMMENTED: "issue.commented",
+  ISSUE_LABELED: "issue.labeled",
+  ISSUE_UNLABELED: "issue.unlabeled",
 } as const;
 
 export const ALL_EVENT_TYPES: string[] = Object.values(EventType);
@@ -393,6 +416,26 @@ export interface ArtifactOpenPayload {
   artifactId: Id;
 }
 
+export interface IssueAddCommentPayload {
+  issueNumber: number;
+  body: string;
+}
+
+export interface IssueAddLabelPayload {
+  issueNumber: number;
+  label: string;
+}
+
+export interface IssueRemoveLabelPayload {
+  issueNumber: number;
+  label: string;
+}
+
+export interface PRRequestReviewPayload {
+  prNumber: number;
+  reviewers: string[];
+}
+
 // ─── 命令类型常量 ────────────────────────────────────────────
 
 export const CommandType = {
@@ -403,6 +446,10 @@ export const CommandType = {
   APPROVAL_ACCEPT: "approval.accept",
   APPROVAL_REJECT: "approval.reject",
   ARTIFACT_OPEN: "artifact.open",
+  ISSUE_ADD_COMMENT: "issue.add_comment",
+  ISSUE_ADD_LABEL: "issue.add_label",
+  ISSUE_REMOVE_LABEL: "issue.remove_label",
+  PR_REQUEST_REVIEW: "pr.request_review",
 } as const;
 
 export const ALL_COMMAND_TYPES: string[] = Object.values(CommandType);
