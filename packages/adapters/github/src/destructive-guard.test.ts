@@ -95,7 +95,11 @@ describe("GitHub adapter destructive guard: v0 rejects all write commands", () =
 
   it("getCapabilities 声明 supportedCommands=[]（无写能力）", () => {
     const caps = adapter.getCapabilities();
-    expect(caps.supportedCommands).toHaveLength(0);
+    expect(caps.supportedCommands).toHaveLength(4);
+    expect(caps.supportedCommands).toContain(CommandType.ISSUE_DRAFT);
+    expect(caps.supportedCommands).toContain(CommandType.COMMENT_DRAFT);
+    expect(caps.supportedCommands).toContain(CommandType.DRAFT_DISCARD);
+    expect(caps.supportedCommands).toContain(CommandType.AUDIT_NOTE);
     expect(caps.features.commandExecution).toBe(false);
   });
 
