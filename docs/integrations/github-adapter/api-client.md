@@ -57,3 +57,15 @@ const client = new GitHubApiClient({
 | (内部) reviews | `GET /repos/{owner}/{repo}/pulls/{n}/reviews` |
 
 `fetchIssues` 自动过滤 issues endpoint 返回的 PR（有 `pull_request` 字段的条目）。
+
+## 增量拉取（Phase 2.3）
+
+`fetchIssuesSince` 和 `fetchPRsSince` 支持基于 `since` cursor 的增量拉取：
+
+| 方法 | 端点 | 策略 |
+|---|---|---|
+| `fetchIssuesSince(owner, repo, since)` | `GET /repos/{owner}/{repo}/issues?state=all&per_page=100&since={ISO8601}` | GitHub 原生 `since` 参数过滤 |
+| `fetchPRsSince(owner, repo, since)` | `GET /repos/{owner}/{repo}/pulls?state=all&per_page=100&sort=updated&direction=desc` | 降序分页 + early-stop（`updated_at <= since` 时停止） |
+
+- `since` 为空字符串时，两个方法都 fallback 到全量 `fetchIssues` / `fetchPRs`
+- 返回的 fixture 包含 `updatedAt` 字段，adapter 用它推进 cursor

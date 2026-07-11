@@ -89,3 +89,36 @@ const snapshot = await adapter.getSnapshot();
 - raw GitHub JSON → fixture 类型映射
 
 详见 [api-client.md](./api-client.md)。
+
+## 增量同步（Phase 2.3）
+
+`GitHubSyncScheduler` 提供定时增量同步，自动检测变更并只 emit 状态转换事件：
+
+```typescript
+import { GitHubRuntimeAdapter, GitHubApiClient, GitHubSyncScheduler } from "@agent-office/adapter-github";
+
+const client = new GitHubApiClient({ token: process.env.GITHUB_TOKEN! });
+const adapter = new GitHubRuntimeAdapter();
+await adapter.connect();
+
+const scheduler = new GitHubSyncScheduler(
+  adapter,
+  client,
+  { owner: "Leonardo0402", repo: "AI-STARDEW-VALLEY", intervalMs: 60000 },
+  {
+    onSyncSuccess: (cursor) => console.log(`Synced up to ${cursor}`),
+    onSyncFailure: (err, willResync) => console.error(`Sync failed: ${err.message}, will resync: ${willResync}`),
+    onResync: () => console.log("Full resync triggered"),
+  },
+);
+
+scheduler.start();
+// ... later
+scheduler.stop();
+```
+
+增量同步特性：
+- 基于 `lastUpdatedAt` cursor，只拉取变更的 entities
+- 对每个 entity diff 旧 evidence vs 新 fixture，只 emit 状态转换事件
+- 首次同步（空 cursor）自动 fallback 到全量 `syncFromApi`
+- 网络失败时下次自动触发全量 resync

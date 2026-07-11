@@ -347,3 +347,154 @@ describe("GitHubApiClient error handling", () => {
     expect(err.rateLimitReset).toBe(1690000000);
   });
 });
+
+describe("GitHubApiClient.fetchIssuesSince", () => {
+  it("fetches only issues updated after the since cursor", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", ({ request }) => {
+        const since = new URL(request.url).searchParams.get("since");
+        expect(since).toBe("2026-01-05T00:00:00Z");
+        return HttpResponse.json(
+          [
+            {
+              number: 10,
+              html_url: "https://github.com/owner/repo/issues/10",
+              title: "Updated issue",
+              body: "Changed",
+              state: "open",
+              state_reason: null,
+              labels: [],
+              assignees: [],
+              created_at: "2026-01-02T08:00:00Z",
+              updated_at: "2026-01-06T08:00:00Z",
+              closed_at: null,
+            },
+          ],
+          { headers: { link: "" } },
+        );
+      }),
+      http.get("https://api.github.com/repos/owner/repo/issues/10/comments", () => {
+        return HttpResponse.json([]);
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const issues = await client.fetchIssuesSince("owner", "repo", "2026-01-05T00:00:00Z");
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].number).toBe(10);
+    expect(issues[0].updatedAt).toBe("2026-01-06T08:00:00Z");
+  });
+
+  it("falls back to full fetchIssues when since is empty string", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/issues", ({ request }) => {
+        const since = new URL(request.url).searchParams.get("since");
+        expect(since).toBeNull();
+        return HttpResponse.json([], { headers: { link: "" } });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const issues = await client.fetchIssuesSince("owner", "repo", "");
+    expect(issues).toEqual([]);
+  });
+});
+
+describe("GitHubApiClient.fetchPRsSince", () => {
+  it("fetches PRs sorted by updated desc and stops at early-termination boundary", async () => {
+    let page1Requested = false;
+    let page2Requested = false;
+
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/pulls", ({ request }) => {
+        const page = new URL(request.url).searchParams.get("page") ?? "1";
+        const sort = new URL(request.url).searchParams.get("sort");
+        const direction = new URL(request.url).searchParams.get("direction");
+        expect(sort).toBe("updated");
+        expect(direction).toBe("desc");
+
+        if (page === "1") {
+          page1Requested = true;
+          return HttpResponse.json(
+            [
+              {
+                number: 30,
+                html_url: "https://github.com/owner/repo/pull/30",
+                title: "Recent PR",
+                body: "",
+                state: "open",
+                draft: false,
+                merged: false,
+                merged_at: null,
+                merged_by: null,
+                merge_commit_sha: null,
+                head: { ref: "feature/a" },
+                base: { ref: "main" },
+                labels: [],
+                requested_reviewers: [],
+                created_at: "2026-01-08T08:00:00Z",
+                updated_at: "2026-01-10T08:00:00Z",
+                closed_at: null,
+              },
+              {
+                number: 20,
+                html_url: "https://github.com/owner/repo/pull/20",
+                title: "Old PR at boundary",
+                body: "",
+                state: "open",
+                draft: false,
+                merged: false,
+                merged_at: null,
+                merged_by: null,
+                merge_commit_sha: null,
+                head: { ref: "feature/b" },
+                base: { ref: "main" },
+                labels: [],
+                requested_reviewers: [],
+                created_at: "2026-01-01T08:00:00Z",
+                updated_at: "2026-01-04T08:00:00Z",
+                closed_at: null,
+              },
+            ],
+            {
+              headers: {
+                link: '<https://api.github.com/repos/owner/repo/pulls?state=all&per_page=100&sort=updated&direction=desc&page=2>; rel="next"',
+              },
+            },
+          );
+        }
+        page2Requested = true;
+        return HttpResponse.json([]);
+      }),
+      http.get("https://api.github.com/repos/owner/repo/pulls/30/reviews", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/pulls/20/reviews", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/issues/30/comments", () => HttpResponse.json([])),
+      http.get("https://api.github.com/repos/owner/repo/issues/20/comments", () => HttpResponse.json([])),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const prs = await client.fetchPRsSince("owner", "repo", "2026-01-05T00:00:00Z");
+
+    // PR #30 (updated 2026-01-10 > since) is included
+    // PR #20 (updated 2026-01-04 <= since) triggers early stop, excluded
+    expect(prs).toHaveLength(1);
+    expect(prs[0].number).toBe(30);
+    expect(page1Requested).toBe(true);
+    expect(page2Requested).toBe(false);
+  });
+
+  it("falls back to full fetchPRs when since is empty string", async () => {
+    server.use(
+      http.get("https://api.github.com/repos/owner/repo/pulls", ({ request }) => {
+        const sort = new URL(request.url).searchParams.get("sort");
+        expect(sort).toBeNull();
+        return HttpResponse.json([], { headers: { link: "" } });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "" });
+    const prs = await client.fetchPRsSince("owner", "repo", "");
+    expect(prs).toEqual([]);
+  });
+});

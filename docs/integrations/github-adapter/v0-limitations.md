@@ -101,3 +101,15 @@ API 模式（`syncFromApi`）仍受 v0 只读约束：
 - HTTP 5xx 错误直接抛错（v0 不重试）
 - N+1 拉取：每个 issue 拉 comments，每个 PR 拉 reviews + comments（5000 req/hour 足够中小 repo）
 - 不支持 webhook 事件流或 SSE 实时推送（留给 Phase 2.3）
+
+## 增量同步限制（Phase 2.3）
+
+增量同步（`syncIncremental` + `GitHubSyncScheduler`）的 v0 边界：
+
+- **Cursor 是内存的**：进程重启后丢失，首次 sync 自动 fallback 到全量
+- **无 ETag / 304 快速路径**：每次 sync 发 HTTP 请求，即使无变更（留给后续优化）
+- **reopened issue 不 emit 事件**：protocol 无 `task.reopened` EventType，reopened 只更新 evidence，projection 可能暂时 stale 直到全量 resync
+- **label/assignee/review 变化不 emit 事件**：v0 只 emit 状态转换（open→closed / open→merged），非状态变化只更新 evidence
+- **无并发锁**：`setInterval` 不 await，假设 sync < interval；超时由 resync 兜底
+- **无 backoff**：失败后下次 interval 照常触发，resync 是安全网
+- **无 webhook / SSE**：Phase 2.3 仍是 polling

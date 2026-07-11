@@ -72,6 +72,21 @@ export class GitHubApiClient {
     return issues;
   }
 
+  async fetchIssuesSince(owner: string, repo: string, since: string): Promise<GitHubIssueFixture[]> {
+    if (!since) return this.fetchIssues(owner, repo);
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/issues?state=all&per_page=100&since=${encodeURIComponent(since)}`;
+    const pages = await this.paginate<unknown>(url);
+    const issueJsons = pages.filter((j) => !(j as { pull_request?: unknown }).pull_request);
+    const issues: GitHubIssueFixture[] = [];
+    for (const json of issueJsons) {
+      const issue = this.mapIssue(json as RawIssue);
+      const comments = await this.fetchComments(owner, repo, issue.number);
+      issue.comments = comments;
+      issues.push(issue);
+    }
+    return issues;
+  }
+
   async fetchPRs(owner: string, repo: string): Promise<GitHubPRFixture[]> {
     const url = `${this.baseUrl}/repos/${owner}/${repo}/pulls?state=all&per_page=100`;
     const pages = await this.paginate<RawPR>(url);
@@ -83,6 +98,33 @@ export class GitHubApiClient {
       const comments = await this.fetchComments(owner, repo, pr.number);
       pr.comments = comments;
       prs.push(pr);
+    }
+    return prs;
+  }
+
+  async fetchPRsSince(owner: string, repo: string, since: string): Promise<GitHubPRFixture[]> {
+    if (!since) return this.fetchPRs(owner, repo);
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/pulls?state=all&per_page=100&sort=updated&direction=desc`;
+    const prs: GitHubPRFixture[] = [];
+    let currentUrl: string | undefined = url;
+
+    while (currentUrl) {
+      const result = await this.rawGet(currentUrl);
+      const items = result.body as RawPR[];
+      if (!Array.isArray(items)) break;
+
+      for (const json of items) {
+        if (json.updated_at <= since) {
+          return prs;
+        }
+        const pr = this.mapPR(json);
+        pr.reviews = await this.fetchReviews(owner, repo, pr.number);
+        pr.comments = await this.fetchComments(owner, repo, pr.number);
+        prs.push(pr);
+      }
+
+      const link = result.headers.get("link");
+      currentUrl = this.parseLinkHeader(link).next;
     }
     return prs;
   }
@@ -221,6 +263,7 @@ export class GitHubApiClient {
       labels: (j.labels ?? []).map((l) => ({ name: l.name, color: l.color })),
       assignees: (j.assignees ?? []).map((a) => ({ login: a.login, url: a.url })),
       createdAt: j.created_at,
+      updatedAt: j.updated_at,
       closedAt: j.closed_at,
       comments: [],
     };
@@ -245,6 +288,7 @@ export class GitHubApiClient {
       reviews: [],
       comments: [],
       createdAt: j.created_at,
+      updatedAt: j.updated_at,
       closedAt: j.closed_at,
     };
   }
@@ -284,6 +328,7 @@ interface RawIssue {
   labels?: RawLabel[];
   assignees?: RawUser[];
   created_at: string;
+  updated_at: string;
   closed_at: string | null;
   pull_request?: unknown;
 }
@@ -304,5 +349,6 @@ interface RawPR {
   labels?: RawLabel[];
   requested_reviewers?: RawUser[];
   created_at: string;
+  updated_at: string;
   closed_at: string | null;
 }

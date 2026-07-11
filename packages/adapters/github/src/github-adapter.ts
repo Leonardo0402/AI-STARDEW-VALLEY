@@ -56,6 +56,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private correlationId = "corr-gh-001";
   private traceId = "trace-gh-001";
   private lastReplayErrors: ReducerError[] = [];
+  private lastUpdatedAt: string = "";
 
   constructor(options: GitHubAdapterOptions = {}) {
     this.runtimeId = options.runtimeId ?? DEFAULT_RUNTIME_ID;
@@ -210,6 +211,70 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     this.syncFromFixtures({ repo: { owner, name: repo }, issues, pulls });
   }
 
+  /**
+   * 增量同步：只拉取变更的 entities，只 emit 状态转换事件。
+   * 首次调用（空 cursor）→ fallback 到 syncFromApi 全量同步。
+   * 不清空 eventLog / evidence。
+   */
+  async syncIncremental(client: GitHubApiClient, owner: string, repo: string): Promise<void> {
+    if (this.lastUpdatedAt === "") {
+      await this.syncFromApi(client, owner, repo);
+      this.lastUpdatedAt = this.deriveCursorFromEventLog();
+      return;
+    }
+
+    const [issues, pulls] = await Promise.all([
+      client.fetchIssuesSince(owner, repo, this.lastUpdatedAt),
+      client.fetchPRsSince(owner, repo, this.lastUpdatedAt),
+    ]);
+
+    // Process issue deltas (sorted by number ascending, matching syncFromFixtures)
+    for (const issue of issues.sort((a, b) => a.number - b.number)) {
+      const taskId: Id = `gh-issue-${issue.number}`;
+      const existing = this.evidence.tasks[taskId];
+      if (!existing) {
+        this.processIssue(issue);
+      } else {
+        this.emitIssueDelta(existing, issue);
+      }
+    }
+
+    // Process PR deltas
+    for (const pr of pulls.sort((a, b) => a.number - b.number)) {
+      const taskId: Id = `gh-pr-task-${pr.number}`;
+      const existing = this.evidence.tasks[taskId];
+      if (!existing) {
+        this.processPR(pr);
+      } else {
+        this.emitPRDelta(existing, pr);
+      }
+    }
+
+    // Update cursor
+    this.updateCursor(issues, pulls);
+  }
+
+  private deriveCursorFromEventLog(): string {
+    if (this.eventLog.length === 0) return "";
+    return this.eventLog
+      .map((e) => e.occurredAt)
+      .sort()
+      .pop()!;
+  }
+
+  private updateCursor(issues: GitHubIssueFixture[], pulls: GitHubPRFixture[]): void {
+    const allTimestamps = [
+      ...issues.map((i) => i.updatedAt ?? i.createdAt),
+      ...pulls.map((p) => p.updatedAt ?? p.createdAt),
+    ];
+    if (allTimestamps.length > 0) {
+      const max = allTimestamps.sort().pop()!;
+      if (max > this.lastUpdatedAt) {
+        this.lastUpdatedAt = max;
+      }
+    }
+  }
+
   getGitHubEvidence(): GitHubAdapterEvidence {
     return {
       tasks: { ...this.evidence.tasks },
@@ -219,6 +284,14 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
 
   getEventLog(): DomainEvent[] {
     return [...this.eventLog];
+  }
+
+  getCursor(): string {
+    return this.lastUpdatedAt;
+  }
+
+  resetCursor(): void {
+    this.lastUpdatedAt = "";
   }
 
   // ─── 内部：Issue 处理 ─────────────────────────────────────
@@ -444,6 +517,62 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       numbers.push(parseInt(match[1], 10));
     }
     return numbers;
+  }
+
+  // ─── 内部：Delta 发射（Task 5 实现） ─────────────────────
+
+  private emitIssueDelta(oldRef: GitHubSourceRef, newFixture: GitHubIssueFixture): void {
+    const taskId: Id = `gh-issue-${newFixture.number}`;
+
+    // Update evidence
+    this.evidence.tasks[taskId] = this.buildIssueEvidence(newFixture);
+
+    // State transition: open → closed
+    if (oldRef.rawState === "open" && newFixture.state === "closed") {
+      this.emit(EventType.TASK_COMPLETED, {
+        taskId,
+      }, "issue", newFixture.number, newFixture.closedAt ?? newFixture.createdAt);
+    }
+    // closed → reopened: no event (v0 limitation — no TASK_REOPENED EventType)
+    // unchanged: no event
+  }
+
+  private emitPRDelta(oldRef: GitHubSourceRef, newFixture: GitHubPRFixture): void {
+    const taskId: Id = `gh-pr-task-${newFixture.number}`;
+    const artifactId: Id = `gh-pr-${newFixture.number}`;
+
+    // Update evidence
+    this.evidence.tasks[taskId] = this.buildPREvidence(newFixture);
+    this.evidence.artifacts[artifactId] = this.buildPREvidence(newFixture);
+
+    const oldWasOpen = oldRef.rawState === "open";
+    const newIsMerged = newFixture.merged;
+    const newIsClosedUnmerged = newFixture.state === "closed" && !newFixture.merged;
+
+    if (oldWasOpen && newIsMerged) {
+      // open → merged
+      this.emit(EventType.ARTIFACT_DELIVERED, {
+        artifactId,
+        mergeCommitSha: newFixture.mergeCommitSha,
+        mergedBy: newFixture.mergedBy?.login ?? "unknown",
+      }, "pr", newFixture.number, newFixture.mergedAt ?? newFixture.closedAt ?? newFixture.createdAt);
+
+      this.emit(EventType.TASK_COMPLETED, {
+        taskId,
+      }, "pr", newFixture.number, newFixture.mergedAt ?? newFixture.closedAt ?? newFixture.createdAt);
+    } else if (oldWasOpen && newIsClosedUnmerged) {
+      // open → closed-unmerged
+      this.emit(EventType.ARTIFACT_CLOSED, {
+        artifactId,
+        closedBy: null,
+        reason: "closed-unmerged",
+      }, "pr", newFixture.number, newFixture.closedAt ?? newFixture.createdAt);
+
+      this.emit(EventType.TASK_COMPLETED, {
+        taskId,
+      }, "pr", newFixture.number, newFixture.closedAt ?? newFixture.createdAt);
+    }
+    // unchanged: no event
   }
 
   // ─── 内部：事件发射 ────────────────────────────────────────
