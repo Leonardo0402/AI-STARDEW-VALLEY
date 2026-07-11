@@ -809,7 +809,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   // ─── Command handlers (Phase 2.5: Drafts & Audit) ────────
 
   private async executeIssueDraft(command: OfficeCommand<IssueDraftPayload>): Promise<Id> {
-    const draftId = `draft-${this.sequence + 1}`;
+    const draftId = `draft-${this.drafts.size + 1}`;
     const draft: Draft = {
       draftId,
       kind: "issue",
@@ -824,7 +824,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   }
 
   private async executeCommentDraft(command: OfficeCommand<CommentDraftPayload>): Promise<Id> {
-    const draftId = `draft-${this.sequence + 1}`;
+    const draftId = `draft-${this.drafts.size + 1}`;
     const draft: Draft = {
       draftId,
       kind: "comment",
