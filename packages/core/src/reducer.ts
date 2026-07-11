@@ -31,6 +31,8 @@ import type {
   ApprovalResolvedPayload,
   ErrorRaisedPayload,
   AgentSpawnedPayload,
+  IssueCreatedPayload,
+  AuditNoteAddedPayload,
   ReducerError,
 } from "@agent-office/protocol";
 import { EventType } from "@agent-office/protocol";
@@ -606,6 +608,16 @@ export function reduceEvent(
     case EventType.ISSUE_UNLABELED: {
       // Event-trail only — TaskSnapshot has no labels field.
       // Evidence is tracked in GitHubAdapterEvidence.
+      break;
+    }
+
+    case EventType.ISSUE_CREATED: {
+      // Event-trail only — issue creation tracked in GitHubAdapterEvidence.
+      break;
+    }
+
+    case EventType.AUDIT_NOTE_ADDED: {
+      // Event-trail only — audit notes tracked in GitHubAdapterEvidence.auditNotes.
       break;
     }
 
