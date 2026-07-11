@@ -10,6 +10,11 @@ export type {
   GitHubReview,
   GitHubSourceRef,
   GitHubAdapterEvidence,
+  DraftKind,
+  IssueDraft,
+  CommentDraft,
+  Draft,
+  AuditNote,
 } from "./types.js";
 export {
   SAMPLE_FIXTURES,

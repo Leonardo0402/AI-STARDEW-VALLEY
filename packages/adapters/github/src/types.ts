@@ -95,4 +95,37 @@ export interface GitHubSourceRef {
 export interface GitHubAdapterEvidence {
   tasks: Record<Id, GitHubSourceRef>;
   artifacts: Record<Id, GitHubSourceRef>;
+  auditNotes: AuditNote[];
+}
+
+// ─── Draft 类型（adapter 私有，不进 protocol） ─────────────
+
+export type DraftKind = "issue" | "comment";
+
+export interface IssueDraft {
+  draftId: Id;
+  kind: "issue";
+  title: string;
+  body: string;
+  createdBy: Id;
+  createdAt: string;
+}
+
+export interface CommentDraft {
+  draftId: Id;
+  kind: "comment";
+  issueNumber: number;
+  body: string;
+  createdBy: Id;
+  createdAt: string;
+}
+
+export type Draft = IssueDraft | CommentDraft;
+
+export interface AuditNote {
+  auditId: Id;
+  taskId: Id | null;
+  body: string;
+  author: Id;
+  createdAt: string;
 }

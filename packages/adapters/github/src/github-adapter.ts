@@ -60,7 +60,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private subscribers = new Set<RuntimeStreamObserver>();
   private sequence = 0;
   private eventLog: DomainEvent[] = [];
-  private evidence: GitHubAdapterEvidence = { tasks: {}, artifacts: {} };
+  private evidence: GitHubAdapterEvidence = { tasks: {}, artifacts: {}, auditNotes: [] };
   private runtimeId: string;
   private baseTimestamp: string;
   private correlationId = "corr-gh-001";
@@ -269,7 +269,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     // 重置状态
     this.sequence = 0;
     this.eventLog = [];
-    this.evidence = { tasks: {}, artifacts: {} };
+    this.evidence = { tasks: {}, artifacts: {}, auditNotes: [] };
 
     // 按 number 升序处理 issues
     const sortedIssues = [...fixtures.issues].sort((a, b) => a.number - b.number);
@@ -365,6 +365,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     return {
       tasks: { ...this.evidence.tasks },
       artifacts: { ...this.evidence.artifacts },
+      auditNotes: [...this.evidence.auditNotes],
     };
   }
 
