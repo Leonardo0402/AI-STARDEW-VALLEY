@@ -338,6 +338,22 @@ export interface AuditNoteAddedPayload {
   createdAt: string;
 }
 
+export interface ReviewAssignedPayload {
+  reviewId: Id;
+  targetKind: "pr" | "issue";
+  targetNumber: number;
+  agentId: Id;
+  assignedAt: string;
+}
+
+export interface ReviewSubmittedPayload {
+  reviewId: Id;
+  agentId: Id;
+  verdict: "approved" | "revision_required" | "rejected";
+  comment: string;
+  submittedAt: string;
+}
+
 export interface ApprovalRequestedPayload {
   approvalId: Id;
   taskId: Id;
@@ -384,6 +400,8 @@ export const EventType = {
   ISSUE_UNLABELED: "issue.unlabeled",
   ISSUE_CREATED: "issue.created",
   AUDIT_NOTE_ADDED: "audit.note_added",
+  REVIEW_ASSIGNED: "review.assigned",
+  REVIEW_SUBMITTED: "review.submitted",
 } as const;
 
 export const ALL_EVENT_TYPES: string[] = Object.values(EventType);
@@ -477,6 +495,35 @@ export interface AuditNotePayload {
   body: string;
 }
 
+export interface ReviewAssignPayload {
+  targetKind: "pr" | "issue";
+  targetNumber: number;
+  agentId: Id;
+}
+
+export interface ReviewSubmitPayload {
+  reviewId: Id;
+  verdict: "approved" | "revision_required" | "rejected";
+  comment: string;
+}
+
+export interface ReviewApprovePayload {
+  reviewId: Id;
+}
+
+export interface ReviewRejectPayload {
+  reviewId: Id;
+  reason: string;
+}
+
+export interface ReviewFinalizePayload {
+  targetKind: "pr" | "issue";
+  targetNumber: number;
+  verdict: "approved" | "revision_required" | "rejected";
+  comment: string;
+  reviewerId: Id;
+}
+
 // ─── 命令类型常量 ────────────────────────────────────────────
 
 export const CommandType = {
@@ -496,6 +543,11 @@ export const CommandType = {
   DRAFT_SUBMIT: "draft.submit",
   DRAFT_DISCARD: "draft.discard",
   AUDIT_NOTE: "audit_note",
+  REVIEW_ASSIGN: "review.assign",
+  REVIEW_SUBMIT: "review.submit",
+  REVIEW_APPROVE: "review.approve",
+  REVIEW_REJECT: "review.reject",
+  REVIEW_FINALIZE: "review.finalize",
 } as const;
 
 export const ALL_COMMAND_TYPES: string[] = Object.values(CommandType);
