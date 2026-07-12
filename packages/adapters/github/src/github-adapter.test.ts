@@ -49,11 +49,14 @@ describe("GitHubRuntimeAdapter basic lifecycle", () => {
     expect(caps.features.commandExecution).toBe(false);
     expect(caps.features.hardOrchestration).toBe(false);
     expect(caps.features.softMapping).toBe(false);
-    expect(caps.supportedCommands).toHaveLength(4);
+    expect(caps.supportedCommands).toHaveLength(7);
     expect(caps.supportedCommands).toContain(CommandType.ISSUE_DRAFT);
     expect(caps.supportedCommands).toContain(CommandType.COMMENT_DRAFT);
     expect(caps.supportedCommands).toContain(CommandType.DRAFT_DISCARD);
     expect(caps.supportedCommands).toContain(CommandType.AUDIT_NOTE);
+    expect(caps.supportedCommands).toContain(CommandType.REVIEW_ASSIGN);
+    expect(caps.supportedCommands).toContain(CommandType.REVIEW_SUBMIT);
+    expect(caps.supportedCommands).toContain(CommandType.REVIEW_FINALIZE);
   });
 
   it("execute 对所有写命令返回 rejected + UNSUPPORTED_COMMAND", async () => {
