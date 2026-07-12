@@ -173,6 +173,22 @@ export class GitHubApiClient {
     await this.rawPost(url, { reviewers });
   }
 
+  async createIssue(
+    owner: string,
+    repo: string,
+    title: string,
+    body: string
+  ): Promise<{ issueNumber: number; url: string; createdAt: string }> {
+    const url = `${this.baseUrl}/repos/${owner}/${repo}/issues`;
+    const result = await this.rawPost(url, { title, body });
+    const json = result.body as { number: number; html_url: string; created_at: string };
+    return {
+      issueNumber: json.number,
+      url: json.html_url,
+      createdAt: json.created_at,
+    };
+  }
+
   // ─── 私有方法 ───────────────────────────────────────────
 
   private buildHeaders(): Record<string, string> {

@@ -225,4 +225,243 @@ describe("GitHubRuntimeAdapter.execute — command gateway", () => {
     expect(snap).toBeDefined();
     expect(adapter.getLastReplayErrors()).toHaveLength(0);
   });
+
+  // ─── Phase 2.5: Draft lifecycle ───────────────────────
+
+  it("issue.draft success → returns draftId, no event emitted, draft in Map", async () => {
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const result = await adapter.execute(
+      makeCommand(CommandType.ISSUE_DRAFT, "u1", { title: "New bug", body: "desc" })
+    );
+    expect(result.status).toBe("accepted");
+    expect(result.affectedEventIds).toHaveLength(1);
+    const draftId = result.affectedEventIds[0];
+
+    // No event emitted
+    expect(adapter.getEventLog()).toHaveLength(0);
+
+    // Draft stored in Map
+    const draft = adapter.getDraft(draftId);
+    expect(draft).toBeDefined();
+    expect(draft!.kind).toBe("issue");
+    // Draft is a discriminated union; narrow to issue shape for title access
+    expect((draft as { title: string }).title).toBe("New bug");
+  });
+
+  it("comment.draft success → returns draftId, no event emitted, draft in Map", async () => {
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const result = await adapter.execute(
+      makeCommand(CommandType.COMMENT_DRAFT, "u1", { issueNumber: 10, body: "comment text" })
+    );
+    expect(result.status).toBe("accepted");
+    const draftId = result.affectedEventIds[0];
+
+    expect(adapter.getEventLog()).toHaveLength(0);
+
+    const draft = adapter.getDraft(draftId);
+    expect(draft).toBeDefined();
+    expect(draft!.kind).toBe("comment");
+  });
+
+  it("draft.discard success → draft removed from Map, no event emitted", async () => {
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const createResult = await adapter.execute(
+      makeCommand(CommandType.ISSUE_DRAFT, "u1", { title: "T", body: "B" })
+    );
+    const draftId = createResult.affectedEventIds[0];
+    expect(adapter.getDraft(draftId)).toBeDefined();
+
+    const discardResult = await adapter.execute(
+      makeCommand(CommandType.DRAFT_DISCARD, "u1", { draftId })
+    );
+    expect(discardResult.status).toBe("accepted");
+    expect(adapter.getEventLog()).toHaveLength(0);
+    expect(adapter.getDraft(draftId)).toBeUndefined();
+  });
+
+  it("draft.discard non-existent draftId → error with NOT_FOUND", async () => {
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const result = await adapter.execute(
+      makeCommand(CommandType.DRAFT_DISCARD, "u1", { draftId: "draft-nonexistent" })
+    );
+    expect(result.status).toBe("error");
+    expect(result.error?.code).toBe("NOT_FOUND");
+  });
+
+  it("draft.submit(issue) success → calls createIssue, emits ISSUE_CREATED, draft removed", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json({
+          number: 100,
+          html_url: "https://github.com/owner/repo/issues/100",
+          created_at: "2026-07-11T10:00:00Z",
+        });
+      }),
+    );
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const createResult = await adapter.execute(
+      makeCommand(CommandType.ISSUE_DRAFT, "u1", { title: "New issue", body: "body" })
+    );
+    const draftId = createResult.affectedEventIds[0];
+
+    const submitResult = await adapter.execute(
+      makeCommand(CommandType.DRAFT_SUBMIT, "u1", { draftId })
+    );
+    expect(submitResult.status).toBe("accepted");
+    expect(submitResult.affectedEventIds).toHaveLength(1);
+
+    const lastEvent = adapter.getEventLog().pop()!;
+    expect(lastEvent.type).toBe(EventType.ISSUE_CREATED);
+    expect(lastEvent.payload).toMatchObject({
+      taskId: "gh-issue-100",
+      issueNumber: 100,
+      title: "New issue",
+    });
+
+    // Draft removed from Map
+    expect(adapter.getDraft(draftId)).toBeUndefined();
+  });
+
+  it("draft.submit(comment) success → calls addComment, emits ISSUE_COMMENTED, draft removed", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues/10/comments", () => {
+        return HttpResponse.json({ id: 42, created_at: "2026-07-11T10:00:00Z" });
+      }),
+    );
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const createResult = await adapter.execute(
+      makeCommand(CommandType.COMMENT_DRAFT, "u1", { issueNumber: 10, body: "hello" })
+    );
+    const draftId = createResult.affectedEventIds[0];
+
+    const submitResult = await adapter.execute(
+      makeCommand(CommandType.DRAFT_SUBMIT, "u1", { draftId })
+    );
+    expect(submitResult.status).toBe("accepted");
+
+    const lastEvent = adapter.getEventLog().pop()!;
+    expect(lastEvent.type).toBe(EventType.ISSUE_COMMENTED);
+    expect(lastEvent.payload).toMatchObject({ taskId: "gh-issue-10", body: "hello" });
+
+    expect(adapter.getDraft(draftId)).toBeUndefined();
+  });
+
+  it("draft.submit non-existent draftId → error with NOT_FOUND", async () => {
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const result = await adapter.execute(
+      makeCommand(CommandType.DRAFT_SUBMIT, "u1", { draftId: "draft-nonexistent" })
+    );
+    expect(result.status).toBe("error");
+    expect(result.error?.code).toBe("NOT_FOUND");
+  });
+
+  it("draft.submit(issue) API failure → error status, draft preserved in Map", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json({ message: "Bad credentials" }, { status: 401 });
+      }),
+    );
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const createResult = await adapter.execute(
+      makeCommand(CommandType.ISSUE_DRAFT, "u1", { title: "T", body: "B" })
+    );
+    const draftId = createResult.affectedEventIds[0];
+
+    const submitResult = await adapter.execute(
+      makeCommand(CommandType.DRAFT_SUBMIT, "u1", { draftId })
+    );
+    expect(submitResult.status).toBe("error");
+    expect(submitResult.error?.code).toBe("UNAUTHORIZED");
+
+    // Draft preserved (not deleted on failure)
+    expect(adapter.getDraft(draftId)).toBeDefined();
+  });
+
+  it("audit_note with taskId → emits AUDIT_NOTE_ADDED, note in evidence", async () => {
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const result = await adapter.execute(
+      makeCommand(CommandType.AUDIT_NOTE, "u1", { taskId: "gh-issue-10", body: "audit entry" })
+    );
+    expect(result.status).toBe("accepted");
+
+    const lastEvent = adapter.getEventLog().pop()!;
+    expect(lastEvent.type).toBe(EventType.AUDIT_NOTE_ADDED);
+    expect(lastEvent.payload).toMatchObject({ taskId: "gh-issue-10", body: "audit entry" });
+
+    const evidence = adapter.getGitHubEvidence();
+    expect(evidence.auditNotes).toHaveLength(1);
+    expect(evidence.auditNotes[0].body).toBe("audit entry");
+    expect(evidence.auditNotes[0].taskId).toBe("gh-issue-10");
+  });
+
+  it("audit_note without taskId → emits AUDIT_NOTE_ADDED with taskId null", async () => {
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const result = await adapter.execute(
+      makeCommand(CommandType.AUDIT_NOTE, "u1", { body: "runtime audit" })
+    );
+    expect(result.status).toBe("accepted");
+
+    const lastEvent = adapter.getEventLog().pop()!;
+    expect(lastEvent.type).toBe(EventType.AUDIT_NOTE_ADDED);
+    expect(lastEvent.payload).toMatchObject({ taskId: null, body: "runtime audit" });
+  });
+
+  it("audit_note does not call GitHub API (no msw handler needed)", async () => {
+    // onUnhandledRequest: "error" is set in setupServer — if audit_note makes
+    // an HTTP call, msw will error. No handler registered = no call expected.
+    const { adapter } = makeConfiguredAdapter();
+    await adapter.connect();
+
+    const result = await adapter.execute(
+      makeCommand(CommandType.AUDIT_NOTE, "u1", { body: "no api call" })
+    );
+    expect(result.status).toBe("accepted");
+    // If we reach here without msw "error" on unhandled request, audit_note
+    // did not make an HTTP call.
+  });
+
+  it("unconfigured adapter: local commands work, draft.submit returns UNSUPPORTED_COMMAND", async () => {
+    const adapter = new GitHubRuntimeAdapter();
+    await adapter.connect();
+
+    // issue.draft works without apiClient
+    const draftResult = await adapter.execute(
+      makeCommand(CommandType.ISSUE_DRAFT, "u1", { title: "T", body: "B" })
+    );
+    expect(draftResult.status).toBe("accepted");
+    const draftId = draftResult.affectedEventIds[0];
+
+    // draft.submit fails without apiClient
+    const submitResult = await adapter.execute(
+      makeCommand(CommandType.DRAFT_SUBMIT, "u1", { draftId })
+    );
+    expect(submitResult.status).toBe("rejected");
+    expect(submitResult.error?.code).toBe("UNSUPPORTED_COMMAND");
+
+    // audit_note works without apiClient
+    const auditResult = await adapter.execute(
+      makeCommand(CommandType.AUDIT_NOTE, "u1", { body: "audit" })
+    );
+    expect(auditResult.status).toBe("accepted");
+  });
 });

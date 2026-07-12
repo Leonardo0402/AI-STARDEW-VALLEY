@@ -27,6 +27,11 @@ import type {
   IssueAddLabelPayload,
   IssueRemoveLabelPayload,
   PRRequestReviewPayload,
+  IssueDraftPayload,
+  CommentDraftPayload,
+  DraftSubmitPayload,
+  DraftDiscardPayload,
+  AuditNotePayload,
 } from "@agent-office/protocol";
 import { EventType, ALL_EVENT_TYPES, CommandType } from "@agent-office/protocol";
 import type { ReducerError } from "@agent-office/protocol";
@@ -38,6 +43,8 @@ import type {
   GitHubSourceRef,
   GitHubAdapterEvidence,
   GitHubLabel,
+  Draft,
+  AuditNote,
 } from "./types.js";
 import type { GitHubApiClient } from "./github-api-client.js";
 import { GitHubApiError } from "./github-api-client.js";
@@ -45,6 +52,20 @@ import type { GitHubPolicy } from "./github-policy.js";
 
 const DEFAULT_RUNTIME_ID = "github-runtime-001";
 const DEFAULT_BASE_TIMESTAMP = "2026-01-01T00:00:00Z";
+
+/**
+ * Commands that require a configured apiClient/owner/repo to execute.
+ * When unconfigured, these return UNSUPPORTED_COMMAND.
+ * Pure-local commands (issue.draft, comment.draft, draft.discard, audit_note)
+ * bypass the unconfigured guard and work without API configuration.
+ */
+const COMMANDS_REQUIRING_API = new Set<string>([
+  CommandType.ISSUE_ADD_COMMENT,
+  CommandType.ISSUE_ADD_LABEL,
+  CommandType.ISSUE_REMOVE_LABEL,
+  CommandType.PR_REQUEST_REVIEW,
+  CommandType.DRAFT_SUBMIT,
+]);
 
 export interface GitHubAdapterOptions {
   runtimeId?: string;
@@ -60,7 +81,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private subscribers = new Set<RuntimeStreamObserver>();
   private sequence = 0;
   private eventLog: DomainEvent[] = [];
-  private evidence: GitHubAdapterEvidence = { tasks: {}, artifacts: {} };
+  private evidence: GitHubAdapterEvidence = { tasks: {}, artifacts: {}, auditNotes: [] };
   private runtimeId: string;
   private baseTimestamp: string;
   private correlationId = "corr-gh-001";
@@ -71,6 +92,8 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private owner?: string;
   private repo?: string;
   private policy?: GitHubPolicy;
+  private drafts = new Map<Id, Draft>();
+  private draftCounter = 0;
 
   constructor(options: GitHubAdapterOptions = {}) {
     this.runtimeId = options.runtimeId ?? DEFAULT_RUNTIME_ID;
@@ -165,8 +188,18 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   }
 
   async execute(command: OfficeCommand): Promise<CommandResult> {
-    // 1. Unconfigured → UNSUPPORTED_COMMAND (fixture-only mode preserved)
-    if (!this.apiClient || !this.owner || !this.repo) {
+    // 1. Unconfigured guard: pure-local draft/audit commands bypass this guard
+    //    (they work without API configuration). All other commands — including
+    //    API-requiring commands (COMMANDS_REQUIRING_API) and unknown write
+    //    commands (task.create, etc.) — are rejected as read-only when
+    //    unconfigured. This preserves the v0 read-only guard for unknown
+    //    commands while allowing the 4 local commands to proceed.
+    const isLocalCommand =
+      command.commandType === CommandType.ISSUE_DRAFT ||
+      command.commandType === CommandType.COMMENT_DRAFT ||
+      command.commandType === CommandType.DRAFT_DISCARD ||
+      command.commandType === CommandType.AUDIT_NOTE;
+    if (!isLocalCommand && (!this.apiClient || !this.owner || !this.repo)) {
       return {
         commandId: command.commandId,
         status: "rejected",
@@ -210,6 +243,21 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
         case CommandType.PR_REQUEST_REVIEW:
           eventId = await this.executeRequestReview(command as OfficeCommand<PRRequestReviewPayload>);
           break;
+        case CommandType.ISSUE_DRAFT:
+          eventId = await this.executeIssueDraft(command as OfficeCommand<IssueDraftPayload>);
+          break;
+        case CommandType.COMMENT_DRAFT:
+          eventId = await this.executeCommentDraft(command as OfficeCommand<CommentDraftPayload>);
+          break;
+        case CommandType.DRAFT_SUBMIT:
+          eventId = await this.executeDraftSubmit(command as OfficeCommand<DraftSubmitPayload>);
+          break;
+        case CommandType.DRAFT_DISCARD:
+          eventId = await this.executeDraftDiscard(command as OfficeCommand<DraftDiscardPayload>);
+          break;
+        case CommandType.AUDIT_NOTE:
+          eventId = await this.executeAuditNote(command as OfficeCommand<AuditNotePayload>);
+          break;
         default:
           return {
             commandId: command.commandId,
@@ -238,16 +286,18 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
 
   getCapabilities(): AdapterCapabilities {
     const writeConfigured = !!(this.apiClient && this.owner && this.repo);
+    const alwaysSupported = [
+      CommandType.ISSUE_DRAFT,
+      CommandType.COMMENT_DRAFT,
+      CommandType.DRAFT_DISCARD,
+      CommandType.AUDIT_NOTE,
+    ];
+    const writeOnly = [...COMMANDS_REQUIRING_API];
     return {
       supportedEvents: [...ALL_EVENT_TYPES],
       supportedCommands: writeConfigured
-        ? [
-            CommandType.ISSUE_ADD_COMMENT,
-            CommandType.ISSUE_ADD_LABEL,
-            CommandType.ISSUE_REMOVE_LABEL,
-            CommandType.PR_REQUEST_REVIEW,
-          ]
-        : [],
+        ? [...alwaysSupported, ...writeOnly]
+        : alwaysSupported,
       features: {
         snapshot: true,
         sse: true,
@@ -269,7 +319,9 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     // 重置状态
     this.sequence = 0;
     this.eventLog = [];
-    this.evidence = { tasks: {}, artifacts: {} };
+    this.evidence = { tasks: {}, artifacts: {}, auditNotes: [] };
+    this.drafts.clear();
+    this.draftCounter = 0;
 
     // 按 number 升序处理 issues
     const sortedIssues = [...fixtures.issues].sort((a, b) => a.number - b.number);
@@ -365,11 +417,20 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     return {
       tasks: { ...this.evidence.tasks },
       artifacts: { ...this.evidence.artifacts },
+      auditNotes: [...this.evidence.auditNotes],
     };
   }
 
   getEventLog(): DomainEvent[] {
     return [...this.eventLog];
+  }
+
+  getDrafts(): Draft[] {
+    return [...this.drafts.values()];
+  }
+
+  getDraft(draftId: Id): Draft | undefined {
+    return this.drafts.get(draftId);
   }
 
   getCursor(): string {
@@ -746,6 +807,117 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       ref.reviewers = existing;
     }
     return eventId;
+  }
+
+  // ─── Command handlers (Phase 2.5: Drafts & Audit) ────────
+
+  private async executeIssueDraft(command: OfficeCommand<IssueDraftPayload>): Promise<Id> {
+    const draftId = `draft-${++this.draftCounter}`;
+    const draft: Draft = {
+      draftId,
+      kind: "issue",
+      title: command.payload.title,
+      body: command.payload.body,
+      createdBy: command.actorId,
+      createdAt: this.baseTimestamp,
+    };
+    this.drafts.set(draftId, draft);
+    // 不发射事件（本地状态变更）
+    return draftId;
+  }
+
+  private async executeCommentDraft(command: OfficeCommand<CommentDraftPayload>): Promise<Id> {
+    const draftId = `draft-${++this.draftCounter}`;
+    const draft: Draft = {
+      draftId,
+      kind: "comment",
+      issueNumber: command.payload.issueNumber,
+      body: command.payload.body,
+      createdBy: command.actorId,
+      createdAt: this.baseTimestamp,
+    };
+    this.drafts.set(draftId, draft);
+    return draftId;
+  }
+
+  private async executeDraftSubmit(command: OfficeCommand<DraftSubmitPayload>): Promise<Id> {
+    const draft = this.drafts.get(command.payload.draftId);
+    if (!draft) {
+      throw new GitHubApiError(`Draft not found: ${command.payload.draftId}`, 404);
+    }
+
+    if (draft.kind === "issue") {
+      const result = await this.apiClient!.createIssue(
+        this.owner!, this.repo!, draft.title, draft.body
+      );
+      this.drafts.delete(draft.draftId);
+      const taskId: Id = `gh-issue-${result.issueNumber}`;
+      return this.emit(
+        EventType.ISSUE_CREATED,
+        {
+          taskId,
+          issueNumber: result.issueNumber,
+          title: draft.title,
+          body: draft.body,
+          author: draft.createdBy,
+          createdAt: result.createdAt,
+        },
+        "issue",
+        result.issueNumber,
+        result.createdAt,
+      );
+    } else {
+      const result = await this.apiClient!.addComment(
+        this.owner!, this.repo!, draft.issueNumber, draft.body
+      );
+      this.drafts.delete(draft.draftId);
+      const taskId: Id = `gh-issue-${draft.issueNumber}`;
+      return this.emit(
+        EventType.ISSUE_COMMENTED,
+        {
+          taskId,
+          commentId: String(result.commentId),
+          author: draft.createdBy,
+          body: draft.body,
+          createdAt: result.createdAt,
+        },
+        "issue",
+        draft.issueNumber,
+        result.createdAt,
+      );
+    }
+  }
+
+  private async executeDraftDiscard(command: OfficeCommand<DraftDiscardPayload>): Promise<Id> {
+    const draft = this.drafts.get(command.payload.draftId);
+    if (!draft) {
+      throw new GitHubApiError(`Draft not found: ${command.payload.draftId}`, 404);
+    }
+    this.drafts.delete(command.payload.draftId);
+    return draft.draftId;
+  }
+
+  private async executeAuditNote(command: OfficeCommand<AuditNotePayload>): Promise<Id> {
+    const note: AuditNote = {
+      auditId: `audit-${this.sequence + 1}`,
+      taskId: command.payload.taskId ?? null,
+      body: command.payload.body,
+      author: command.actorId,
+      createdAt: this.baseTimestamp,
+    };
+    this.evidence.auditNotes.push(note);
+    return this.emit(
+      EventType.AUDIT_NOTE_ADDED,
+      {
+        taskId: note.taskId,
+        body: note.body,
+        author: note.author,
+        createdAt: note.createdAt,
+      },
+      "issue",
+      0,
+      note.createdAt,
+    );
   }
 
   // ─── 内部：事件发射 ────────────────────────────────────────

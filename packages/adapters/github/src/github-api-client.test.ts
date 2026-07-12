@@ -613,3 +613,58 @@ describe("GitHubApiClient.requestReview", () => {
     });
   });
 });
+
+describe("GitHubApiClient.createIssue", () => {
+  it("posts a new issue and returns {issueNumber, url, createdAt}", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues", async ({ request }) => {
+        const body = (await request.json()) as { title: string; body: string };
+        expect(body.title).toBe("New bug");
+        expect(body.body).toBe("something broke");
+        return HttpResponse.json({
+          number: 100,
+          html_url: "https://github.com/owner/repo/issues/100",
+          created_at: "2026-07-11T10:00:00Z",
+        });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    const result = await client.createIssue("owner", "repo", "New bug", "something broke");
+
+    expect(result.issueNumber).toBe(100);
+    expect(result.url).toBe("https://github.com/owner/repo/issues/100");
+    expect(result.createdAt).toBe("2026-07-11T10:00:00Z");
+  });
+
+  it("throws GitHubApiError(422) when validation fails", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json(
+          { message: "Validation Failed", errors: [{ field: "title", code: "missing" }] },
+          { status: 422 },
+        );
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "ghp_test" });
+    await expect(client.createIssue("owner", "repo", "", "")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 422,
+    });
+  });
+
+  it("throws GitHubApiError(401) when unauthorized", async () => {
+    server.use(
+      http.post("https://api.github.com/repos/owner/repo/issues", () => {
+        return HttpResponse.json({ message: "Bad credentials" }, { status: 401 });
+      }),
+    );
+
+    const client = new GitHubApiClient({ token: "bad-token" });
+    await expect(client.createIssue("owner", "repo", "title", "body")).rejects.toMatchObject({
+      name: "GitHubApiError",
+      status: 401,
+    });
+  });
+});

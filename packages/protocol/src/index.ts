@@ -322,6 +322,22 @@ export interface IssueUnlabeledPayload {
   removedBy: Id;
 }
 
+export interface IssueCreatedPayload {
+  taskId: Id;
+  issueNumber: number;
+  title: string;
+  body: string;
+  author: Id;
+  createdAt: string;
+}
+
+export interface AuditNoteAddedPayload {
+  taskId: Id | null;
+  body: string;
+  author: Id;
+  createdAt: string;
+}
+
 export interface ApprovalRequestedPayload {
   approvalId: Id;
   taskId: Id;
@@ -366,6 +382,8 @@ export const EventType = {
   ISSUE_COMMENTED: "issue.commented",
   ISSUE_LABELED: "issue.labeled",
   ISSUE_UNLABELED: "issue.unlabeled",
+  ISSUE_CREATED: "issue.created",
+  AUDIT_NOTE_ADDED: "audit.note_added",
 } as const;
 
 export const ALL_EVENT_TYPES: string[] = Object.values(EventType);
@@ -436,6 +454,29 @@ export interface PRRequestReviewPayload {
   reviewers: string[];
 }
 
+export interface IssueDraftPayload {
+  title: string;
+  body: string;
+}
+
+export interface CommentDraftPayload {
+  issueNumber: number;
+  body: string;
+}
+
+export interface DraftSubmitPayload {
+  draftId: Id;
+}
+
+export interface DraftDiscardPayload {
+  draftId: Id;
+}
+
+export interface AuditNotePayload {
+  taskId?: Id;
+  body: string;
+}
+
 // ─── 命令类型常量 ────────────────────────────────────────────
 
 export const CommandType = {
@@ -450,6 +491,11 @@ export const CommandType = {
   ISSUE_ADD_LABEL: "issue.add_label",
   ISSUE_REMOVE_LABEL: "issue.remove_label",
   PR_REQUEST_REVIEW: "pr.request_review",
+  ISSUE_DRAFT: "issue.draft",
+  COMMENT_DRAFT: "comment.draft",
+  DRAFT_SUBMIT: "draft.submit",
+  DRAFT_DISCARD: "draft.discard",
+  AUDIT_NOTE: "audit_note",
 } as const;
 
 export const ALL_COMMAND_TYPES: string[] = Object.values(CommandType);

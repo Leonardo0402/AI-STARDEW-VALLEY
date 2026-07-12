@@ -36,6 +36,8 @@ import {
   type IssueCommentedPayload,
   type IssueLabeledPayload,
   type IssueUnlabeledPayload,
+  type IssueCreatedPayload,
+  type AuditNoteAddedPayload,
 } from "@agent-office/protocol";
 
 const RUNTIME_ID = "test-runtime";
@@ -465,6 +467,42 @@ describe("Reducer", () => {
     } as IssueUnlabeledPayload));
     expect(result.errors).toHaveLength(0);
     expect(result.snapshot.tasks).toHaveLength(1);
+  });
+
+  it("should pass through issue.created event without snapshot mutation", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    const result = reduceEvent(snap, makeEvent(2, EventType.ISSUE_CREATED, {
+      taskId: "t1",
+      issueNumber: 42,
+      title: "New issue",
+      body: "body text",
+      author: "user1",
+      createdAt: "2026-07-11T10:00:00Z",
+    } as IssueCreatedPayload));
+    expect(result.errors).toHaveLength(0);
+    expect(result.snapshot.tasks).toHaveLength(1);
+    expect(result.snapshot.tasks[0].taskId).toBe("t1");
+  });
+
+  it("should pass through audit.note_added event without snapshot mutation", () => {
+    let snap = createEmptySnapshot(RUNTIME_ID);
+    snap = reduceEvent(snap, makeEvent(1, EventType.TASK_CREATED, {
+      taskId: "t1", title: "Test", description: "",
+      priority: "normal" as const, parentTaskId: null,
+    })).snapshot;
+    const result = reduceEvent(snap, makeEvent(2, EventType.AUDIT_NOTE_ADDED, {
+      taskId: "t1",
+      body: "audit entry",
+      author: "user1",
+      createdAt: "2026-07-11T10:00:00Z",
+    } as AuditNoteAddedPayload));
+    expect(result.errors).toHaveLength(0);
+    expect(result.snapshot.tasks).toHaveLength(1);
+    expect(result.snapshot.tasks[0].taskId).toBe("t1");
   });
 });
 
