@@ -38,6 +38,8 @@ import {
   type IssueUnlabeledPayload,
   type IssueCreatedPayload,
   type AuditNoteAddedPayload,
+  type ReviewAssignedPayload,
+  type ReviewSubmittedPayload,
 } from "@agent-office/protocol";
 
 const RUNTIME_ID = "test-runtime";
@@ -503,6 +505,66 @@ describe("Reducer", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.snapshot.tasks).toHaveLength(1);
     expect(result.snapshot.tasks[0].taskId).toBe("t1");
+  });
+
+  it("should pass through review.assigned event without snapshot mutation", () => {
+    const snapshot = createEmptySnapshot("rt-test");
+    const event: DomainEvent<ReviewAssignedPayload> = {
+      eventId: "evt-test-1",
+      runtimeId: "rt-test",
+      sequence: 1,
+      schemaVersion: "1.0",
+      type: EventType.REVIEW_ASSIGNED,
+      occurredAt: "2026-01-01T00:00:00Z",
+      receivedAt: "2026-01-01T00:00:00Z",
+      correlationId: "corr-1",
+      causationId: null,
+      traceId: "trace-1",
+      payload: {
+        reviewId: "review-1",
+        targetKind: "pr",
+        targetNumber: 42,
+        agentId: "agent-reviewer-1",
+        assignedAt: "2026-01-01T00:00:00Z",
+      },
+    };
+    const result = reduceEvent(snapshot, event);
+    expect(result.errors).toEqual([]);
+    expect(result.snapshot.agents).toEqual(snapshot.agents);
+    expect(result.snapshot.tasks).toEqual(snapshot.tasks);
+    expect(result.snapshot.artifacts).toEqual(snapshot.artifacts);
+    expect(result.snapshot.approvals).toEqual(snapshot.approvals);
+    expect(result.snapshot.rooms).toEqual(snapshot.rooms);
+  });
+
+  it("should pass through review.submitted event without snapshot mutation", () => {
+    const snapshot = createEmptySnapshot("rt-test");
+    const event: DomainEvent<ReviewSubmittedPayload> = {
+      eventId: "evt-test-2",
+      runtimeId: "rt-test",
+      sequence: 2,
+      schemaVersion: "1.0",
+      type: EventType.REVIEW_SUBMITTED,
+      occurredAt: "2026-01-01T00:00:00Z",
+      receivedAt: "2026-01-01T00:00:00Z",
+      correlationId: "corr-2",
+      causationId: null,
+      traceId: "trace-2",
+      payload: {
+        reviewId: "review-1",
+        agentId: "agent-reviewer-1",
+        verdict: "approved",
+        comment: "Looks good",
+        submittedAt: "2026-01-01T00:00:00Z",
+      },
+    };
+    const result = reduceEvent(snapshot, event);
+    expect(result.errors).toEqual([]);
+    expect(result.snapshot.agents).toEqual(snapshot.agents);
+    expect(result.snapshot.tasks).toEqual(snapshot.tasks);
+    expect(result.snapshot.artifacts).toEqual(snapshot.artifacts);
+    expect(result.snapshot.approvals).toEqual(snapshot.approvals);
+    expect(result.snapshot.rooms).toEqual(snapshot.rooms);
   });
 });
 
