@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { CommandType, type OfficeCommand, type Id } from "@agent-office/protocol";
+import { CommandType, EventType, type OfficeCommand, type Id } from "@agent-office/protocol";
 import { GitHubRuntimeAdapter } from "@agent-office/adapter-github";
 import { AgentReviewOrchestrator } from "./agent-review-orchestrator.js";
 import { RuleBasedReviewStrategy } from "./review-strategy.js";
@@ -24,6 +24,14 @@ function makeCommand(
 function makeOrchestrator(): AgentReviewOrchestrator {
   const inner = new GitHubRuntimeAdapter();
   return new AgentReviewOrchestrator(inner, {});
+}
+
+function makeOrchestratorWithInner(): {
+  orchestrator: AgentReviewOrchestrator;
+  inner: GitHubRuntimeAdapter;
+} {
+  const inner = new GitHubRuntimeAdapter();
+  return { orchestrator: new AgentReviewOrchestrator(inner, {}), inner };
 }
 
 describe("AgentReviewOrchestrator", () => {
@@ -264,6 +272,40 @@ describe("AgentReviewOrchestrator", () => {
       expect(result.status).toBe("accepted");
       expect(orchestrator.getSubmittedReviews()).toHaveLength(0);
     });
+
+    it("does not emit ARTIFACT_REVIEWED when rejected", async () => {
+      const { orchestrator: orch, inner } = makeOrchestratorWithInner();
+      await orch.connect();
+
+      const assignResult = await orch.execute(
+        makeCommand(CommandType.REVIEW_ASSIGN, "user1", {
+          targetKind: "pr",
+          targetNumber: 42,
+          agentId: "agent-reviewer-1",
+        })
+      );
+      const reviewId = assignResult.affectedEventIds[0];
+
+      await orch.execute(
+        makeCommand(CommandType.REVIEW_SUBMIT, "agent-reviewer-1", {
+          reviewId,
+          verdict: "approved",
+          comment: "LGTM",
+        })
+      );
+
+      await orch.execute(
+        makeCommand(CommandType.REVIEW_REJECT, "user1", {
+          reviewId,
+          reason: "Review is invalid",
+        })
+      );
+
+      // Verify no ARTIFACT_REVIEWED event was emitted
+      const events = inner.getEventLog();
+      const artifactReviewed = events.find((e) => e.type === EventType.ARTIFACT_REVIEWED);
+      expect(artifactReviewed).toBeUndefined();
+    });
   });
 
   describe("pass-through", () => {
@@ -277,6 +319,20 @@ describe("AgentReviewOrchestrator", () => {
       // Inner adapter (GitHubRuntimeAdapter) will reject TASK_CREATE as unsupported
       expect(result.status).toBe("rejected");
       expect(result.error?.code).toBe("UNSUPPORTED_COMMAND");
+    });
+
+    it("rejects REVIEW_FINALIZE as FORBIDDEN (safety boundary)", async () => {
+      const result = await orchestrator.execute(
+        makeCommand(CommandType.REVIEW_FINALIZE, "agent-reviewer-1", {
+          targetKind: "pr",
+          targetNumber: 42,
+          verdict: "approved",
+          comment: "Trying to bypass approval",
+          reviewerId: "agent-reviewer-1",
+        })
+      );
+      expect(result.status).toBe("error");
+      expect(result.error?.code).toBe("FORBIDDEN");
     });
   });
 });

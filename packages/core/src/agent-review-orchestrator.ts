@@ -85,6 +85,12 @@ export class AgentReviewOrchestrator implements RuntimeAdapter {
         return this.executeReviewApprove(command as OfficeCommand<ReviewApprovePayload>);
       case CommandType.REVIEW_REJECT:
         return this.executeReviewReject(command as OfficeCommand<ReviewRejectPayload>);
+      case CommandType.REVIEW_FINALIZE:
+        return this.reject(
+          command,
+          "FORBIDDEN",
+          "REVIEW_FINALIZE can only be called internally by the orchestrator"
+        );
       default:
         return this.inner.execute(command);
     }
