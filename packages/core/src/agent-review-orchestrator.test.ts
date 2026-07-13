@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { CommandType, EventType, type OfficeCommand, type Id } from "@agent-office/protocol";
 import { GitHubRuntimeAdapter } from "@agent-office/adapter-github";
+import { createEmptySnapshot } from "@agent-office/core";
 import { AgentReviewOrchestrator } from "./agent-review-orchestrator.js";
 import { RuleBasedReviewStrategy } from "./review-strategy.js";
 
@@ -334,5 +335,27 @@ describe("AgentReviewOrchestrator", () => {
       expect(result.status).toBe("error");
       expect(result.error?.code).toBe("FORBIDDEN");
     });
+  });
+});
+
+describe("getIntegrationProjection", () => {
+  it("returns reviews state", async () => {
+    const inner = new GitHubRuntimeAdapter();
+    const orch = new AgentReviewOrchestrator(inner);
+    await orch.connect();
+    await orch.execute({
+      commandId: "c1",
+      commandType: CommandType.REVIEW_ASSIGN,
+      timestamp: "2026-01-01T00:00:00Z",
+      source: "user",
+      actorId: "user-1",
+      runtimeId: "r",
+      targetId: null,
+      payload: { targetKind: "issue", targetNumber: 1, agentId: "agent-1" },
+    });
+    const snapshot = createEmptySnapshot("r");
+    const proj = orch.getIntegrationProjection(snapshot);
+    expect(proj.reviews?.assigned).toHaveLength(1);
+    expect(proj.reviews?.assigned[0].targetNumber).toBe(1);
   });
 });

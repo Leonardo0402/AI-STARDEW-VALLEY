@@ -28,6 +28,8 @@ import type {
 import { CommandType } from "@agent-office/protocol";
 import type { ReviewStrategy } from "./review-strategy.js";
 import { RuleBasedReviewStrategy } from "./review-strategy.js";
+import { GitHubRuntimeAdapter } from "@agent-office/adapter-github";
+import type { GitHubAdapterEvidence } from "@agent-office/adapter-github";
 
 export interface OrchestratorOptions {
   strategy?: ReviewStrategy;
@@ -280,6 +282,22 @@ export class AgentReviewOrchestrator implements RuntimeAdapter {
     return this.submittedReviews.get(reviewId);
   }
 
+  getIntegrationProjection(snapshot: RuntimeSnapshot): {
+    github: { issues: unknown[]; pulls: unknown[]; auditNotes: unknown[] } | null;
+    reviews: { assigned: ReviewAssignment[]; submitted: ReviewDraft[] };
+  } {
+    return {
+      github:
+        this.inner instanceof GitHubRuntimeAdapter
+          ? projectGitHubIntegration(this.inner.getGitHubEvidence(), snapshot)
+          : null,
+      reviews: {
+        assigned: this.getAssignedReviews(),
+        submitted: this.getSubmittedReviews(),
+      },
+    };
+  }
+
   // ─── Pass-through methods ──────────────────────────────────
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
@@ -334,4 +352,61 @@ export class AgentReviewOrchestrator implements RuntimeAdapter {
       payload: { body },
     });
   }
+}
+
+function projectGitHubIntegration(
+  evidence: GitHubAdapterEvidence,
+  snapshot: RuntimeSnapshot
+): { issues: unknown[]; pulls: unknown[]; auditNotes: unknown[] } {
+  const issues: unknown[] = [];
+  const pulls: unknown[] = [];
+
+  for (const task of snapshot.tasks) {
+    const ref = evidence.tasks[task.taskId];
+    if (!ref) continue;
+    if (ref.kind === "issue") {
+      issues.push({
+        taskId: task.taskId,
+        number: ref.number,
+        kind: "issue",
+        title: task.title,
+        state: ref.rawState as "open" | "closed",
+        stateReason: ref.stateReason,
+        closedAt: ref.closedAt ?? null,
+        labels: ref.labels,
+        assignees: ref.assignees,
+        url: ref.url,
+      });
+    }
+  }
+
+  for (const art of snapshot.artifacts) {
+    const ref = evidence.artifacts[art.artifactId];
+    if (!ref || ref.kind !== "pr") continue;
+    const task = snapshot.tasks.find((t) => t.taskId === art.taskId);
+    pulls.push({
+      taskId: task?.taskId ?? art.taskId,
+      artifactId: art.artifactId,
+      number: ref.number,
+      kind: "pr",
+      title: art.title,
+      state: ref.rawState as "open" | "closed" | "merged",
+      draft: art.status === "draft",
+      labels: ref.labels,
+      reviewers: ref.reviewers ?? [],
+      url: ref.url,
+    });
+  }
+
+  return {
+    issues,
+    pulls,
+    auditNotes: evidence.auditNotes.map((n) => ({
+      auditId: n.auditId,
+      taskId: n.taskId,
+      body: n.body,
+      author: n.author,
+      createdAt: n.createdAt,
+    })),
+  };
 }
