@@ -8,13 +8,28 @@ import {
 } from "./projection.js";
 import type { IntegrationProjection } from "./types.js";
 
+const fakeCapabilities = {
+  supportedEvents: [] as string[],
+  supportedCommands: [] as string[],
+  features: {
+    snapshot: false,
+    sse: false,
+    websocket: false,
+    commandExecution: false,
+    softMapping: false,
+    hardOrchestration: false,
+  },
+};
+
 class FakeProvider implements RuntimeAdapter, IntegrationProjectionProvider {
   async connect(): Promise<void> {}
   async disconnect(): Promise<void> {}
   async execute(): Promise<never> { throw new Error("unused"); }
   async getSnapshot(): Promise<RuntimeSnapshot> { return createEmptySnapshot("r"); }
-  getCapabilities() { return { supportedCommands: [], supportsSubscribe: false }; }
-  subscribe() { return { unsubscribe: () => {} }; }
+  getCapabilities() { return fakeCapabilities; }
+  subscribe(): ReturnType<RuntimeAdapter["subscribe"]> {
+    return { ready: Promise.resolve(), close: () => {} };
+  }
   getIntegrationProjection(): IntegrationProjection {
     return {
       github: { issues: [], pulls: [], auditNotes: [] },
@@ -28,8 +43,10 @@ class FakePlainAdapter implements RuntimeAdapter {
   async disconnect(): Promise<void> {}
   async execute(): Promise<never> { throw new Error("unused"); }
   async getSnapshot(): Promise<RuntimeSnapshot> { return createEmptySnapshot("r"); }
-  getCapabilities() { return { supportedCommands: [], supportsSubscribe: false }; }
-  subscribe() { return { unsubscribe: () => {} }; }
+  getCapabilities() { return fakeCapabilities; }
+  subscribe(): ReturnType<RuntimeAdapter["subscribe"]> {
+    return { ready: Promise.resolve(), close: () => {} };
+  }
 }
 
 describe("projectIntegration", () => {
