@@ -51,6 +51,9 @@ export class GitHubPolicy {
       CommandType.DRAFT_SUBMIT,
       CommandType.DRAFT_DISCARD,
       CommandType.AUDIT_NOTE,
+      CommandType.REVIEW_ASSIGN,
+      CommandType.REVIEW_SUBMIT,
+      CommandType.REVIEW_FINALIZE,
     ];
     if (!supported.includes(command.commandType)) {
       return { allowed: false, reason: "UNSUPPORTED_COMMAND_TYPE" };
@@ -122,6 +125,28 @@ export class GitHubPolicy {
       case CommandType.AUDIT_NOTE: {
         if (typeof p.body !== "string" || p.body.length === 0) return "INVALID_PAYLOAD";
         // taskId is optional
+        return null;
+      }
+      case CommandType.REVIEW_ASSIGN: {
+        if (p.targetKind !== "pr" && p.targetKind !== "issue") return "INVALID_PAYLOAD";
+        if (typeof p.targetNumber !== "number" || p.targetNumber <= 0) return "INVALID_PAYLOAD";
+        if (typeof p.agentId !== "string" || p.agentId.length === 0) return "INVALID_PAYLOAD";
+        return null;
+      }
+      case CommandType.REVIEW_SUBMIT: {
+        if (typeof p.reviewId !== "string" || p.reviewId.length === 0) return "INVALID_PAYLOAD";
+        if (p.verdict !== "approved" && p.verdict !== "revision_required" && p.verdict !== "rejected")
+          return "INVALID_PAYLOAD";
+        if (typeof p.comment !== "string" || p.comment.length === 0) return "INVALID_PAYLOAD";
+        return null;
+      }
+      case CommandType.REVIEW_FINALIZE: {
+        if (p.targetKind !== "pr" && p.targetKind !== "issue") return "INVALID_PAYLOAD";
+        if (typeof p.targetNumber !== "number" || p.targetNumber <= 0) return "INVALID_PAYLOAD";
+        if (p.verdict !== "approved" && p.verdict !== "revision_required" && p.verdict !== "rejected")
+          return "INVALID_PAYLOAD";
+        if (typeof p.comment !== "string" || p.comment.length === 0) return "INVALID_PAYLOAD";
+        if (typeof p.reviewerId !== "string" || p.reviewerId.length === 0) return "INVALID_PAYLOAD";
         return null;
       }
       default:

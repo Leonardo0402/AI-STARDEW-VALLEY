@@ -32,6 +32,9 @@ import type {
   DraftSubmitPayload,
   DraftDiscardPayload,
   AuditNotePayload,
+  ReviewAssignPayload,
+  ReviewSubmitPayload,
+  ReviewFinalizePayload,
 } from "@agent-office/protocol";
 import { EventType, ALL_EVENT_TYPES, CommandType } from "@agent-office/protocol";
 import type { ReducerError } from "@agent-office/protocol";
@@ -94,6 +97,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
   private policy?: GitHubPolicy;
   private drafts = new Map<Id, Draft>();
   private draftCounter = 0;
+  private reviewCounter = 0;
 
   constructor(options: GitHubAdapterOptions = {}) {
     this.runtimeId = options.runtimeId ?? DEFAULT_RUNTIME_ID;
@@ -198,7 +202,10 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       command.commandType === CommandType.ISSUE_DRAFT ||
       command.commandType === CommandType.COMMENT_DRAFT ||
       command.commandType === CommandType.DRAFT_DISCARD ||
-      command.commandType === CommandType.AUDIT_NOTE;
+      command.commandType === CommandType.AUDIT_NOTE ||
+      command.commandType === CommandType.REVIEW_ASSIGN ||
+      command.commandType === CommandType.REVIEW_SUBMIT ||
+      command.commandType === CommandType.REVIEW_FINALIZE;
     if (!isLocalCommand && (!this.apiClient || !this.owner || !this.repo)) {
       return {
         commandId: command.commandId,
@@ -258,6 +265,15 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
         case CommandType.AUDIT_NOTE:
           eventId = await this.executeAuditNote(command as OfficeCommand<AuditNotePayload>);
           break;
+        case CommandType.REVIEW_ASSIGN:
+          eventId = await this.executeReviewAssign(command as OfficeCommand<ReviewAssignPayload>);
+          break;
+        case CommandType.REVIEW_SUBMIT:
+          eventId = await this.executeReviewSubmit(command as OfficeCommand<ReviewSubmitPayload>);
+          break;
+        case CommandType.REVIEW_FINALIZE:
+          eventId = await this.executeReviewFinalize(command as OfficeCommand<ReviewFinalizePayload>);
+          break;
         default:
           return {
             commandId: command.commandId,
@@ -291,6 +307,9 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       CommandType.COMMENT_DRAFT,
       CommandType.DRAFT_DISCARD,
       CommandType.AUDIT_NOTE,
+      CommandType.REVIEW_ASSIGN,
+      CommandType.REVIEW_SUBMIT,
+      CommandType.REVIEW_FINALIZE,
     ];
     const writeOnly = [...COMMANDS_REQUIRING_API];
     return {
@@ -322,6 +341,7 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
     this.evidence = { tasks: {}, artifacts: {}, auditNotes: [] };
     this.drafts.clear();
     this.draftCounter = 0;
+    this.reviewCounter = 0;
 
     // 按 number 升序处理 issues
     const sortedIssues = [...fixtures.issues].sort((a, b) => a.number - b.number);
@@ -918,6 +938,63 @@ export class GitHubRuntimeAdapter implements RuntimeAdapter {
       0,
       note.createdAt,
     );
+  }
+
+  // ─── Command handlers (Phase 2.6: Agent Review Loop) ──────
+
+  private async executeReviewAssign(command: OfficeCommand<ReviewAssignPayload>): Promise<Id> {
+    const reviewId = `review-${++this.reviewCounter}`;
+    const assignedAt = this.baseTimestamp;
+    this.emit(
+      EventType.REVIEW_ASSIGNED,
+      {
+        reviewId,
+        targetKind: command.payload.targetKind,
+        targetNumber: command.payload.targetNumber,
+        agentId: command.payload.agentId,
+        assignedAt,
+      },
+      command.payload.targetKind,
+      command.payload.targetNumber,
+      assignedAt,
+    );
+    return reviewId;
+  }
+
+  private async executeReviewSubmit(command: OfficeCommand<ReviewSubmitPayload>): Promise<Id> {
+    const submittedAt = this.baseTimestamp;
+    this.emit(
+      EventType.REVIEW_SUBMITTED,
+      {
+        reviewId: command.payload.reviewId,
+        agentId: command.actorId,
+        verdict: command.payload.verdict,
+        comment: command.payload.comment,
+        submittedAt,
+      },
+      "issue",
+      0,
+      submittedAt,
+    );
+    return command.payload.reviewId;
+  }
+
+  private async executeReviewFinalize(command: OfficeCommand<ReviewFinalizePayload>): Promise<Id> {
+    const artifactId: Id = `gh-${command.payload.targetKind}-${command.payload.targetNumber}`;
+    const reviewedAt = this.baseTimestamp;
+    this.emit(
+      EventType.ARTIFACT_REVIEWED,
+      {
+        artifactId,
+        reviewerId: command.payload.reviewerId,
+        verdict: command.payload.verdict,
+        comment: command.payload.comment,
+      },
+      command.payload.targetKind,
+      command.payload.targetNumber,
+      reviewedAt,
+    );
+    return artifactId;
   }
 
   // ─── 内部：事件发射 ────────────────────────────────────────

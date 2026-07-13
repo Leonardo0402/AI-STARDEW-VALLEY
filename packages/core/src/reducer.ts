@@ -621,6 +621,15 @@ export function reduceEvent(
       break;
     }
 
+    case EventType.REVIEW_ASSIGNED: {
+      // Event-trail only — review assignment tracked in AgentReviewOrchestrator.
+      break;
+    }
+    case EventType.REVIEW_SUBMITTED: {
+      // Event-trail only — review draft tracked in AgentReviewOrchestrator.
+      break;
+    }
+
     case EventType.ERROR_RAISED: {
       // error.raised 不改变 Snapshot 状态，仅记录
       // 实际的错误状态变化由 agent.status_changed 或 task.blocked 体现

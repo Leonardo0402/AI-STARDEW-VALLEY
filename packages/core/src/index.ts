@@ -40,3 +40,7 @@ export { CommandGateway } from "./gateway.js";
 export { evaluateCommand, hasCapability, rejectedResult } from "./policy.js";
 export type { PolicyDecision } from "./policy.js";
 export { projectSnapshot } from "./projection.js";
+export { AgentReviewOrchestrator } from "./agent-review-orchestrator.js";
+export type { OrchestratorOptions, ReviewAssignment, ReviewDraft } from "./agent-review-orchestrator.js";
+export { RuleBasedReviewStrategy } from "./review-strategy.js";
+export type { ReviewStrategy, ReviewContext, ReviewResult } from "./review-strategy.js";

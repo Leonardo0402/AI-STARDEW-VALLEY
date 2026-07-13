@@ -202,4 +202,111 @@ describe("GitHubPolicy", () => {
       expect(verdict.reason).toBe("INVALID_PAYLOAD");
     });
   });
+
+  describe("GitHubPolicy review commands", () => {
+    const policy = new GitHubPolicy({
+      allowedActors: ["user1", "agent-reviewer-1"],
+      rateLimitPerMinute: 100,
+    });
+
+    it("allows REVIEW_ASSIGN with valid payload", () => {
+      const verdict = policy.validate({
+        commandId: "cmd-1",
+        commandType: CommandType.REVIEW_ASSIGN,
+        timestamp: "2026-01-01T00:00:00Z",
+        source: "user",
+        actorId: "user1",
+        runtimeId: "rt-1",
+        targetId: null,
+        payload: { targetKind: "pr", targetNumber: 42, agentId: "agent-reviewer-1" },
+      });
+      expect(verdict.allowed).toBe(true);
+    });
+
+    it("rejects REVIEW_ASSIGN with invalid targetKind", () => {
+      const verdict = policy.validate({
+        commandId: "cmd-2",
+        commandType: CommandType.REVIEW_ASSIGN,
+        timestamp: "2026-01-01T00:00:00Z",
+        source: "user",
+        actorId: "user1",
+        runtimeId: "rt-1",
+        targetId: null,
+        payload: { targetKind: "commit", targetNumber: 42, agentId: "agent-reviewer-1" },
+      });
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("rejects REVIEW_SUBMIT with invalid verdict value", () => {
+      const verdict = policy.validate({
+        commandId: "cmd-3",
+        commandType: CommandType.REVIEW_SUBMIT,
+        timestamp: "2026-01-01T00:00:00Z",
+        source: "user",
+        actorId: "agent-reviewer-1",
+        runtimeId: "rt-1",
+        targetId: null,
+        payload: { reviewId: "review-1", verdict: "maybe", comment: "Not sure" },
+      });
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("allows REVIEW_FINALIZE with valid payload", () => {
+      const verdict = policy.validate({
+        commandId: "cmd-4",
+        commandType: CommandType.REVIEW_FINALIZE,
+        timestamp: "2026-01-01T00:00:00Z",
+        source: "system",
+        actorId: "user1",
+        runtimeId: "rt-1",
+        targetId: null,
+        payload: {
+          targetKind: "pr",
+          targetNumber: 42,
+          verdict: "approved",
+          comment: "LGTM",
+          reviewerId: "agent-reviewer-1",
+        },
+      });
+      expect(verdict.allowed).toBe(true);
+    });
+
+    it("rejects REVIEW_FINALIZE with missing reviewerId", () => {
+      const verdict = policy.validate({
+        commandId: "cmd-5",
+        commandType: CommandType.REVIEW_FINALIZE,
+        timestamp: "2026-01-01T00:00:00Z",
+        source: "system",
+        actorId: "user1",
+        runtimeId: "rt-1",
+        targetId: null,
+        payload: {
+          targetKind: "pr",
+          targetNumber: 42,
+          verdict: "approved",
+          comment: "LGTM",
+          reviewerId: "",
+        },
+      });
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("INVALID_PAYLOAD");
+    });
+
+    it("rejects when actor is not in allowedActors", () => {
+      const verdict = policy.validate({
+        commandId: "cmd-6",
+        commandType: CommandType.REVIEW_SUBMIT,
+        timestamp: "2026-01-01T00:00:00Z",
+        source: "user",
+        actorId: "unknown-agent",
+        runtimeId: "rt-1",
+        targetId: null,
+        payload: { reviewId: "review-1", verdict: "approved", comment: "LGTM" },
+      });
+      expect(verdict.allowed).toBe(false);
+      expect(verdict.reason).toBe("ACTOR_NOT_AUTHORIZED");
+    });
+  });
 });
