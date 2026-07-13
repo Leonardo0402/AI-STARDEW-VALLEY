@@ -7,6 +7,7 @@ import type {
   ScheduleOverlay,
 } from "@agent-office/life-sim";
 import type { OfficeProjection } from "@agent-office/protocol";
+import { emptyIntegrationProjection } from "../integration/projection.js";
 import {
   composeProjections,
   projectLifeSim,
@@ -451,11 +452,32 @@ describe("composeProjections", () => {
       makeSnapshot(),
       defaultCapabilities
     );
+    const integration = emptyIntegrationProjection();
 
-    const composed: ComposedOfficeProjection = composeProjections(office, lifeSim);
+    const composed: ComposedOfficeProjection = composeProjections(office, lifeSim, integration);
 
     expect(composed.agents).toBe(office.agents);
     expect(composed.tasks).toBe(office.tasks);
     expect(composed.lifeSim).toBe(lifeSim);
+    expect(composed.integration).toBe(integration);
+  });
+});
+
+describe("composeProjections with integration", () => {
+  test("merges integration into composed projection", () => {
+    const office = {
+      agents: [],
+      tasks: [],
+      artifacts: [],
+      approvals: [],
+      rooms: [],
+      pendingApprovals: [],
+      blockedTasks: [],
+      errors: [],
+    };
+    const lifeSim = projectLifeSim(makeSnapshot(), defaultCapabilities);
+    const integration = emptyIntegrationProjection();
+    const composed = composeProjections(office, lifeSim, integration);
+    expect(composed.integration).toBe(integration);
   });
 });

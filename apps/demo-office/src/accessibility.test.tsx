@@ -78,6 +78,8 @@ const lifeSimProjection = {
   lostRuntimeRange: null,
 };
 
+const integrationProjection = { github: null, reviews: null };
+
 const baseState = {
   projection: {
     agents: [],
@@ -89,7 +91,9 @@ const baseState = {
     blockedTasks: [],
     errors: [],
     lifeSim: lifeSimProjection,
+    integration: integrationProjection,
   },
+  integration: { projection: integrationProjection },
   eventLog: [],
   errors: [],
   sessionState: "connected" as const,
@@ -126,6 +130,14 @@ const mockLifeSimSession = {
 const mockStore = {} as any;
 const mockGateway = {} as any;
 
+const mockAdapter = {
+  getCapabilities: vi.fn().mockReturnValue({
+    supportedCommands: [],
+    supportedEvents: [],
+    features: {},
+  }),
+};
+
 function renderApp(overrides: Partial<Parameters<typeof App>[0]> = {}) {
   return render(
     <App
@@ -133,6 +145,7 @@ function renderApp(overrides: Partial<Parameters<typeof App>[0]> = {}) {
       store={mockStore}
       gateway={mockGateway}
       runtimeId="runtime-001"
+      adapter={mockAdapter as any}
       capabilities={{ supportedCommands: [], supportedEvents: [], features: { snapshot: true, sse: false, websocket: false, commandExecution: true, softMapping: false, hardOrchestration: false } } as any}
       demoControls={<div data-testid="demo-controls">DemoControls</div>}
       lifeSimSession={mockLifeSimSession as any}

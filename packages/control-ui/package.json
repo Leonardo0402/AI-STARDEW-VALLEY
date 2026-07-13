@@ -12,6 +12,10 @@
     "./life-sim": {
       "default": "./src/life-sim/index.ts",
       "types": "./src/life-sim/index.ts"
+    },
+    "./integration": {
+      "default": "./src/integration/index.ts",
+      "types": "./src/integration/index.ts"
     }
   },
   "scripts": {

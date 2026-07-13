@@ -79,6 +79,7 @@ function renderAppComposition(
         store={store}
         gateway={gateway}
         runtimeId={config.runtimeId}
+        adapter={composition.adapter}
         capabilities={adapterCapabilities}
         demoControls={
           mockAdapter ? (

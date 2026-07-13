@@ -22,7 +22,7 @@ import React, {
   type KeyboardEvent,
 } from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
-import type { AdapterCapabilities, OfficeProjection } from "@agent-office/protocol";
+import type { AdapterCapabilities, OfficeProjection, RuntimeAdapter } from "@agent-office/protocol";
 import {
   ControlPanel,
   type ExperienceMode,
@@ -46,6 +46,8 @@ interface AppProps {
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
+  /** Runtime adapter used to project integration state. */
+  adapter: RuntimeAdapter;
   /** Adapter capabilities — used to disable unsupported command buttons. */
   capabilities?: AdapterCapabilities;
   /** 演示层专用控件（如 DemoControls），由装配层 main.tsx 注入。
@@ -122,6 +124,7 @@ export const App: FC<AppProps> = ({
   store,
   gateway,
   runtimeId,
+  adapter,
   capabilities,
   demoControls,
   retryable = false,
@@ -143,6 +146,7 @@ export const App: FC<AppProps> = ({
     gateway,
     runtimeId,
     lifeSimSession,
+    adapter,
     lifeSimWorldId
   );
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("command");
