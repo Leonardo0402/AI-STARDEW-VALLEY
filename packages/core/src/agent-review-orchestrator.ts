@@ -28,8 +28,6 @@ import type {
 import { CommandType } from "@agent-office/protocol";
 import type { ReviewStrategy } from "./review-strategy.js";
 import { RuleBasedReviewStrategy } from "./review-strategy.js";
-import { GitHubRuntimeAdapter } from "@agent-office/adapter-github";
-import type { GitHubAdapterEvidence } from "@agent-office/adapter-github";
 
 export interface OrchestratorOptions {
   strategy?: ReviewStrategy;
@@ -286,11 +284,15 @@ export class AgentReviewOrchestrator implements RuntimeAdapter {
     github: { issues: unknown[]; pulls: unknown[]; auditNotes: unknown[] } | null;
     reviews: { assigned: ReviewAssignment[]; submitted: ReviewDraft[] };
   } {
+    const innerAny = this.inner as unknown as Record<string, unknown>;
+    const githubEvidence =
+      typeof innerAny.getGitHubEvidence === "function"
+        ? (innerAny.getGitHubEvidence as () => GitHubAdapterEvidence)()
+        : null;
     return {
-      github:
-        this.inner instanceof GitHubRuntimeAdapter
-          ? projectGitHubIntegration(this.inner.getGitHubEvidence(), snapshot)
-          : null,
+      github: githubEvidence
+        ? projectGitHubIntegration(githubEvidence, snapshot)
+        : null,
       reviews: {
         assigned: this.getAssignedReviews(),
         submitted: this.getSubmittedReviews(),
@@ -352,6 +354,40 @@ export class AgentReviewOrchestrator implements RuntimeAdapter {
       payload: { body },
     });
   }
+}
+
+interface GitHubAdapterEvidence {
+  tasks: Record<
+    string,
+    {
+      kind: "issue";
+      number: number;
+      rawState: string;
+      stateReason?: string | null;
+      closedAt?: string | null;
+      labels: string[];
+      assignees: string[];
+      url: string;
+    }
+  >;
+  artifacts: Record<
+    string,
+    {
+      kind: "pr";
+      number: number;
+      rawState: string;
+      labels: string[];
+      reviewers?: string[];
+      url: string;
+    }
+  >;
+  auditNotes: Array<{
+    auditId: string;
+    taskId: string;
+    body: string;
+    author: string;
+    createdAt: string;
+  }>;
 }
 
 function projectGitHubIntegration(

@@ -8,7 +8,6 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "@agent-office/protocol": "1.0.0",
-    "@agent-office/adapter-github": "1.0.0"
+    "@agent-office/protocol": "1.0.0"
   }
 }
