@@ -1,15 +1,15 @@
 import type { FC } from "react";
-import type { IssueQueueItem, PullRequestQueueItem } from "@agent-office/control-ui/integration";
+import type { IssueQueueItem, PullRequestQueueItem } from "../integration/types.js";
 import type { OfficeSelection } from "@agent-office/pixel-office";
-import { Card } from "@agent-office/control-ui";
-import { SectionHeader } from "@agent-office/control-ui";
-import { Badge } from "@agent-office/control-ui";
+import { Card } from "./Card.js";
+import { SectionHeader } from "./SectionHeader.js";
+import { Badge } from "./Badge.js";
 
 interface QueuePanelProps {
   issues: IssueQueueItem[];
   pulls: PullRequestQueueItem[];
   selection: OfficeSelection | null;
-  onSelect: (selection: OfficeSelection) => void;
+  onSelect?: (selection: OfficeSelection) => void;
 }
 
 export const QueuePanel: FC<QueuePanelProps> = ({ issues, pulls, selection, onSelect }) => {
@@ -27,7 +27,7 @@ export const QueuePanel: FC<QueuePanelProps> = ({ issues, pulls, selection, onSe
               selectable
               selected={selection?.kind === "task" && selection.id === item.taskId}
               ariaLabel={`Select issue ${item.number}`}
-              onClick={() => onSelect({ kind: "task", id: item.taskId })}
+              onClick={() => onSelect?.({ kind: "task", id: item.taskId })}
             >
               <div className="card-row">
                 <div>
@@ -46,7 +46,7 @@ export const QueuePanel: FC<QueuePanelProps> = ({ issues, pulls, selection, onSe
               selectable
               selected={selection?.kind === "artifact" && selection.id === item.artifactId}
               ariaLabel={`Select pull request ${item.number}`}
-              onClick={() => onSelect({ kind: "artifact", id: item.artifactId })}
+              onClick={() => onSelect?.({ kind: "artifact", id: item.artifactId })}
             >
               <div className="card-row">
                 <div>

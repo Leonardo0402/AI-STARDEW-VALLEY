@@ -3,6 +3,10 @@ import {
   emptyIntegrationProjection,
   projectIntegration,
   useIntegrationState,
+  QueuePanel,
+  ReviewBlocker,
+  EvidencePanel,
+  TimelinePanel,
   type IntegrationProjection,
   type IntegrationState,
 } from "./index.js";
@@ -24,5 +28,12 @@ describe("integration barrel", () => {
 
     const satisfyTypeCheck = (state: IntegrationState) => state.projection;
     expect(typeof satisfyTypeCheck).toBe("function");
+  });
+
+  it("exports panel components", () => {
+    expect(typeof QueuePanel).toBe("function");
+    expect(typeof ReviewBlocker).toBe("function");
+    expect(typeof EvidencePanel).toBe("function");
+    expect(typeof TimelinePanel).toBe("function");
   });
 });

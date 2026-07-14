@@ -1,6 +1,7 @@
 import { useState, type FC } from "react";
-import type { AuditNoteView } from "@agent-office/control-ui/integration";
-import { Card, SectionHeader } from "@agent-office/control-ui";
+import type { AuditNoteView } from "../integration/types.js";
+import { Card } from "./Card.js";
+import { SectionHeader } from "./SectionHeader.js";
 
 interface EvidencePanelProps {
   auditNotes: AuditNoteView[];

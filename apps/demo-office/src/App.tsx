@@ -547,6 +547,7 @@ export const App: FC<AppProps> = ({
                 capabilities={capabilities}
                 selection={selection}
                 onSelect={setSelection}
+                integration={projection.integration}
               />
             </>
           )}

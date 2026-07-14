@@ -1,6 +1,6 @@
 import type { FC } from "react";
 import { EventType, type DomainEvent } from "@agent-office/protocol";
-import { Card, SectionHeader } from "@agent-office/control-ui";
+import { SectionHeader } from "./SectionHeader.js";
 
 interface TimelinePanelProps {
   events: DomainEvent[];

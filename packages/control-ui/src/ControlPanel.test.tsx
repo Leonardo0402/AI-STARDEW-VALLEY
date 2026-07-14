@@ -120,6 +120,7 @@ function renderPanel(
     mode: "command" as ExperienceMode,
     onSendCommand: vi.fn().mockResolvedValue(undefined),
     capabilities,
+    integration: { github: null, reviews: null },
     ...overrides,
   };
   return { ...render(<ControlPanel {...props} />), props };
@@ -138,7 +139,8 @@ describe("ControlPanel", () => {
     expect(screen.getByRole("heading", { name: /Tasks/i })).toBeInTheDocument();
     expect(screen.getByText("Write Q3 report")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Event Log/i })).toBeInTheDocument();
-    expect(screen.getByText(/artifact.reviewed/)).toBeInTheDocument();
+    const eventLog = screen.getByRole("heading", { name: /Event Log/i }).closest(".event-log") as HTMLElement;
+    expect(within(eventLog).getByText(/artifact.reviewed/)).toBeInTheDocument();
   });
 
   it("does not render a mode switcher", () => {
@@ -409,6 +411,7 @@ describe("ControlPanel", () => {
           mode: "command",
           onSendCommand: vi.fn(),
           capabilities,
+          integration: { github: null, reviews: null },
         } as React.ComponentProps<typeof ControlPanel>)}
       />
     );
@@ -652,5 +655,17 @@ describe("ControlPanel selection", () => {
     scrollIntoView.mockClear();
     rerender(<ControlPanel {...props} selection={{ kind: "task", id: "task-1" }} />);
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
+  });
+});
+
+describe("integration panels", () => {
+  it("renders QueuePanel, ReviewBlocker, EvidencePanel and TimelinePanel in command mode", () => {
+    renderPanel({
+      integration: { github: { issues: [], pulls: [], auditNotes: [] }, reviews: { assigned: [], submitted: [] } },
+    });
+    expect(screen.getByTestId("queue-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("review-blocker")).toBeInTheDocument();
+    expect(screen.getByTestId("evidence-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
   });
 });

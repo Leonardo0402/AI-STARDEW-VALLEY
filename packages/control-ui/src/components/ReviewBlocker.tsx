@@ -1,6 +1,8 @@
 import { useState, type FC, type MouseEvent } from "react";
 import type { ReviewAssignment, ReviewDraft } from "@agent-office/core";
-import { Card, SectionHeader, formatTime } from "@agent-office/control-ui";
+import { Card } from "./Card.js";
+import { SectionHeader } from "./SectionHeader.js";
+import { formatTime } from "./format-time.js";
 
 interface ReviewBlockerProps {
   assigned: ReviewAssignment[];
