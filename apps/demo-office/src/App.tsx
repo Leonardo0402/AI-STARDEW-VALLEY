@@ -316,6 +316,11 @@ export const App: FC<AppProps> = ({
     }
   }, [projection, view]);
 
+  // 当 integration projection 变化时同步到像素场景装饰层
+  useEffect(() => {
+    sceneRef.current?.updateIntegration(projection.integration);
+  }, [projection.integration]);
+
   // 将当前选择同步到场景渲染层
   useEffect(() => {
     if (!sceneRef.current) return;

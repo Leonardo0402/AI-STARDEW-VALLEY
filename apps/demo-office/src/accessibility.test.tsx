@@ -34,6 +34,7 @@ vi.mock("@agent-office/pixel-office", () => ({
     init: vi.fn().mockResolvedValue(undefined),
     destroy: vi.fn(),
     updateProjection: vi.fn(),
+    updateIntegration: vi.fn(),
     setReduceMotion: vi.fn(),
     selectAgent: vi.fn(),
     selectAgents: vi.fn(),
