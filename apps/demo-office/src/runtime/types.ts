@@ -1,19 +1,26 @@
 /**
  * Runtime composition types for demo-office.
  *
- * The app can run against either a Mock adapter (deterministic local)
- * or an HTTP/SSE adapter (remote runtime speaking the generic wire protocol).
+ * The app can run against either a Mock adapter (deterministic local),
+ * an HTTP/SSE adapter (remote runtime speaking the generic wire protocol),
+ * or a GitHub adapter (read-only projection backed by issues/PRs).
  */
 
-export type DemoRuntimeMode = "mock" | "http-sse";
+export type RuntimeMode = "mock" | "http-sse" | "github";
 
 export interface DemoRuntimeConfig {
-  mode: DemoRuntimeMode;
+  mode: RuntimeMode;
   runtimeId: string;
   /** Required when mode === "http-sse". */
   baseUrl?: string;
   /** Base URL for the LifeSim HTTP client. Defaults to `/life-sim` so the Vite dev proxy can handle it. */
   lifeSimBaseUrl: string;
+  /** Required only when mode === "github" for network write commands. */
+  githubOwner?: string;
+  /** Required only when mode === "github" for network write commands. */
+  githubRepo?: string;
+  /** Optional GitHub token for network write commands. */
+  githubToken?: string;
 }
 
 /**

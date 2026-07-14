@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { AgentReviewOrchestrator } from "@agent-office/core";
 import { createRuntime } from "./create-runtime.js";
 import type { RuntimeComposition } from "./types.js";
 
@@ -59,5 +60,27 @@ describe("createRuntime", () => {
     comp1.dispose();
     comp2.dispose();
     comp = null;
+  });
+});
+
+describe("createRuntime github mode", () => {
+  let comp: RuntimeComposition | null;
+
+  afterEach(async () => {
+    if (comp) {
+      await comp.dispose();
+      comp = null;
+    }
+  });
+
+  it("returns AgentReviewOrchestrator for github mode", () => {
+    comp = createRuntime({
+      mode: "github",
+      runtimeId: "r",
+      lifeSimBaseUrl: "http://localhost:3001",
+      githubOwner: "owner",
+      githubRepo: "repo",
+    });
+    expect(comp.adapter).toBeInstanceOf(AgentReviewOrchestrator);
   });
 });
