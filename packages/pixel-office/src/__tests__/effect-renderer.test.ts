@@ -3,6 +3,7 @@ import { EffectRenderer } from "../renderer/effect-renderer.js";
 import { createDefaultLayout, getAgentPositionByRoomId } from "../layout.js";
 import { AssetLoader } from "../asset-loader.js";
 import type { AgentView, ApprovalView, OfficeProjection, TaskView } from "@agent-office/protocol";
+import type { IntegrationProjection } from "@agent-office/control-ui/integration";
 import { MockContainer, MockGraphics, MockSprite, MockText, MockTexture, MockAssets } from "./pixi-mock.js";
 
 vi.mock("pixi.js", () => import("./pixi-mock.js").then((m) => m.createPixiMock()));
@@ -517,6 +518,46 @@ describe("EffectRenderer", () => {
     };
 
     expect(after).toEqual(before);
+  });
+});
+
+describe("integration effects", () => {
+  let container: MockContainer;
+
+  beforeEach(() => {
+    container = new MockContainer();
+    MockAssets.reset();
+  });
+
+  it("adds glow when reviews are pending approval", () => {
+    const renderer = new EffectRenderer(container as unknown as import("pixi.js").Container);
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: { assigned: [], submitted: [{ reviewId: "r1" } as any] },
+    };
+    renderer.updateIntegration(integration);
+    expect(renderer.getActiveEffects()).toContain("review-pending");
+  });
+
+  it("adds queue glow when github issues or pulls exist", () => {
+    const renderer = new EffectRenderer(container as unknown as import("pixi.js").Container);
+    const integration: IntegrationProjection = {
+      github: { issues: [{ taskId: "t1" } as any], pulls: [], auditNotes: [] },
+      reviews: { assigned: [], submitted: [] },
+    };
+    renderer.updateIntegration(integration);
+    expect(renderer.getActiveEffects()).toContain("queue-glow");
+  });
+
+  it("removes effects when integration state is cleared", () => {
+    const renderer = new EffectRenderer(container as unknown as import("pixi.js").Container);
+    renderer.updateIntegration({
+      github: null,
+      reviews: { assigned: [], submitted: [{ reviewId: "r1" } as any] },
+    });
+    renderer.updateIntegration({ github: null, reviews: null });
+    expect(renderer.getActiveEffects()).not.toContain("review-pending");
+    expect(renderer.getActiveEffects()).not.toContain("queue-glow");
   });
 });
 
