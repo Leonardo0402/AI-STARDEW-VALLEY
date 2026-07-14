@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PixelOfficeScene } from "../office-scene.js";
 import type { OfficeProjection, RoomView } from "@agent-office/protocol";
+import type { IntegrationProjection } from "@agent-office/control-ui/integration";
 import { MockContainer, MockAssets, MockGraphics } from "./pixi-mock.js";
 
 vi.mock("pixi.js", () => import("./pixi-mock.js").then((m) => m.createPixiMock()));
@@ -930,5 +931,41 @@ describe("PixelOfficeScene representative agent loads", () => {
     scene.destroy();
 
     expect(() => scene.updateProjection(makeLoadProjection(4))).not.toThrow();
+  });
+});
+
+describe("updateIntegration", () => {
+  let canvas: HTMLCanvasElement;
+
+  beforeEach(() => {
+    canvas = document.createElement("canvas");
+    MockAssets.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards integration to prop and effect renderers", async () => {
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const propRenderer = (scene as any).propRenderer;
+    const effectRenderer = (scene as any).effectRenderer;
+    const propSpy = vi.spyOn(propRenderer, "updateIntegration");
+    const effectSpy = vi.spyOn(effectRenderer, "updateIntegration");
+
+    const integration: IntegrationProjection = {
+      github: { issues: [], pulls: [], auditNotes: [] },
+      reviews: { assigned: [], submitted: [] },
+    };
+
+    scene.updateIntegration(integration);
+
+    expect(scene["currentIntegration"]).toBe(integration);
+    expect(propSpy).toHaveBeenCalledWith(integration);
+    expect(effectSpy).toHaveBeenCalledWith(integration);
+
+    scene.destroy();
   });
 });

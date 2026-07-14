@@ -17,6 +17,7 @@ import type {
   AgentView,
   RoomView,
 } from "@agent-office/protocol";
+import type { IntegrationProjection } from "@agent-office/control-ui/integration";
 import { AgentRenderer } from "./renderer/agent-renderer.js";
 import { EffectRenderer } from "./renderer/effect-renderer.js";
 import { PropRenderer } from "./renderer/prop-renderer.js";
@@ -68,6 +69,7 @@ export class PixelOfficeScene {
   private agentSprites: Map<string, LegacyAgentSprite> = new Map();
   private currentProjection: OfficeProjection | null = null;
   private pendingProjection: OfficeProjection | null = null;
+  private currentIntegration: IntegrationProjection | null = null;
   private currentLayout: RoomLayout | null = null;
   private destroyed = false;
   private initialized = false;
@@ -226,6 +228,12 @@ export class PixelOfficeScene {
       this.renderAgents(projection.agents, projection.rooms);
       this.renderOverlays(projection);
     }
+  }
+
+  updateIntegration(integration: IntegrationProjection): void {
+    this.currentIntegration = integration;
+    this.propRenderer?.updateIntegration(integration);
+    this.effectRenderer?.updateIntegration(integration);
   }
 
   private fit(width: number, height: number): void {
