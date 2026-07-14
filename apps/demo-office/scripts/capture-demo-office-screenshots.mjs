@@ -1,6 +1,7 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { getIntegrationScenario } from "./screenshot-helpers.mjs";
 
 const BASE_URL = process.env.DEMO_OFFICE_URL || "http://localhost:5173/";
 const BASE_OUT_DIR = process.argv[2] || path.join(process.cwd(), "docs/design/swarm-office-v1.1/baseline");
@@ -204,136 +205,30 @@ async function clickTaskCard(page, title) {
 }
 
 /**
- * Patch the exposed MockRuntimeAdapter so it returns a synthetic integration
- * projection for the named scenario. The MockRuntimeAdapter cannot truthfully
- * produce GitHub/review integration data, so this dev-only hook lets the
- * screenshot script exercise the new panels and canvas props.
+ * Set a synthetic IntegrationProjection on the dev-only MockRuntimeAdapter.
+ *
+ * IMPORTANT SCOPE NOTE:
+ * - This is screenshot test scaffolding, not production data flow. The values
+ *   injected here are mocked fixtures used solely to render the Issue #49
+ *   integration panels and canvas props for baseline screenshots.
+ * - The real Runtime Event -> Snapshot -> IntegrationProjection flow is
+ *   validated by unit tests and Task 19 verification.
+ * - This mock is used only because the mock runtime cannot synthesize GitHub
+ *   integration state, and the github adapter mode is opt-in/config-driven.
  *
  * Calling "reset" after patching triggers a snapshot update, which causes
  * useIntegrationState to recompute with the patched method.
  */
 async function setIntegrationScenario(page, scenario) {
-  await page.evaluate((scenarioName) => {
+  const payload = getIntegrationScenario(scenario);
+  await page.evaluate((scenarioName, projection) => {
     const adapter = window.__mockAdapter;
     if (!adapter) {
       throw new Error("window.__mockAdapter is not available");
     }
-
-    const now = new Date().toISOString();
-
-    adapter.getIntegrationProjection = () => {
-      switch (scenarioName) {
-        case "queue-populated":
-          return {
-            github: {
-              issues: [
-                {
-                  taskId: "gh-issue-1",
-                  number: 42,
-                  kind: "issue",
-                  title: "Fix login crash",
-                  state: "open",
-                  closedAt: null,
-                  labels: ["bug", "p1"],
-                  assignees: ["alice"],
-                  url: "https://github.com/org/repo/issues/42",
-                },
-                {
-                  taskId: "gh-issue-2",
-                  number: 43,
-                  kind: "issue",
-                  title: "Update docs",
-                  state: "closed",
-                  stateReason: "completed",
-                  closedAt: now,
-                  labels: ["docs"],
-                  assignees: ["bob"],
-                  url: "https://github.com/org/repo/issues/43",
-                },
-              ],
-              pulls: [
-                {
-                  taskId: "gh-pr-1",
-                  artifactId: "gh-artifact-1",
-                  number: 101,
-                  kind: "pr",
-                  title: "Add OAuth support",
-                  state: "open",
-                  draft: false,
-                  labels: ["feature"],
-                  reviewers: ["alice"],
-                  url: "https://github.com/org/repo/pull/101",
-                },
-              ],
-              auditNotes: [],
-            },
-            reviews: { assigned: [], submitted: [] },
-          };
-        case "review-pending":
-          return {
-            github: { issues: [], pulls: [], auditNotes: [] },
-            reviews: {
-              assigned: [
-                {
-                  reviewId: "review-1",
-                  targetKind: "pr",
-                  targetNumber: 101,
-                  agentId: "agent-reviewer",
-                  assignedAt: now,
-                },
-              ],
-              submitted: [
-                {
-                  reviewId: "review-2",
-                  agentId: "agent-reviewer",
-                  verdict: "approved",
-                  comment: "Looks good to me.",
-                  targetKind: "pr",
-                  targetNumber: 102,
-                  submittedAt: now,
-                },
-              ],
-            },
-          };
-        case "evidence-added":
-          return {
-            github: {
-              issues: [],
-              pulls: [],
-              auditNotes: [
-                {
-                  auditId: "audit-1",
-                  taskId: "task-1",
-                  body: "Verified reproduction steps and attached logs.",
-                  author: "agent-worker-1",
-                  createdAt: now,
-                },
-                {
-                  auditId: "audit-2",
-                  taskId: null,
-                  body: "Policy check passed before approval.",
-                  author: "agent-reviewer",
-                  createdAt: now,
-                },
-              ],
-            },
-            reviews: { assigned: [], submitted: [] },
-          };
-        case "timeline":
-          // Non-null integration so the wall-scroll prop is visible, but empty
-          // queues so the TimelinePanel is the focus of the screenshot.
-          return {
-            github: { issues: [], pulls: [], auditNotes: [] },
-            reviews: { assigned: [], submitted: [] },
-          };
-        case "none":
-        default:
-          return { github: null, reviews: null };
-      }
-    };
-
+    adapter.getIntegrationProjection = () => projection;
     window.__integrationScenario = scenarioName;
-  }, scenario);
+  }, scenario, payload);
 }
 
 const skippedStates = [];
