@@ -2,6 +2,7 @@
  * PropRenderer — 渲染房间内的道具（桌子、工作台、椅子、柜子、指示牌）。
  */
 import { Container, Graphics, Text, TextStyle, Sprite } from "pixi.js";
+import type { IntegrationProjection } from "@agent-office/control-ui/integration";
 import type { RoomLayout, RoomProp, RoomLayoutEntry } from "../layout.js";
 import type { AssetLoader } from "../asset-loader.js";
 
@@ -30,12 +31,17 @@ const PROP_TEXTURE_NAMES: Record<string, string | null> = {
 };
 
 export class PropRenderer {
+  private currentLayout?: RoomLayout;
+  private integrationSprites: Record<string, Sprite> = {};
+
   constructor(
     private layer: Container,
     private assetLoader?: AssetLoader
   ) {}
 
   render(layout: RoomLayout, pendingApprovalsCount = 0): void {
+    this.currentLayout = layout;
+    this.integrationSprites = {};
     this.layer.removeChildren();
 
     for (const room of layout.rooms) {
@@ -138,5 +144,53 @@ export class PropRenderer {
       .stroke({ color: 0xe6a85c, width: 1 });
 
     this.layer.addChild(g);
+  }
+
+  updateIntegration(integration: IntegrationProjection): void {
+    if (!this.currentLayout) return;
+
+    const commandRoom = this.currentLayout.rooms.find((r) => r.floorType === "command");
+    const reviewRoom = this.currentLayout.rooms.find((r) => r.floorType === "review");
+
+    const hasQueue =
+      (integration.github?.issues.length ?? 0) + (integration.github?.pulls.length ?? 0) > 0;
+    if (commandRoom) {
+      this.ensureProp("mission-board", hasQueue, commandRoom.x + 80, commandRoom.y + 20);
+    }
+
+    const assignedCount = integration.reviews?.assigned.length ?? 0;
+    if (reviewRoom) {
+      this.ensureProp("review-desk", assignedCount > 0, reviewRoom.x + 48, reviewRoom.y + 24);
+    }
+
+    const hasEvidence = (integration.github?.auditNotes.length ?? 0) > 0;
+    if (commandRoom) {
+      this.ensureProp("filing-cabinet", hasEvidence, commandRoom.x + 16, commandRoom.y + 40);
+    }
+
+    const hasTimeline = integration.reviews !== null || integration.github !== null;
+    this.ensureProp("wall-scroll", hasTimeline, 48, 16);
+  }
+
+  private ensureProp(name: string, visible: boolean, x: number, y: number): void {
+    if (!this.assetLoader) return;
+
+    if (visible && !this.integrationSprites[name]) {
+      const texture = this.assetLoader.getTexture(`props/${name}`);
+      if (!texture) return;
+
+      const sprite = new Sprite(texture);
+      sprite.x = x;
+      sprite.y = y;
+      this.layer.addChild(sprite);
+      this.integrationSprites[name] = sprite;
+    } else if (!visible && this.integrationSprites[name]) {
+      this.layer.removeChild(this.integrationSprites[name]);
+      delete this.integrationSprites[name];
+    }
+  }
+
+  getPropCount(): number {
+    return this.layer.children.length;
   }
 }

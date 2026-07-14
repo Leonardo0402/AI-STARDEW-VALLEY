@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { IntegrationProjection } from "@agent-office/control-ui/integration";
 import { PropRenderer } from "../renderer/prop-renderer.js";
 import { createDefaultLayout } from "../layout.js";
 import { AssetLoader } from "../asset-loader.js";
@@ -6,9 +7,9 @@ import { MockContainer, MockGraphics, MockSprite, MockTexture, MockAssets } from
 
 vi.mock("pixi.js", () => import("./pixi-mock.js").then((m) => m.createPixiMock()));
 
-describe("PropRenderer", () => {
-  let container: MockContainer;
+let container: MockContainer;
 
+describe("PropRenderer", () => {
   beforeEach(() => {
     container = new MockContainer();
     MockAssets.reset();
@@ -127,5 +128,37 @@ describe("PropRenderer", () => {
       g.commands.some((cmd) => cmd.type === "circle" && (cmd.args[1] as number) > cy)
     );
     expect(hasBell).toBe(false);
+  });
+});
+
+describe("integration props", () => {
+  beforeEach(() => {
+    container = new MockContainer();
+    MockAssets.reset();
+  });
+
+  it("creates mission board when queue has items", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "mission-board": new MockTexture("mission-board"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/mission-board"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: { issues: [{ taskId: "t1" } as any], pulls: [], auditNotes: [] },
+      reviews: { assigned: [], submitted: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getPropCount()).toBeGreaterThan(0);
   });
 });
