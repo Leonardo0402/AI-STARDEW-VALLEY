@@ -176,7 +176,7 @@ export class PropRenderer {
     if (!this.assetLoader) return;
 
     if (visible && !this.integrationSprites[name]) {
-      const texture = this.assetLoader.getTexture(`props/${name}`);
+      const texture = this.assetLoader.getTexture(name);
       if (!texture) return;
 
       const sprite = new Sprite(texture);
@@ -192,5 +192,9 @@ export class PropRenderer {
 
   getPropCount(): number {
     return this.layer.children.length;
+  }
+
+  getIntegrationSpriteNames(): string[] {
+    return Object.keys(this.integrationSprites);
   }
 }
