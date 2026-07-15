@@ -67,3 +67,54 @@ No source files were modified by Task 20. Pre-existing modifications remain on d
 - The two test failures are pre-existing but should be triaged after Issue #49 closure.
 - The screenshot gate script is brittle on low-end hardware because it does not allow configuring `page.goto` timeout or LifeSim base URL.
 - The `.env.example` LifeSim URL default (`http://localhost:3001`) does not match the Vite dev plugin's in-process LifeSim host (`/life-sim/default`), making local screenshot runs fail out-of-the-box without manual env override.
+
+---
+
+## Task 20 Fix — Asset-Loader Test Update
+
+**Date:** 2026-07-15
+**Commit:** `6355619` — `test(pixel-office): include integration prop sprites in asset-loader test`
+
+### Changes
+
+- Updated `packages/pixel-office/src/__tests__/asset-loader.test.ts`:
+  - Renamed the default V1 asset test to `loads the V1 asset list including integration props by default`.
+  - Added the four integration prop sprites to the `names` array:
+    - `mission-board`
+    - `review-desk`
+    - `filing-cabinet`
+    - `wall-scroll`
+- Updated `.superpowers/sdd/final-verification.md` to reflect the corrected test results.
+
+### Verification
+
+#### Focused asset-loader test
+
+```bash
+npm test -- packages/pixel-office/src/__tests__/asset-loader.test.ts
+```
+
+```text
+✓ packages/pixel-office/src/__tests__/asset-loader.test.ts (7 tests) 10ms
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+```
+
+#### Full test suite
+
+```bash
+npm test
+```
+
+```text
+Test Files  87 passed (87)
+     Tests  896 passed (896)
+  Start at  19:21:23
+  Duration  44.82s
+```
+
+### Result
+
+- `asset-loader.test.ts` no longer fails.
+- The previously failing `mock-adapter.test.ts` also passed in this run.
+- The only remaining non-test issue is the screenshot gate page-load timeout, attributed to environment/resource constraints.

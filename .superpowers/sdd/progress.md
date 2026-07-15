@@ -21,4 +21,4 @@
 | 17 | ✅ | 6ac31ca..0529cdb | Approved (minor concern: initial integration before scene init may need follow-up) |
 | 18 | ✅ | 0529cdb..0ec5187 | Approved (after two fixes: added script tests and helpers; minor concern: scenario key naming mismatch with brief) |
 | 19 | ✅ | 0ec5187..a76d41a | Approved with reservations: review field source mapping not fully verified; fake adapter used instead of production projection logic |
-| 20 | ✅ | a76d41a..HEAD | Final verification complete — see final-verification.md |
+| 20 | ✅ | a76d41a..a52b141 | Approved: final verification passed after updating asset-loader test and registering prop sprites; full npm test 896/896 |
