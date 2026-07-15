@@ -8,7 +8,7 @@
 
 | Check | Command | Result |
 |---|---|---|
-| Test suite | `npm test` | ⚠️ 2 failures (894 passed, 2 failed) |
+| Test suite | `npm test` | ✅ PASS (896 passed, 0 failed) |
 | TypeScript | `npm run build` (runs `tsc -b`) | ✅ PASS |
 | Lint | `npm run lint` | ⚪ Not configured |
 | Build | `npm run build` | ✅ PASS |
@@ -27,26 +27,20 @@ npm test
 **Result:**
 
 ```text
- Test Files  2 failed | 85 passed (87)
-      Tests  2 failed | 894 passed (896)
-   Start at  02:06:10
-   Duration  133.90s
+ Test Files  87 passed (87)
+      Tests  896 passed (896)
+   Start at  19:21:23
+   Duration  44.82s
 ```
 
 **Failures:**
 
-1. `packages/adapters/mock/src/mock-adapter.test.ts > MockRuntimeAdapter > should handle artifact.open command`
-   - `AssertionError: expected 'rejected' to be 'accepted'`
-   - Line 152
-   - Likely pre-existing or related to Task 19 scope; not introduced by Task 20.
-
-2. `packages/pixel-office/src/__tests__/asset-loader.test.ts > AssetLoader > loads the V1 asset list by default`
-   - `AssertionError: expected 27 to be 23`
-   - Line 105
-   - Asset manifest has diverged from the test fixture; pre-existing.
+None.
 
 **Notes:**
 
+- Task 20 fixed the `asset-loader.test.ts` V1 asset list to include the four integration prop sprites (`mission-board`, `review-desk`, `filing-cabinet`, `wall-scroll`).
+- The previously failing `mock-adapter.test.ts` also passed in this run.
 - One React `act(...)` warning in `packages/control-ui/src/integration/useIntegrationState.test.tsx` (non-fatal).
 - All Issue #49 UI tests in `apps/demo-office` and `packages/control-ui` passed.
 
@@ -175,6 +169,6 @@ These were not introduced by Task 20 and were left untouched.
 ## 7. Conclusion
 
 - **TypeScript and build are green.**
-- **Test suite is green except for two pre-existing failures** unrelated to the UI integration.
+- **Test suite is green** (896 passed, 0 failed) after the Task 20 asset-loader test fix.
 - **Lint is not configured** in this repo.
 - **Screenshot gate could not complete in this session** due to Playwright/Vite cold-start timeout on constrained hardware; the required environment setup (LifeSim URL) was identified and verified.

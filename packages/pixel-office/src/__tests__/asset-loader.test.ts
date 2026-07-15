@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+﻿import { describe, it, expect, beforeEach, vi } from "vitest";
 import { AssetLoader } from "../asset-loader.js";
 import { MockTexture, MockAssets } from "./pixi-mock.js";
 
@@ -67,7 +67,7 @@ describe("AssetLoader", () => {
     expect(loader.getAnimationFrames("missing-walk", 2)).toBeNull();
   });
 
-  it("loads the V1 asset list by default", async () => {
+  it("loads the V1 asset list including integration props by default", async () => {
     const textures: Record<string, MockTexture> = {};
     const names = [
       "orchestrator-idle",
@@ -90,6 +90,10 @@ describe("AssetLoader", () => {
       "workbench",
       "review-table",
       "approval-counter",
+      "mission-board",
+      "review-desk",
+      "filing-cabinet",
+      "wall-scroll",
       "service-bell",
       "sparkle",
       "blocked-marker",
