@@ -13,6 +13,7 @@ export class ConfigError extends Error {
  * VITE_RUNTIME_MODE:  "mock" (default) | "http-sse" | "github"
  * VITE_RUNTIME_ID:    required — the runtime identifier
  * VITE_RUNTIME_BASE_URL: required when mode === "http-sse"
+ * VITE_LIFE_SIM_BASE_URL: optional — defaults to same-origin root "/"
  * VITE_GITHUB_OWNER:  required only for github network write commands
  * VITE_GITHUB_REPO:   required only for github network write commands
  * VITE_GITHUB_TOKEN:  optional — GitHub personal access token
@@ -24,7 +25,7 @@ export function readConfigFromEnv(env: Record<string, string | undefined>): Demo
   const rawMode = env.VITE_RUNTIME_MODE;
   const explicitRuntimeId = env.VITE_RUNTIME_ID;
   const baseUrl = env.VITE_RUNTIME_BASE_URL;
-  const lifeSimBaseUrl = env.VITE_LIFE_SIM_BASE_URL ?? "http://localhost:3001";
+  const lifeSimBaseUrl = env.VITE_LIFE_SIM_BASE_URL ?? "/";
 
   // Determine mode — default to "mock" when not set
   let mode: RuntimeMode;

@@ -32,13 +32,22 @@ describe("readConfigFromEnv", () => {
   });
 
   it("empty env defaults to mock mode with mock-runtime-001 (npm run dev works out-of-box)", () => {
+    expect(() => readConfigFromEnv({})).not.toThrow();
     const config = readConfigFromEnv({});
     expect(config.mode).toBe("mock");
     expect(config.runtimeId).toBe("mock-runtime-001");
+    expect(config.lifeSimBaseUrl).toBe("/");
   });
 
-  it("defaults lifeSimBaseUrl to local life-sim server", () => {
+  it("defaults lifeSimBaseUrl to same-origin root", () => {
     const config = readConfigFromEnv({});
+    expect(config.lifeSimBaseUrl).toBe("/");
+  });
+
+  it("uses explicit VITE_LIFE_SIM_BASE_URL when set", () => {
+    const config = readConfigFromEnv({
+      VITE_LIFE_SIM_BASE_URL: "http://localhost:3001",
+    });
     expect(config.lifeSimBaseUrl).toBe("http://localhost:3001");
   });
 
