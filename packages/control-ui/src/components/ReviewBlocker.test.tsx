@@ -5,6 +5,7 @@ import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { ReviewBlocker } from "./ReviewBlocker.js";
+import { CommandType } from "@agent-office/protocol";
 import type { ReviewAssignment, ReviewDraft } from "@agent-office/core";
 
 describe("ReviewBlocker", () => {
@@ -27,7 +28,7 @@ describe("ReviewBlocker", () => {
     ];
     render(<ReviewBlocker assigned={[]} submitted={submitted} onSendCommand={onSendCommand} />);
     fireEvent.click(screen.getByRole("button", { name: /approve/i }));
-    await waitFor(() => expect(onSendCommand).toHaveBeenCalledWith("REVIEW_APPROVE", { reviewId: "r1" }));
+    await waitFor(() => expect(onSendCommand).toHaveBeenCalledWith(CommandType.REVIEW_APPROVE, { reviewId: "r1" }));
   });
 
   it("dispatches REVIEW_REJECT on Reject click", async () => {
@@ -37,7 +38,7 @@ describe("ReviewBlocker", () => {
     ];
     render(<ReviewBlocker assigned={[]} submitted={submitted} onSendCommand={onSendCommand} />);
     fireEvent.click(screen.getByRole("button", { name: /reject/i }));
-    await waitFor(() => expect(onSendCommand).toHaveBeenCalledWith("REVIEW_REJECT", { reviewId: "r1", reason: "Rejected via UI" }));
+    await waitFor(() => expect(onSendCommand).toHaveBeenCalledWith(CommandType.REVIEW_REJECT, { reviewId: "r1", reason: "Rejected via UI" }));
   });
 
   it("shows empty state", () => {

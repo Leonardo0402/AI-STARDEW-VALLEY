@@ -1,5 +1,6 @@
 import { useState, type FC, type MouseEvent } from "react";
 import type { ReviewAssignment, ReviewDraft } from "@agent-office/core";
+import { CommandType } from "@agent-office/protocol";
 import { Card } from "./Card.js";
 import { SectionHeader } from "./SectionHeader.js";
 import { formatTime } from "./format-time.js";
@@ -55,7 +56,7 @@ export const ReviewBlocker: FC<ReviewBlockerProps> = ({ assigned, submitted, onS
                     disabled={actingId === r.reviewId}
                     onClick={(e: MouseEvent<HTMLButtonElement>) => {
                       e.stopPropagation();
-                      void runAction(r.reviewId, "REVIEW_APPROVE", { reviewId: r.reviewId });
+                      void runAction(r.reviewId, CommandType.REVIEW_APPROVE, { reviewId: r.reviewId });
                     }}
                   >
                     Approve
@@ -66,7 +67,7 @@ export const ReviewBlocker: FC<ReviewBlockerProps> = ({ assigned, submitted, onS
                     disabled={actingId === r.reviewId}
                     onClick={(e: MouseEvent<HTMLButtonElement>) => {
                       e.stopPropagation();
-                      void runAction(r.reviewId, "REVIEW_REJECT", { reviewId: r.reviewId, reason: "Rejected via UI" });
+                      void runAction(r.reviewId, CommandType.REVIEW_REJECT, { reviewId: r.reviewId, reason: "Rejected via UI" });
                     }}
                   >
                     Reject
