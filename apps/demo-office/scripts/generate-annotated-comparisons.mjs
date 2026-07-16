@@ -8,6 +8,14 @@ const OUT_DIR = path.join(process.cwd(), "docs/design/swarm-office-v1.1/annotate
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
+const requestedStates = (process.env.ANNOTATED_STATES || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const annotations = requestedStates.length
+  ? ANNOTATIONS.filter((a) => requestedStates.includes(a.name))
+  : ANNOTATIONS;
+
 const browser = await chromium.launch({
   headless: true,
   args: ["--disable-gpu", "--disable-software-rasterizer", "--no-sandbox", "--disable-dev-shm-usage"],
@@ -15,7 +23,7 @@ const browser = await chromium.launch({
 const context = await browser.newContext({ viewport: { width: 1600, height: 1200 } });
 const page = await context.newPage();
 
-for (const item of ANNOTATIONS) {
+for (const item of annotations) {
   const htmlPath = path.join(OUT_DIR, `${item.name}.html`);
   fs.writeFileSync(htmlPath, buildHtml(item));
   await page.goto(`file://${htmlPath}`);

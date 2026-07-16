@@ -1,10 +1,26 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import http from "node:http";
+import { fileURLToPath } from "node:url";
 import { getIntegrationScenario } from "./screenshot-helpers.mjs";
 
 const BASE_URL = process.env.DEMO_OFFICE_URL || "http://localhost:5173/";
 const BASE_OUT_DIR = process.argv[2] || path.join(process.cwd(), "docs/design/swarm-office-v1.1/baseline");
+
+const GOTO_TIMEOUT = 120_000;
+const SERVER_START_TIMEOUT = 120_000;
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const APP_DIR = path.resolve(SCRIPT_DIR, "..");
+
+const STATES_FILTER = new Set(
+  (process.env.SCREENSHOT_STATES || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+const shouldCapture = (name) => STATES_FILTER.size === 0 || STATES_FILTER.has(name);
 
 const RESOLUTIONS = [
   { width: 1366, height: 768 },
@@ -13,6 +29,95 @@ const RESOLUTIONS = [
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function getBaseUrlParts() {
+  try {
+    const u = new URL(BASE_URL);
+    return { host: u.hostname, port: parseInt(u.port || "80", 10) };
+  } catch {
+    return { host: "localhost", port: 5173 };
+  }
+}
+
+function isServerReachable(timeout = 1000) {
+  const { host, port } = getBaseUrlParts();
+  return new Promise((resolve) => {
+    const req = http.get(`http://${host}:${port}/`, { timeout }, (res) => {
+      res.resume();
+      resolve(typeof res.statusCode === "number" && res.statusCode < 500);
+    });
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function startDevServer() {
+  console.log("Vite dev server not running; starting it...");
+  const child = spawn("npm", ["run", "dev", "--", "--no-open"], {
+    cwd: APP_DIR,
+    shell: true,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      VITE_LIFE_SIM_BASE_URL: "/",
+      VITE_RUNTIME_MODE: "mock",
+      VITE_RUNTIME_ID: "mock-runtime-001",
+    },
+  });
+  const start = Date.now();
+  while (Date.now() - start < SERVER_START_TIMEOUT) {
+    await sleep(500);
+    if (await isServerReachable(2000)) {
+      console.log("Vite dev server ready.");
+      return child;
+    }
+  }
+  throw new Error("Vite dev server did not become reachable in time");
+}
+
+async function killServer(child) {
+  if (!child) return;
+  console.log("Stopping Vite dev server...");
+  if (process.platform === "win32") {
+    await new Promise((resolve) => {
+      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+      killer.on("exit", resolve);
+      killer.on("error", resolve);
+      setTimeout(resolve, 5000);
+    });
+  } else {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+    } catch {
+      child.kill("SIGTERM");
+    }
+  }
+}
+
+async function gotoWithRetry(page, url) {
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto(url, { timeout: GOTO_TIMEOUT, waitUntil: "load" });
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`page.goto attempt ${attempt + 1} failed: ${err.message}`);
+      await sleep(3000);
+    }
+  }
+  throw lastErr;
+}
+
+async function waitForOfficeReady(page) {
+  await page.waitForSelector("canvas.app-canvas", { timeout: GOTO_TIMEOUT });
+  await page.waitForSelector('[data-testid="status-strip"]', { timeout: GOTO_TIMEOUT });
+}
 
 /**
  * Parse PNG dimensions from the IHDR chunk.
@@ -221,14 +326,14 @@ async function clickTaskCard(page, title) {
  */
 async function setIntegrationScenario(page, scenario) {
   const payload = getIntegrationScenario(scenario);
-  await page.evaluate((scenarioName, projection) => {
+  await page.evaluate(({ scenarioName, projection }) => {
     const adapter = window.__mockAdapter;
     if (!adapter) {
       throw new Error("window.__mockAdapter is not available");
     }
     adapter.getIntegrationProjection = () => projection;
     window.__integrationScenario = scenarioName;
-  }, scenario, payload);
+  }, { scenarioName: scenario, projection: payload });
 }
 
 const skippedStates = [];
@@ -241,7 +346,13 @@ function skipState(name, reason) {
   }
 }
 
+let devServer = null;
+
 try {
+  if (process.env.DEMO_OFFICE_URL === undefined && !(await isServerReachable())) {
+    devServer = await startDevServer();
+  }
+
   for (const { width, height } of RESOLUTIONS) {
     // Launch a fresh browser per resolution. Headless Chromium / SwiftShader can
     // accumulate WebGL contexts across contexts, causing the canvas to stay
@@ -259,12 +370,13 @@ try {
     const context = await browser.newContext({ viewport: { width, height } });
     const page = await context.newPage();
 
-    await page.goto(BASE_URL);
+    await gotoWithRetry(page, BASE_URL);
     await waitForStable(page);
-    await sleep(2000);
+    await waitForOfficeReady(page);
 
     // Rebind capture to this resolution's output directory.
-    const captureHere = (name) => capture(page, outDir, name, width, height);
+    const captureHere = (name) =>
+      shouldCapture(name) ? capture(page, outDir, name, width, height) : Promise.resolve();
 
     // 1. Idle office
     await captureHere("01-idle-office");
@@ -426,4 +538,6 @@ try {
 } catch (err) {
   console.error("Screenshot capture failed:", err);
   process.exitCode = 1;
+} finally {
+  await killServer(devServer);
 }
