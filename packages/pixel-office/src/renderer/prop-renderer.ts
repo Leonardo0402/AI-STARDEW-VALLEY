@@ -3,6 +3,7 @@
  */
 import { Container, Graphics, Text, TextStyle, Sprite } from "pixi.js";
 import type { IntegrationProjection } from "@agent-office/control-ui/integration";
+import { createDefaultLayout } from "../layout.js";
 import type { RoomLayout, RoomProp, RoomLayoutEntry } from "../layout.js";
 import type { AssetLoader } from "../asset-loader.js";
 
@@ -147,10 +148,10 @@ export class PropRenderer {
   }
 
   updateIntegration(integration: IntegrationProjection): void {
-    if (!this.currentLayout) return;
+    const layout = this.currentLayout ?? createDefaultLayout();
 
-    const commandRoom = this.currentLayout.rooms.find((r) => r.floorType === "command");
-    const reviewRoom = this.currentLayout.rooms.find((r) => r.floorType === "review");
+    const commandRoom = layout.rooms.find((r) => r.floorType === "command");
+    const reviewRoom = layout.rooms.find((r) => r.floorType === "review");
 
     const hasQueue =
       (integration.github?.issues.length ?? 0) + (integration.github?.pulls.length ?? 0) > 0;

@@ -185,6 +185,12 @@ export class PixelOfficeScene {
       this.updateProjection(this.pendingProjection);
       this.pendingProjection = null;
     }
+
+    // 如果在初始化完成前已有集成数据传入，重新应用到渲染器。
+    if (this.currentIntegration) {
+      this.propRenderer?.updateIntegration(this.currentIntegration);
+      this.effectRenderer?.updateIntegration(this.currentIntegration);
+    }
   }
 
   private resolveAssetBasePath(): string {
@@ -223,6 +229,12 @@ export class PixelOfficeScene {
       this.propRenderer.render(layout, projection.pendingApprovals.length);
       this.agentRenderer.render(projection.agents, layout, projection);
       this.effectRenderer.render(projection, layout);
+
+      // render() 会清空各层，因此若当前有集成数据需要重新应用。
+      if (this.currentIntegration) {
+        this.propRenderer.updateIntegration(this.currentIntegration);
+        this.effectRenderer.updateIntegration(this.currentIntegration);
+      }
     } else {
       this.renderRooms(projection.rooms);
       this.renderAgents(projection.agents, projection.rooms);

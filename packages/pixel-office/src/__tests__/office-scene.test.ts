@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PixelOfficeScene } from "../office-scene.js";
 import type { OfficeProjection, RoomView } from "@agent-office/protocol";
 import type { IntegrationProjection } from "@agent-office/control-ui/integration";
-import { MockContainer, MockAssets, MockGraphics } from "./pixi-mock.js";
+import { MockContainer, MockAssets, MockGraphics, MockTexture } from "./pixi-mock.js";
 
 vi.mock("pixi.js", () => import("./pixi-mock.js").then((m) => m.createPixiMock()));
 
@@ -965,6 +965,96 @@ describe("updateIntegration", () => {
     expect(scene["currentIntegration"]).toBe(integration);
     expect(propSpy).toHaveBeenCalledWith(integration);
     expect(effectSpy).toHaveBeenCalledWith(integration);
+
+    scene.destroy();
+  });
+
+  it("integration-before-init", async () => {
+    MockAssets.reset({
+      "mission-board": new MockTexture("mission-board"),
+      "review-desk": new MockTexture("review-desk"),
+      "filing-cabinet": new MockTexture("filing-cabinet"),
+      "wall-scroll": new MockTexture("wall-scroll"),
+    });
+
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    const integration = {
+      github: {
+        issues: [{ taskId: "t1", number: 1, kind: "issue", title: "Issue", state: "open", labels: [], assignees: [], url: "" }],
+        pulls: [],
+        auditNotes: [{ auditId: "a1", taskId: "t1", body: "", author: "", createdAt: "" }],
+      },
+      reviews: {
+        assigned: [{ reviewId: "r1", taskId: "t1", assigneeId: "", title: "" }],
+        submitted: [{ reviewId: "r2", taskId: "t2", title: "" }],
+      },
+    } as unknown as IntegrationProjection;
+
+    scene.updateIntegration(integration);
+    await scene.init(canvas);
+
+    const propRenderer = (scene as any).propRenderer as { getIntegrationSpriteNames: () => string[] };
+    const effectRenderer = (scene as any).effectRenderer as { getActiveEffects: () => string[] };
+
+    expect(propRenderer.getIntegrationSpriteNames()).toEqual(
+      expect.arrayContaining(["mission-board", "review-desk", "filing-cabinet", "wall-scroll"])
+    );
+    expect(effectRenderer.getActiveEffects()).toEqual(
+      expect.arrayContaining(["queue-glow", "review-pending"])
+    );
+
+    scene.destroy();
+  });
+
+  it("integration-persists-after-projection-redraw", async () => {
+    MockAssets.reset({
+      "mission-board": new MockTexture("mission-board"),
+      "review-desk": new MockTexture("review-desk"),
+      "filing-cabinet": new MockTexture("filing-cabinet"),
+      "wall-scroll": new MockTexture("wall-scroll"),
+    });
+
+    const scene = new PixelOfficeScene(canvas, { useSpriteRenderer: true });
+    await scene.init(canvas);
+
+    const projection: OfficeProjection = {
+      ...baseProjection,
+      rooms: [
+        createRoom("command", "command", 0, 0),
+        createRoom("execution", "execution", 220, 0),
+        createRoom("review", "review", 0, 200),
+      ],
+    };
+    scene.updateProjection(projection);
+
+    const integration = {
+      github: {
+        issues: [{ taskId: "t1", number: 1, kind: "issue", title: "Issue", state: "open", labels: [], assignees: [], url: "" }],
+        pulls: [],
+        auditNotes: [{ auditId: "a1", taskId: "t1", body: "", author: "", createdAt: "" }],
+      },
+      reviews: {
+        assigned: [{ reviewId: "r1", taskId: "t1", assigneeId: "", title: "" }],
+        submitted: [{ reviewId: "r2", taskId: "t2", title: "" }],
+      },
+    } as unknown as IntegrationProjection;
+
+    scene.updateIntegration(integration);
+    expect(((scene as any).propRenderer as { getIntegrationSpriteNames: () => string[] }).getIntegrationSpriteNames()).toEqual(
+      expect.arrayContaining(["mission-board", "review-desk", "filing-cabinet", "wall-scroll"])
+    );
+    expect(((scene as any).effectRenderer as { getActiveEffects: () => string[] }).getActiveEffects()).toEqual(
+      expect.arrayContaining(["queue-glow", "review-pending"])
+    );
+
+    scene.updateProjection(projection);
+
+    expect(((scene as any).propRenderer as { getIntegrationSpriteNames: () => string[] }).getIntegrationSpriteNames()).toEqual(
+      expect.arrayContaining(["mission-board", "review-desk", "filing-cabinet", "wall-scroll"])
+    );
+    expect(((scene as any).effectRenderer as { getActiveEffects: () => string[] }).getActiveEffects()).toEqual(
+      expect.arrayContaining(["queue-glow", "review-pending"])
+    );
 
     scene.destroy();
   });
