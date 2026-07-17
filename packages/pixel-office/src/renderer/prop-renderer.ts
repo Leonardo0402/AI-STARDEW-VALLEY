@@ -169,7 +169,7 @@ export class PropRenderer {
       this.ensureProp("filing-cabinet", hasEvidence, commandRoom.x + 16, commandRoom.y + 40);
     }
 
-    const hasTimeline = integration.reviews !== null || integration.github !== null;
+    const hasTimeline = (integration.timeline?.events.length ?? 0) > 0;
     this.ensureProp("wall-scroll", hasTimeline, 48, 16);
   }
 

@@ -84,6 +84,7 @@ class FakeIntegrationAdapter implements RuntimeAdapter, IntegrationProjectionPro
         assigned: [],
         submitted: [],
       },
+      timeline: null,
     };
   }
 }

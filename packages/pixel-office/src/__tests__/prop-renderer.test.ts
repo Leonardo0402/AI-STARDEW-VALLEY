@@ -156,6 +156,7 @@ describe("integration props", () => {
     const integration: IntegrationProjection = {
       github: { issues: [{ taskId: "t1" } as any], pulls: [], auditNotes: [] },
       reviews: { assigned: [], submitted: [] },
+      timeline: { events: [] },
     };
     renderer.updateIntegration(integration);
 
@@ -181,6 +182,7 @@ describe("integration props", () => {
     const integration: IntegrationProjection = {
       github: { issues: [], pulls: [], auditNotes: [] },
       reviews: { assigned: [{ taskId: "r1" } as any], submitted: [] },
+      timeline: { events: [] },
     };
     renderer.updateIntegration(integration);
 
@@ -206,13 +208,14 @@ describe("integration props", () => {
     const integration: IntegrationProjection = {
       github: { issues: [], pulls: [], auditNotes: [{ noteId: "n1" } as any] },
       reviews: { assigned: [], submitted: [] },
+      timeline: { events: [] },
     };
     renderer.updateIntegration(integration);
 
     expect(renderer.getIntegrationSpriteNames()).toContain("filing-cabinet");
   });
 
-  it("creates wall scroll when any integration is present", async () => {
+  it("does not create wall scroll when github is non-null but timeline is empty", async () => {
     const layout = createDefaultLayout();
     const textures: Record<string, MockTexture> = {
       "wall-scroll": new MockTexture("wall-scroll"),
@@ -229,11 +232,159 @@ describe("integration props", () => {
     renderer.render(layout);
 
     const integration: IntegrationProjection = {
-      github: { issues: [], pulls: [], auditNotes: [] },
-      reviews: { assigned: [], submitted: [] },
+      github: { issues: [{ taskId: "t1" } as any], pulls: [], auditNotes: [] },
+      reviews: null,
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
+  });
+
+  it("does not create wall scroll when reviews are non-null but timeline is empty", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: { assigned: [{ taskId: "r1" } as any], submitted: [] },
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
+  });
+
+  it("does not create wall scroll when timeline projection has no events", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: null,
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
+  });
+
+  it("creates wall scroll when review-assigned timeline event exists", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: null,
+      timeline: {
+        events: [
+          { eventId: "e1", type: "review.assigned", timestamp: "2026-01-01T00:00:00Z", payload: { agentId: "a1" } },
+        ],
+      },
     };
     renderer.updateIntegration(integration);
 
     expect(renderer.getIntegrationSpriteNames()).toContain("wall-scroll");
+  });
+
+  it("creates wall scroll when audit-note-added timeline event exists", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: null,
+      timeline: {
+        events: [
+          { eventId: "e1", type: "audit_note.added", timestamp: "2026-01-01T00:00:00Z", payload: { author: "auditor-1" } },
+        ],
+      },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).toContain("wall-scroll");
+  });
+
+  it("removes wall scroll when timeline becomes empty", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    renderer.updateIntegration({
+      github: null,
+      reviews: null,
+      timeline: {
+        events: [
+          { eventId: "e1", type: "review.submitted", timestamp: "2026-01-01T00:00:00Z", payload: {} },
+        ],
+      },
+    });
+    expect(renderer.getIntegrationSpriteNames()).toContain("wall-scroll");
+
+    renderer.updateIntegration({
+      github: null,
+      reviews: null,
+      timeline: { events: [] },
+    });
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
   });
 });

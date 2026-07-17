@@ -1,39 +1,27 @@
 import type { FC } from "react";
-import { EventType, type DomainEvent } from "@agent-office/protocol";
+import { EventType } from "@agent-office/protocol";
+import type { TimelineIntegrationView } from "../integration/types.js";
 import { SectionHeader } from "./SectionHeader.js";
 
 interface TimelinePanelProps {
-  events: DomainEvent[];
+  timeline: TimelineIntegrationView | null;
 }
 
-const TIMELINE_EVENT_TYPES: Set<string> = new Set([
-  EventType.TASK_CREATED,
-  EventType.ARTIFACT_CREATED,
-  EventType.ARTIFACT_DRAFTED,
-  EventType.ARTIFACT_REVIEW_REQUESTED,
-  EventType.REVIEW_ASSIGNED,
-  EventType.REVIEW_SUBMITTED,
-  EventType.ARTIFACT_REVIEWED,
-  EventType.AUDIT_NOTE_ADDED,
-]);
-
-export const TimelinePanel: FC<TimelinePanelProps> = ({ events }) => {
-  const filtered = events
-    .filter((e) => TIMELINE_EVENT_TYPES.has(e.type))
-    .sort((a, b) => a.sequence - b.sequence);
+export const TimelinePanel: FC<TimelinePanelProps> = ({ timeline }) => {
+  const events = (timeline?.events ?? []).slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   return (
     <div className="panel-section" data-testid="timeline-panel">
-      <SectionHeader title="Timeline" count={filtered.length} countIntent="info" />
-      {filtered.length === 0 ? (
+      <SectionHeader title="Timeline" count={events.length} countIntent="info" />
+      {events.length === 0 ? (
         <div className="panel-empty">No relevant events.</div>
       ) : (
         <div className="timeline-list">
-          {filtered.map((event) => (
+          {events.map((event) => (
             <div key={event.eventId} className="timeline-row">
               <div className="timeline-time">
-                <div>#{event.sequence}</div>
-                <div>{formatTime(event.occurredAt)}</div>
+                <div>{event.eventId}</div>
+                <div>{formatTime(event.timestamp)}</div>
               </div>
               <div className="timeline-content">
                 <div className="timeline-type">{event.type}</div>
@@ -47,22 +35,22 @@ export const TimelinePanel: FC<TimelinePanelProps> = ({ events }) => {
   );
 };
 
-function summarizeEvent(event: DomainEvent): string {
+function summarizeEvent(event: { type: string; payload: Record<string, unknown> }): string {
   switch (event.type) {
     case EventType.TASK_CREATED:
-      return `Task ${(event.payload as { taskId?: string }).taskId ?? ""}`;
+      return `Task ${(event.payload.taskId as string | undefined) ?? ""}`;
     case EventType.ARTIFACT_CREATED:
-      return `Artifact ${(event.payload as { artifactId?: string }).artifactId ?? ""}`;
+      return `Artifact ${(event.payload.artifactId as string | undefined) ?? ""}`;
     case EventType.REVIEW_ASSIGNED:
-      return `Review assigned to ${(event.payload as { agentId?: string }).agentId ?? ""}`;
+      return `Review assigned to ${(event.payload.agentId as string | undefined) ?? ""}`;
     case EventType.REVIEW_SUBMITTED:
-      return `Review submitted: ${(event.payload as { verdict?: string }).verdict ?? ""}`;
+      return `Review submitted: ${(event.payload.verdict as string | undefined) ?? ""}`;
     case EventType.ARTIFACT_REVIEWED:
-      return `Review finalized: ${(event.payload as { verdict?: string }).verdict ?? ""}`;
+      return `Review finalized: ${(event.payload.verdict as string | undefined) ?? ""}`;
     case EventType.AUDIT_NOTE_ADDED:
-      return `Audit note by ${(event.payload as { author?: string }).author ?? ""}`;
+      return `Audit note by ${(event.payload.author as string | undefined) ?? ""}`;
     default:
-      return event.eventId;
+      return event.type;
   }
 }
 

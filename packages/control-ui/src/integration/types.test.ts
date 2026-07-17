@@ -3,7 +3,7 @@ import type { IntegrationProjection, IssueQueueItem } from "./types.js";
 
 describe("integration types", () => {
   it("can construct a minimal IntegrationProjection", () => {
-    const p: IntegrationProjection = { github: null, reviews: null };
+    const p: IntegrationProjection = { github: null, reviews: null, timeline: null };
     expect(p.github).toBeNull();
   });
 

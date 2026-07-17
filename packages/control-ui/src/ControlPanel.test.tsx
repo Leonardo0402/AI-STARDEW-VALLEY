@@ -120,7 +120,7 @@ function renderPanel(
     mode: "command" as ExperienceMode,
     onSendCommand: vi.fn().mockResolvedValue(undefined),
     capabilities,
-    integration: { github: null, reviews: null },
+    integration: { github: null, reviews: null, timeline: { events: [] } },
     ...overrides,
   };
   return { ...render(<ControlPanel {...props} />), props };
@@ -411,7 +411,7 @@ describe("ControlPanel", () => {
           mode: "command",
           onSendCommand: vi.fn(),
           capabilities,
-          integration: { github: null, reviews: null },
+          integration: { github: null, reviews: null, timeline: { events: [] } },
         } as React.ComponentProps<typeof ControlPanel>)}
       />
     );
@@ -661,7 +661,7 @@ describe("ControlPanel selection", () => {
 describe("integration panels", () => {
   it("renders QueuePanel, ReviewBlocker, EvidencePanel and TimelinePanel in command mode", () => {
     renderPanel({
-      integration: { github: { issues: [], pulls: [], auditNotes: [] }, reviews: { assigned: [], submitted: [] } },
+      integration: { github: { issues: [], pulls: [], auditNotes: [] }, reviews: { assigned: [], submitted: [] }, timeline: { events: [] } },
     });
     expect(screen.getByTestId("queue-panel")).toBeInTheDocument();
     expect(screen.getByTestId("review-blocker")).toBeInTheDocument();

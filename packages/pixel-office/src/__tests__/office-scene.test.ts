@@ -958,6 +958,7 @@ describe("updateIntegration", () => {
     const integration: IntegrationProjection = {
       github: { issues: [], pulls: [], auditNotes: [] },
       reviews: { assigned: [], submitted: [] },
+      timeline: { events: [] },
     };
 
     scene.updateIntegration(integration);
@@ -987,6 +988,11 @@ describe("updateIntegration", () => {
       reviews: {
         assigned: [{ reviewId: "r1", taskId: "t1", assigneeId: "", title: "" }],
         submitted: [{ reviewId: "r2", taskId: "t2", title: "" }],
+      },
+      timeline: {
+        events: [
+          { eventId: "e1", type: "review.assigned", timestamp: "2026-01-01T00:00:00Z", payload: { agentId: "a1" } },
+        ],
       },
     } as unknown as IntegrationProjection;
 
@@ -1036,6 +1042,11 @@ describe("updateIntegration", () => {
       reviews: {
         assigned: [{ reviewId: "r1", taskId: "t1", assigneeId: "", title: "" }],
         submitted: [{ reviewId: "r2", taskId: "t2", title: "" }],
+      },
+      timeline: {
+        events: [
+          { eventId: "e1", type: "review.assigned", timestamp: "2026-01-01T00:00:00Z", payload: { agentId: "a1" } },
+        ],
       },
     } as unknown as IntegrationProjection;
 

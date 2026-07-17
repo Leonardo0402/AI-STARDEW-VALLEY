@@ -13,12 +13,12 @@ export function useIntegrationState(
   store: SnapshotStore
 ): IntegrationState {
   const [projection, setProjection] = useState<IntegrationProjection>(() =>
-    projectIntegration(adapter, store.getSnapshot())
+    projectIntegration(adapter, store.getSnapshot(), store.getEventLog())
   );
 
   useEffect(() => {
     return store.subscribe((snap: RuntimeSnapshot) => {
-      setProjection(projectIntegration(adapter, snap));
+      setProjection(projectIntegration(adapter, snap, store.getEventLog()));
     });
   }, [adapter, store]);
 

@@ -255,7 +255,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
             onSendCommand={onSendCommand}
           />
           <EvidencePanel auditNotes={integration.github?.auditNotes ?? []} />
-          <TimelinePanel events={eventLog} />
+          <TimelinePanel timeline={integration.timeline} />
 
           <div className="panel-section">
             <SectionHeader title="Agents" count={projection.agents.length} countIntent="idle" />

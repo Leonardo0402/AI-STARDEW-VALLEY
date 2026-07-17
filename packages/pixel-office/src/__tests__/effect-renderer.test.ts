@@ -534,6 +534,7 @@ describe("integration effects", () => {
     const integration: IntegrationProjection = {
       github: null,
       reviews: { assigned: [], submitted: [{ reviewId: "r1" } as any] },
+      timeline: { events: [] },
     };
     renderer.updateIntegration(integration);
     expect(renderer.getActiveEffects()).toContain("review-pending");
@@ -544,6 +545,7 @@ describe("integration effects", () => {
     const integration: IntegrationProjection = {
       github: { issues: [{ taskId: "t1" } as any], pulls: [], auditNotes: [] },
       reviews: { assigned: [], submitted: [] },
+      timeline: { events: [] },
     };
     renderer.updateIntegration(integration);
     expect(renderer.getActiveEffects()).toContain("queue-glow");
@@ -554,8 +556,9 @@ describe("integration effects", () => {
     renderer.updateIntegration({
       github: null,
       reviews: { assigned: [], submitted: [{ reviewId: "r1" } as any] },
+      timeline: { events: [] },
     });
-    renderer.updateIntegration({ github: null, reviews: null });
+    renderer.updateIntegration({ github: null, reviews: null, timeline: null });
     expect(renderer.getActiveEffects()).not.toContain("review-pending");
     expect(renderer.getActiveEffects()).not.toContain("queue-glow");
   });

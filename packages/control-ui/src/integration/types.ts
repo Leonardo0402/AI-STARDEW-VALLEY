@@ -4,6 +4,18 @@ import type { ReviewAssignment, ReviewDraft } from "@agent-office/core";
 export interface IntegrationProjection {
   github: GitHubIntegrationView | null;
   reviews: ReviewIntegrationView | null;
+  timeline: TimelineIntegrationView | null;
+}
+
+export interface TimelineIntegrationView {
+  events: TimelineEventView[];
+}
+
+export interface TimelineEventView {
+  eventId: Id;
+  type: string;
+  timestamp: string;
+  payload: Record<string, unknown>;
 }
 
 export interface GitHubIntegrationView {
