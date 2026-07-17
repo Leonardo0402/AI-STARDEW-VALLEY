@@ -140,6 +140,7 @@ export const App: FC<AppProps> = ({
     diagnostics,
     sendCommand,
     sendLifeSimCommand,
+    clearErrors,
   } = useComposedOfficeState(
     session,
     store,
@@ -186,7 +187,12 @@ export const App: FC<AppProps> = ({
     if (view !== "pixel" || !canvasRef.current) return;
     if (sceneRef.current) return;
 
-    const scene = new PixelOfficeScene(canvasRef.current, { reduceMotion });
+    const preserveDrawingBuffer = import.meta.env.VITE_PIXEL_PRESERVE_DRAWING_BUFFER === "true";
+    console.log("[App] creating PixelOfficeScene", { preserveDrawingBuffer, raw: import.meta.env.VITE_PIXEL_PRESERVE_DRAWING_BUFFER });
+    const scene = new PixelOfficeScene(canvasRef.current, {
+      reduceMotion,
+      preserveDrawingBuffer,
+    });
     sceneRef.current = scene;
     sceneReadyRef.current = false;
     scene.setOnSelect((s) => setSelection(s as OfficeSelection));
@@ -285,9 +291,14 @@ export const App: FC<AppProps> = ({
     if (!demoControls || !React.isValidElement(demoControls)) return demoControls;
     return React.cloneElement(
       demoControls as React.ReactElement<{ onReset?: () => void }>,
-      { onReset: () => setSelection(null) }
+      {
+        onReset: () => {
+          setSelection(null);
+          clearErrors();
+        },
+      }
     );
-  }, [demoControls]);
+  }, [demoControls, clearErrors]);
 
   const handleModeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const buttons = modeButtonRefs.current.filter(Boolean) as HTMLButtonElement[];

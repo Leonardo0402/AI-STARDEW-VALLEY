@@ -57,6 +57,14 @@ export interface PixelOfficeSceneOptions {
   useSpriteRenderer?: boolean;
   /** 禁用连续动画（行走帧、脉冲等）。 */
   reduceMotion?: boolean;
+  /**
+   * 启用 WebGL drawing buffer 保留。
+   *
+   * 在 headless / SwiftShader 环境下截图时，浏览器合成器可能无法在帧之间
+   * 保留 WebGL 内容，导致截图出现空白画布。开启此选项可确保截图可靠捕获
+   * 已渲染的画面。默认 false 以避免正常交互场景下的轻微性能开销。
+   */
+  preserveDrawingBuffer?: boolean;
 }
 
 export class PixelOfficeScene {
@@ -77,6 +85,7 @@ export class PixelOfficeScene {
 
   private useSpriteRenderer: boolean;
   private reduceMotion: boolean;
+  private preserveDrawingBuffer: boolean;
   private overlayPulsePhase = 0;
   private idlePhase = 0;
   private blockedPulsePhase = 0;
@@ -91,6 +100,7 @@ export class PixelOfficeScene {
   constructor(canvas: HTMLCanvasElement, options: PixelOfficeSceneOptions = {}) {
     this.useSpriteRenderer = options.useSpriteRenderer ?? true;
     this.reduceMotion = options.reduceMotion ?? false;
+    this.preserveDrawingBuffer = options.preserveDrawingBuffer ?? false;
     // Application is created lazily in init() so that React StrictMode
     // mount/unmount cycles do not allocate a WebGL context that is never
     // cleaned up and starves the real instance.
@@ -130,8 +140,9 @@ export class PixelOfficeScene {
       antialias: false,
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
+      preserveDrawingBuffer: this.preserveDrawingBuffer,
     });
-    console.log("[PixelOfficeScene] app.init resolved", { destroyed: this.destroyed, hasRenderer: !!this.app.renderer });
+    console.log("[PixelOfficeScene] app.init resolved", { destroyed: this.destroyed, hasRenderer: !!this.app.renderer, preserveDrawingBuffer: this.preserveDrawingBuffer });
     if (this.destroyed) {
       // 在 init 期间被 destroy 了
       console.log("[PixelOfficeScene] cleaning up app after init because destroyed");
@@ -235,10 +246,20 @@ export class PixelOfficeScene {
         this.propRenderer.updateIntegration(this.currentIntegration);
         this.effectRenderer.updateIntegration(this.currentIntegration);
       }
+
+      // Headless / SwiftShader 环境下 PixiJS Application ticker 可能不主动提交
+      // 帧到 canvas，导致截图捕获空白。在 projection 更新后强制 render 一次，
+      // 确保场景内容写入 back buffer。
+      if (typeof this.app.render === "function") {
+        this.app.render();
+      }
     } else {
       this.renderRooms(projection.rooms);
       this.renderAgents(projection.agents, projection.rooms);
       this.renderOverlays(projection);
+      if (typeof this.app.render === "function") {
+        this.app.render();
+      }
     }
   }
 

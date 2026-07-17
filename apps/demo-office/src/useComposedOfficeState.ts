@@ -66,5 +66,6 @@ export function useComposedOfficeState(
     integration,
     lifeSim,
     sendLifeSimCommand,
+    clearErrors: office.clearErrors,
   };
 }

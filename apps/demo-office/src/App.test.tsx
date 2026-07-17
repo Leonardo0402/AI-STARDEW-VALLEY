@@ -165,6 +165,7 @@ const baseState = {
     execute: vi.fn(),
   },
   sendLifeSimCommand: vi.fn(),
+  clearErrors: vi.fn(),
 };
 
 const mockLifeSimSession = {

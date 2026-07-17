@@ -39,6 +39,7 @@ export interface OfficeState {
     payload: unknown,
     targetId?: string | null
   ) => Promise<void>;
+  clearErrors: () => void;
 }
 
 export function useOfficeState(
@@ -128,6 +129,10 @@ export function useOfficeState(
     [gateway, runtimeId]
   );
 
+  const clearErrors = useCallback(() => {
+    setErrors([]);
+  }, []);
+
   return {
     projection,
     eventLog,
@@ -135,5 +140,6 @@ export function useOfficeState(
     sessionState,
     diagnostics,
     sendCommand,
+    clearErrors,
   };
 }

@@ -1,48 +1,44 @@
 # Final Verification Log — Issue #49 Office UI Integration
 
-**Date:** 2026-07-15
-**Branch:** issue-49
-**Base commit:** a76d41a
+**Date:** 2026-07-17
+**Branch:** feat/issue-49-office-ui-integration
+**Base commit:** caedab5
 
 ## Summary
 
 | Check | Command | Result |
 |---|---|---|
-| Test suite | `npm test` | ✅ PASS (896 passed, 0 failed) |
-| TypeScript | `npm run build` (runs `tsc -b`) | ✅ PASS |
-| Lint | `npm run lint` | ⚪ Not configured |
-| Build | `npm run build` | ✅ PASS |
-| Screenshot gate | `node apps/demo-office/scripts/capture-demo-office-screenshots.mjs` | ❌ FAIL — page load timeout |
+| Test suite | `npx vitest run --pool=forks --poolOptions.forks.minForks=1 --poolOptions.forks.maxForks=2` | PASS (89 files, 907 tests) |
+| TypeScript | `npm run build` (runs `tsc -b`) | PASS |
+| Lint | `npm run lint` | Not configured |
+| Build | `npm run build` | PASS |
+| Screenshot gate (states 15–18) | `SCREENSHOT_STATES=... node apps/demo-office/scripts/capture-demo-office-screenshots.mjs` | PASS |
+| Annotated comparisons (states 15–18) | `ANNOTATED_STATES=... node apps/demo-office/scripts/generate-annotated-comparisons.mjs` | PASS |
 
 ---
 
-## 1. Test Suite (`npm test`)
+## 1. Test Suite
 
 **Command:**
 
 ```bash
-npm test
+npx vitest run --pool=forks --poolOptions.forks.minForks=1 --poolOptions.forks.maxForks=2
 ```
 
 **Result:**
 
 ```text
- Test Files  87 passed (87)
-      Tests  896 passed (896)
-   Start at  19:21:23
-   Duration  44.82s
+Test Files  89 passed (89)
+     Tests  907 passed (907)
+  Start at  20:42:31
+  Duration  269.62s
 ```
-
-**Failures:**
-
-None.
 
 **Notes:**
 
-- Task 20 fixed the `asset-loader.test.ts` V1 asset list to include the four integration prop sprites (`mission-board`, `review-desk`, `filing-cabinet`, `wall-scroll`).
-- The previously failing `mock-adapter.test.ts` also passed in this run.
-- One React `act(...)` warning in `packages/control-ui/src/integration/useIntegrationState.test.tsx` (non-fatal).
-- All Issue #49 UI tests in `apps/demo-office` and `packages/control-ui` passed.
+- Running with the default worker pool on this Windows/RTX 3050-4GB host produced intermittent timing failures in unrelated tests (`session-reconnect.test.ts`, `integration.test.ts`).
+- Limiting Vitest to at most 2 forked workers eliminated the contention and produced a stable green run.
+- One non-fatal React `act(...)` warning remains in `packages/control-ui/src/integration/useIntegrationState.test.tsx`.
 
 ---
 
@@ -56,18 +52,11 @@ npm run build
 
 `npm run build` runs `tsc -b` first, which type-checks all workspace project references.
 
-**Result:**
-
-```text
-> build
-> tsc -b && npm run build -w apps/demo-office
-```
-
-` tsc -b` completed with no errors.
+**Result:** `tsc -b` completed with no errors.
 
 ---
 
-## 3. Lint (`npm run lint`)
+## 3. Lint
 
 **Command:**
 
@@ -81,7 +70,7 @@ npm run lint
 npm error Missing script: "lint"
 ```
 
-No `lint` script is defined in the root `package.json` or any workspace `package.json`. ESLint / Biome / oxlint is not configured in this repository. This step was skipped and documented.
+No lint script is defined in the root `package.json` or any workspace `package.json`. ESLint / Biome / oxlint is not configured in this repository. This step was skipped and documented.
 
 ---
 
@@ -96,79 +85,98 @@ npm run build
 **Result:**
 
 ```text
+> build
+> tsc -b && npm run build -w apps/demo-office
+
 > @agent-office/demo-office@1.0.0 build
 > npm run copy-pixel-assets && tsc --noEmit && vite build
 
 Copied pixel assets to ...apps/demo-office/public/assets
 vite v5.4.21 building for production...
-transforming...
-✓ 843 modules transformed.
-rendering chunks...
-computing gzip size...
 ...
-✓ built in 1m 40s
+dist/assets/index-DILw7ClO.js               650.98 kB │ gzip: 191.36 kB
+✓ built in 50.03s
 ```
 
 Build completed successfully. Output in `apps/demo-office/dist/`.
 
 **Warnings:**
 
-- Vite chunk-size warning: `dist/assets/index-BOmldpZj.js 650.19 kB │ gzip: 191.16 kB`
-- This is a pre-existing bundle-size warning, not a failure.
+- Vite chunk-size warning on `index-DILw7ClO.js` is pre-existing and not a failure.
 
 ---
 
-## 5. Screenshot Gate
+## 5. Screenshot Gate (states 15–18)
 
 **Command:**
 
-```bash
+```powershell
+$env:SCREENSHOT_STATES="15-queue-populated,16-review-pending,17-evidence-added,18-timeline-visible";
 node apps/demo-office/scripts/capture-demo-office-screenshots.mjs
 ```
 
 **Result:**
 
 ```text
-Screenshot capture failed: page.goto: Timeout 30000ms exceeded.
-Call log:
-  - navigating to "http://localhost:5173/", waiting until "load"
+Captured: .../baseline/1366x768/15-queue-populated.png
+...
+Captured: .../baseline/1920x1080/18-timeline-visible.png
+Resolution 1920x1080 complete.
+All screenshots captured.
 ```
 
-**Setup attempted:**
-
-1. Started Vite dev server: `npm run dev` in `apps/demo-office`.
-2. Discovered `VITE_LIFE_SIM_BASE_URL` default (`http://localhost:3001`) is incompatible with the Vite dev plugin, which hosts LifeSim at `/life-sim/default`.
-3. Restarted dev server with `$env:VITE_LIFE_SIM_BASE_URL="/"`.
-4. Verified `/life-sim/default/snapshot` responds correctly via `Invoke-RestMethod`.
-5. Screenshot script still timed out waiting for the app to finish loading (`page.goto` 30s default).
-
-**Root cause assessment:**
-
-- On the RTX 3050-4GB / Windows host, cold-start Vite compilation of the large workspace graph plus initial LifeSim bootstrap exceeds Playwright's default 30-second navigation timeout.
-- The script itself does not expose a timeout override.
-- This is an environment / resource constraint, not a code defect in the verification branch.
-
-**Existing artifacts:**
-
-`git status` shows baseline and annotated-comparison screenshots for states 15–18 (new) and modified states 1–14, indicating the gate has been executed successfully during earlier tasks. The current session could not regenerate the full set due to the timeout above.
+All three target resolutions produced baselines for states 15–18. The script used the PixiJS-extract overlay fallback because headless SwiftShader did not present the WebGL canvas to the compositor, but the rendered content was verified by PixiJS extract variation checks (variation > 7000).
 
 ---
 
-## 6. Pre-existing Changes on Disk
+## 6. Annotated Comparisons (states 15–18)
 
-`git status --short` also reports:
+**Command:**
 
-- Modified `package-lock.json`
-- Modified `packages/pixel-office/src/asset-loader.ts`
-- Modified baseline/annotated-comparison screenshots under `docs/design/swarm-office-v1.1/`
+```powershell
+$env:ANNOTATED_STATES="15-queue-populated,16-review-pending,17-evidence-added,18-timeline-visible";
+node apps/demo-office/scripts/generate-annotated-comparisons.mjs
+```
 
-These were not introduced by Task 20 and were left untouched.
+**Result:**
+
+```text
+Generated: .../annotated-comparisons/15-queue-populated-annotated.png
+Generated: .../annotated-comparisons/16-review-pending-annotated.png
+Generated: .../annotated-comparisons/17-evidence-added-annotated.png
+Generated: .../annotated-comparisons/18-timeline-visible-annotated.png
+All annotated comparisons generated.
+```
 
 ---
 
-## 7. Conclusion
+## 7. Changed Files Ready for Commit
 
-- **TypeScript and build are green.**
-- **Test suite is green** (896 passed, 0 failed) after the Task 20 asset-loader test fix.
-- **Lint is not configured** in this repo.
-- **Screenshot gate could not complete in this session** due to Playwright/Vite cold-start timeout on constrained hardware; the required environment setup (LifeSim URL) was identified and verified.
+Source fixes:
+
+- `apps/demo-office/scripts/capture-demo-office-screenshots.mjs`
+- `apps/demo-office/src/App.test.tsx`
+- `apps/demo-office/src/App.tsx`
+- `apps/demo-office/src/useComposedOfficeState.ts`
+- `packages/control-ui/src/useOfficeState.ts`
+- `packages/pixel-office/src/office-scene.ts`
+
+Visual artifacts:
+
+- `docs/design/swarm-office-v1.1/baseline/*/*.png`
+- `docs/design/swarm-office-v1.1/annotated-comparisons/*-annotated.png`
+
+Verification docs:
+
+- `.superpowers/sdd/final-verification.md`
+
+---
+
+## 8. Conclusion
+
+- TypeScript and build are green.
+- Test suite is green (907/907) with limited worker concurrency.
+- Lint is not configured.
+- Screenshot gate regenerated states 15–18 across 1366×768, 1440×900, and 1920×1080.
+- Annotated comparisons regenerated for states 15–18.
+- Branch is ready for final commit and PR #50 submission.
