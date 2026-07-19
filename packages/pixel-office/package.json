@@ -10,6 +10,7 @@
   "dependencies": {
     "@agent-office/protocol": "1.0.0",
     "@agent-office/core": "1.0.0",
+    "@agent-office/control-ui": "1.0.0",
     "pixi.js": "^8.5.0"
   }
 }

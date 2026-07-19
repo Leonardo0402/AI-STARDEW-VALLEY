@@ -280,6 +280,26 @@ export class AgentReviewOrchestrator implements RuntimeAdapter {
     return this.submittedReviews.get(reviewId);
   }
 
+  getIntegrationProjection(snapshot: RuntimeSnapshot): {
+    github: { issues: unknown[]; pulls: unknown[]; auditNotes: unknown[] } | null;
+    reviews: { assigned: ReviewAssignment[]; submitted: ReviewDraft[] };
+  } {
+    const innerAny = this.inner as unknown as Record<string, unknown>;
+    const githubEvidence =
+      typeof innerAny.getGitHubEvidence === "function"
+        ? (innerAny.getGitHubEvidence as () => GitHubAdapterEvidence)()
+        : null;
+    return {
+      github: githubEvidence
+        ? projectGitHubIntegration(githubEvidence, snapshot)
+        : null,
+      reviews: {
+        assigned: this.getAssignedReviews(),
+        submitted: this.getSubmittedReviews(),
+      },
+    };
+  }
+
   // ─── Pass-through methods ──────────────────────────────────
 
   async getSnapshot(): Promise<RuntimeSnapshot> {
@@ -334,4 +354,95 @@ export class AgentReviewOrchestrator implements RuntimeAdapter {
       payload: { body },
     });
   }
+}
+
+interface GitHubAdapterEvidence {
+  tasks: Record<
+    string,
+    {
+      kind: "issue";
+      number: number;
+      rawState: string;
+      stateReason?: string | null;
+      closedAt?: string | null;
+      labels: string[];
+      assignees: string[];
+      url: string;
+    }
+  >;
+  artifacts: Record<
+    string,
+    {
+      kind: "pr";
+      number: number;
+      rawState: string;
+      labels: string[];
+      reviewers?: string[];
+      url: string;
+    }
+  >;
+  auditNotes: Array<{
+    auditId: string;
+    taskId: string;
+    body: string;
+    author: string;
+    createdAt: string;
+  }>;
+}
+
+function projectGitHubIntegration(
+  evidence: GitHubAdapterEvidence,
+  snapshot: RuntimeSnapshot
+): { issues: unknown[]; pulls: unknown[]; auditNotes: unknown[] } {
+  const issues: unknown[] = [];
+  const pulls: unknown[] = [];
+
+  for (const task of snapshot.tasks) {
+    const ref = evidence.tasks[task.taskId];
+    if (!ref) continue;
+    if (ref.kind === "issue") {
+      issues.push({
+        taskId: task.taskId,
+        number: ref.number,
+        kind: "issue",
+        title: task.title,
+        state: ref.rawState as "open" | "closed",
+        stateReason: ref.stateReason,
+        closedAt: ref.closedAt ?? null,
+        labels: ref.labels,
+        assignees: ref.assignees,
+        url: ref.url,
+      });
+    }
+  }
+
+  for (const art of snapshot.artifacts) {
+    const ref = evidence.artifacts[art.artifactId];
+    if (!ref || ref.kind !== "pr") continue;
+    const task = snapshot.tasks.find((t) => t.taskId === art.taskId);
+    pulls.push({
+      taskId: task?.taskId ?? art.taskId,
+      artifactId: art.artifactId,
+      number: ref.number,
+      kind: "pr",
+      title: art.title,
+      state: ref.rawState as "open" | "closed" | "merged",
+      draft: art.status === "draft",
+      labels: ref.labels,
+      reviewers: ref.reviewers ?? [],
+      url: ref.url,
+    });
+  }
+
+  return {
+    issues,
+    pulls,
+    auditNotes: evidence.auditNotes.map((n) => ({
+      auditId: n.auditId,
+      taskId: n.taskId,
+      body: n.body,
+      author: n.author,
+      createdAt: n.createdAt,
+    })),
+  };
 }

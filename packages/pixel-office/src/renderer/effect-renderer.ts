@@ -8,6 +8,7 @@
  */
 import { Container, Graphics, Text, TextStyle, Sprite, Texture } from "pixi.js";
 import type { OfficeProjection, AgentView, ArtifactView } from "@agent-office/protocol";
+import type { IntegrationProjection } from "@agent-office/control-ui/integration";
 import { getAgentPositionByRoomId, type RoomLayout, type RoomLayoutEntry } from "../layout.js";
 import type { AssetLoader } from "../asset-loader.js";
 import { computeAgentPresentationState } from "../presentation-state.js";
@@ -34,6 +35,7 @@ export class EffectRenderer {
   private bellPulsePhase = 0;
   private blockedPulsePhase = 0;
   private sparklePhase = 0;
+  private integrationEffects: Record<string, EffectItem> = {};
 
   constructor(
     private layer: Container,
@@ -45,6 +47,51 @@ export class EffectRenderer {
 
   setReduceMotion(value: boolean): void {
     this.reduceMotion = value;
+  }
+
+  updateIntegration(integration: IntegrationProjection): void {
+    const pendingApproval = (integration.reviews?.submitted.length ?? 0) > 0;
+    this.setEffect("review-pending", pendingApproval);
+
+    const hasQueue =
+      (integration.github?.issues.length ?? 0) + (integration.github?.pulls.length ?? 0) > 0;
+    this.setEffect("queue-glow", hasQueue);
+  }
+
+  getActiveEffects(): string[] {
+    return Object.keys(this.integrationEffects);
+  }
+
+  private setEffect(name: string, active: boolean): void {
+    if (active && !this.integrationEffects[name]) {
+      this.integrationEffects[name] = this.createGlowEffect(name);
+    } else if (!active && this.integrationEffects[name]) {
+      const item = this.integrationEffects[name];
+      this.layer.removeChild(item.graphics);
+      this.layer.removeChild(item.label);
+      if (item.sprite) this.layer.removeChild(item.sprite);
+      delete this.integrationEffects[name];
+    }
+  }
+
+  private createGlowEffect(name: string): EffectItem {
+    const graphics = new Graphics();
+    const label = new Text({
+      text: "",
+      style: new TextStyle({ fontSize: 10, fill: 0xf2f0eb, fontFamily: "Inter, system-ui, sans-serif" }),
+    });
+    label.anchor.set(0.5, 0.5);
+
+    const color = name === "review-pending" ? 0xc96a5b : 0xe6a85c;
+    const x = name === "review-pending" ? 232 : 96;
+    const y = 156;
+
+    graphics.circle(x, y, 28).fill({ color, alpha: 0.12 });
+    graphics.circle(x, y, 18).fill({ color, alpha: 0.22 });
+
+    this.layer.addChild(graphics);
+    this.layer.addChild(label);
+    return { graphics, label };
   }
 
   render(projection: OfficeProjection, layout: RoomLayout, deltaMS = 16.67): void {

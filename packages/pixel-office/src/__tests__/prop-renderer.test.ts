@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { IntegrationProjection } from "@agent-office/control-ui/integration";
 import { PropRenderer } from "../renderer/prop-renderer.js";
 import { createDefaultLayout } from "../layout.js";
 import { AssetLoader } from "../asset-loader.js";
@@ -6,9 +7,9 @@ import { MockContainer, MockGraphics, MockSprite, MockTexture, MockAssets } from
 
 vi.mock("pixi.js", () => import("./pixi-mock.js").then((m) => m.createPixiMock()));
 
-describe("PropRenderer", () => {
-  let container: MockContainer;
+let container: MockContainer;
 
+describe("PropRenderer", () => {
   beforeEach(() => {
     container = new MockContainer();
     MockAssets.reset();
@@ -127,5 +128,263 @@ describe("PropRenderer", () => {
       g.commands.some((cmd) => cmd.type === "circle" && (cmd.args[1] as number) > cy)
     );
     expect(hasBell).toBe(false);
+  });
+});
+
+describe("integration props", () => {
+  beforeEach(() => {
+    container = new MockContainer();
+    MockAssets.reset();
+  });
+
+  it("creates mission board when queue has items", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "mission-board": new MockTexture("mission-board"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/mission-board"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: { issues: [{ taskId: "t1" } as any], pulls: [], auditNotes: [] },
+      reviews: { assigned: [], submitted: [] },
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).toContain("mission-board");
+  });
+
+  it("creates review desk when assigned reviews exist", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "review-desk": new MockTexture("review-desk"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/review-desk"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: { issues: [], pulls: [], auditNotes: [] },
+      reviews: { assigned: [{ taskId: "r1" } as any], submitted: [] },
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).toContain("review-desk");
+  });
+
+  it("creates filing cabinet when audit notes exist", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "filing-cabinet": new MockTexture("filing-cabinet"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/filing-cabinet"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: { issues: [], pulls: [], auditNotes: [{ noteId: "n1" } as any] },
+      reviews: { assigned: [], submitted: [] },
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).toContain("filing-cabinet");
+  });
+
+  it("does not create wall scroll when github is non-null but timeline is empty", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: { issues: [{ taskId: "t1" } as any], pulls: [], auditNotes: [] },
+      reviews: null,
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
+  });
+
+  it("does not create wall scroll when reviews are non-null but timeline is empty", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: { assigned: [{ taskId: "r1" } as any], submitted: [] },
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
+  });
+
+  it("does not create wall scroll when timeline projection has no events", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: null,
+      timeline: { events: [] },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
+  });
+
+  it("creates wall scroll when review-assigned timeline event exists", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: null,
+      timeline: {
+        events: [
+          { eventId: "e1", type: "review.assigned", timestamp: "2026-01-01T00:00:00Z", payload: { agentId: "a1" } },
+        ],
+      },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).toContain("wall-scroll");
+  });
+
+  it("creates wall scroll when audit-note-added timeline event exists", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    const integration: IntegrationProjection = {
+      github: null,
+      reviews: null,
+      timeline: {
+        events: [
+          { eventId: "e1", type: "audit_note.added", timestamp: "2026-01-01T00:00:00Z", payload: { author: "auditor-1" } },
+        ],
+      },
+    };
+    renderer.updateIntegration(integration);
+
+    expect(renderer.getIntegrationSpriteNames()).toContain("wall-scroll");
+  });
+
+  it("removes wall scroll when timeline becomes empty", async () => {
+    const layout = createDefaultLayout();
+    const textures: Record<string, MockTexture> = {
+      "wall-scroll": new MockTexture("wall-scroll"),
+    };
+    MockAssets.reset(textures);
+
+    const loader = new AssetLoader();
+    await loader.loadAll(["props/wall-scroll"]);
+
+    const renderer = new PropRenderer(
+      container as unknown as import("pixi.js").Container,
+      loader
+    );
+    renderer.render(layout);
+
+    renderer.updateIntegration({
+      github: null,
+      reviews: null,
+      timeline: {
+        events: [
+          { eventId: "e1", type: "review.submitted", timestamp: "2026-01-01T00:00:00Z", payload: {} },
+        ],
+      },
+    });
+    expect(renderer.getIntegrationSpriteNames()).toContain("wall-scroll");
+
+    renderer.updateIntegration({
+      github: null,
+      reviews: null,
+      timeline: { events: [] },
+    });
+    expect(renderer.getIntegrationSpriteNames()).not.toContain("wall-scroll");
   });
 });

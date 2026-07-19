@@ -4,6 +4,7 @@ import type {
   LifeSimSnapshot,
 } from "@agent-office/life-sim";
 import type { OfficeProjection } from "@agent-office/protocol";
+import type { IntegrationProjection } from "../integration/types.js";
 
 export interface WorldClockView {
   day: number;
@@ -37,6 +38,7 @@ export interface LifeSimProjection {
 
 export interface ComposedOfficeProjection extends OfficeProjection {
   lifeSim: LifeSimProjection;
+  integration: IntegrationProjection;
 }
 
 function deriveDayOfWeek(day: number): number {
@@ -272,7 +274,8 @@ export function projectLifeSim(
 
 export function composeProjections(
   office: OfficeProjection,
-  lifeSim: LifeSimProjection
+  lifeSim: LifeSimProjection,
+  integration: IntegrationProjection
 ): ComposedOfficeProjection {
-  return { ...office, lifeSim };
+  return { ...office, lifeSim, integration };
 }

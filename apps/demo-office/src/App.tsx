@@ -22,7 +22,7 @@ import React, {
   type KeyboardEvent,
 } from "react";
 import type { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
-import type { AdapterCapabilities, OfficeProjection } from "@agent-office/protocol";
+import type { AdapterCapabilities, OfficeProjection, RuntimeAdapter } from "@agent-office/protocol";
 import {
   ControlPanel,
   type ExperienceMode,
@@ -46,6 +46,8 @@ interface AppProps {
   store: SnapshotStore;
   gateway: CommandGateway;
   runtimeId: string;
+  /** Runtime adapter used to project integration state. */
+  adapter: RuntimeAdapter;
   /** Adapter capabilities — used to disable unsupported command buttons. */
   capabilities?: AdapterCapabilities;
   /** 演示层专用控件（如 DemoControls），由装配层 main.tsx 注入。
@@ -122,6 +124,7 @@ export const App: FC<AppProps> = ({
   store,
   gateway,
   runtimeId,
+  adapter,
   capabilities,
   demoControls,
   retryable = false,
@@ -137,12 +140,14 @@ export const App: FC<AppProps> = ({
     diagnostics,
     sendCommand,
     sendLifeSimCommand,
+    clearErrors,
   } = useComposedOfficeState(
     session,
     store,
     gateway,
     runtimeId,
     lifeSimSession,
+    adapter,
     lifeSimWorldId
   );
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("command");
@@ -182,7 +187,12 @@ export const App: FC<AppProps> = ({
     if (view !== "pixel" || !canvasRef.current) return;
     if (sceneRef.current) return;
 
-    const scene = new PixelOfficeScene(canvasRef.current, { reduceMotion });
+    const preserveDrawingBuffer = import.meta.env.VITE_PIXEL_PRESERVE_DRAWING_BUFFER === "true";
+    console.log("[App] creating PixelOfficeScene", { preserveDrawingBuffer, raw: import.meta.env.VITE_PIXEL_PRESERVE_DRAWING_BUFFER });
+    const scene = new PixelOfficeScene(canvasRef.current, {
+      reduceMotion,
+      preserveDrawingBuffer,
+    });
     sceneRef.current = scene;
     sceneReadyRef.current = false;
     scene.setOnSelect((s) => setSelection(s as OfficeSelection));
@@ -281,9 +291,14 @@ export const App: FC<AppProps> = ({
     if (!demoControls || !React.isValidElement(demoControls)) return demoControls;
     return React.cloneElement(
       demoControls as React.ReactElement<{ onReset?: () => void }>,
-      { onReset: () => setSelection(null) }
+      {
+        onReset: () => {
+          setSelection(null);
+          clearErrors();
+        },
+      }
     );
-  }, [demoControls]);
+  }, [demoControls, clearErrors]);
 
   const handleModeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const buttons = modeButtonRefs.current.filter(Boolean) as HTMLButtonElement[];
@@ -311,6 +326,11 @@ export const App: FC<AppProps> = ({
       sceneRef.current.updateProjection(projection);
     }
   }, [projection, view]);
+
+  // 当 integration projection 变化时同步到像素场景装饰层
+  useEffect(() => {
+    sceneRef.current?.updateIntegration(projection.integration);
+  }, [projection.integration]);
 
   // 将当前选择同步到场景渲染层
   useEffect(() => {
@@ -543,6 +563,7 @@ export const App: FC<AppProps> = ({
                 capabilities={capabilities}
                 selection={selection}
                 onSelect={setSelection}
+                integration={projection.integration}
               />
             </>
           )}

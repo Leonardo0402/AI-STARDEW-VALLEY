@@ -24,6 +24,13 @@ import { ErrorBanner } from "./components/ErrorBanner.js";
 import { FocusPanel } from "./FocusPanel.js";
 import { DebriefPanel } from "./DebriefPanel.js";
 import { artifactStatusIntent } from "./components/intents.js";
+import {
+  QueuePanel,
+  ReviewBlocker,
+  EvidencePanel,
+  TimelinePanel,
+  type IntegrationProjection,
+} from "./integration/index.js";
 import "./control-panel.css";
 
 export type ExperienceMode = "command" | "focus" | "debrief";
@@ -42,6 +49,7 @@ interface ControlPanelProps {
   capabilities?: AdapterCapabilities;
   selection?: OfficeSelection | null;
   onSelect?: (selection: OfficeSelection) => void;
+  integration: IntegrationProjection;
 }
 
 export const ControlPanel: FC<ControlPanelProps> = ({
@@ -53,6 +61,7 @@ export const ControlPanel: FC<ControlPanelProps> = ({
   capabilities,
   selection = null,
   onSelect,
+  integration,
 }) => {
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
@@ -233,6 +242,20 @@ export const ControlPanel: FC<ControlPanelProps> = ({
               <div className="action-error">{actionErrors["create-task"]}</div>
             )}
           </div>
+
+          <QueuePanel
+            issues={integration.github?.issues ?? []}
+            pulls={integration.github?.pulls ?? []}
+            selection={selection}
+            onSelect={onSelect}
+          />
+          <ReviewBlocker
+            assigned={integration.reviews?.assigned ?? []}
+            submitted={integration.reviews?.submitted ?? []}
+            onSendCommand={onSendCommand}
+          />
+          <EvidencePanel auditNotes={integration.github?.auditNotes ?? []} />
+          <TimelinePanel timeline={integration.timeline} />
 
           <div className="panel-section">
             <SectionHeader title="Agents" count={projection.agents.length} countIntent="idle" />

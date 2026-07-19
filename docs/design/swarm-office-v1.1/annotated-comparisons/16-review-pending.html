@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>16 — Review Pending</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #131014; color: #f2f0eb; font-family: Inter, system-ui, sans-serif; }
+    .header { padding: 16px 24px; border-bottom: 1px solid #322e36; }
+    .header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+    .header p { margin: 4px 0 0; font-size: 11px; color: #b8b0bc; }
+    .wrap { position: relative; display: inline-block; }
+    .wrap img { display: block; max-width: 100%; }
+    .container { padding: 16px 24px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>16 — Review Pending</h1>
+    <p>Baseline screenshot with current Issue #49 integration UI annotated. Reference: docs/design/swarm-office-v1.1/gap-audit.md</p>
+  </div>
+  <div class="container">
+    <div class="wrap" id="wrap">
+      <img src="../baseline/1440x900/16-review-pending.png" id="targetImg" />
+      <svg id="overlay" style="position:absolute;top:0;left:0;pointer-events:none;" xmlns="http://www.w3.org/2000/svg">
+        
+      <g transform="translate(1080, 620)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">1</text>
+      </g>
+      <line x1="1080" y1="620" x2="1110" y2="580" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1115" y="550" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">1.</strong> ReviewBlocker shows assigned reviews and submitted reviews awaiting human Approve/Reject.
+        </div>
+      </foreignObject>
+      <g transform="translate(140, 560)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">2</text>
+      </g>
+      <line x1="140" y1="560" x2="170" y2="520" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="175" y="490" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">2.</strong> Review Desk prop in the Review Room reflects active review assignments.
+        </div>
+      </foreignObject>
+      <g transform="translate(1080, 120)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">3</text>
+      </g>
+      <line x1="1080" y1="120" x2="1110" y2="80" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="1115" y="50" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">3.</strong> Submitted review rows route REVIEW_APPROVE / REVIEW_REJECT through the command gateway.
+        </div>
+      </foreignObject>
+      <g transform="translate(360, 560)">
+        <circle r="14" fill="#e6a85c" stroke="#131014" stroke-width="2" />
+        <text text-anchor="middle" dy="5" fill="#131014" font-size="14" font-weight="700">4</text>
+      </g>
+      <line x1="360" y1="560" x2="390" y2="520" stroke="#e6a85c" stroke-width="2" />
+      <foreignObject x="395" y="490" width="340" height="80">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="background:rgba(19,16,20,0.92);border:1px solid #e6a85c;border-radius:4px;padding:6px 8px;color:#f2f0eb;font-size:11px;line-height:1.35;font-family:Inter,system-ui,sans-serif;">
+          <strong style="color:#e6a85c">4.</strong> Reviewer agent posture can be oriented toward the Approval Room when human approval is pending.
+        </div>
+      </foreignObject>
+      </svg>
+    </div>
+  </div>
+  <script>
+    const img = document.getElementById('targetImg');
+    const svg = document.getElementById('overlay');
+    img.onload = () => {
+      svg.setAttribute('width', img.naturalWidth);
+      svg.setAttribute('height', img.naturalHeight);
+      document.getElementById('wrap').style.width = img.naturalWidth + 'px';
+    };
+    if (img.complete) img.onload();
+  </script>
+</body>
+</html>

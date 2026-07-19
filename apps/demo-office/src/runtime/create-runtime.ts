@@ -1,6 +1,13 @@
 import { MockRuntimeAdapter } from "@agent-office/adapter-mock";
 import { HttpSseRuntimeAdapter } from "@agent-office/adapter-http-sse";
-import { SnapshotStore, CommandGateway, RuntimeSession } from "@agent-office/core";
+import { GitHubRuntimeAdapter } from "@agent-office/adapter-github";
+import {
+  SnapshotStore,
+  CommandGateway,
+  RuntimeSession,
+  AgentReviewOrchestrator,
+  RuleBasedReviewStrategy,
+} from "@agent-office/core";
 import type { RuntimeAdapter } from "@agent-office/protocol";
 import type { DemoRuntimeConfig, RuntimeComposition } from "./types.js";
 
@@ -42,5 +49,13 @@ function createAdapter(config: DemoRuntimeConfig): RuntimeAdapter {
         baseUrl: config.baseUrl!,
         runtimeId: config.runtimeId,
       });
+    case "github": {
+      const gh = new GitHubRuntimeAdapter({
+        owner: config.githubOwner,
+        repo: config.githubRepo,
+        // apiClient is optional; omit means local commands only
+      });
+      return new AgentReviewOrchestrator(gh, { strategy: new RuleBasedReviewStrategy() });
+    }
   }
 }
