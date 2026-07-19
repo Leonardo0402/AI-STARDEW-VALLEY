@@ -1,5 +1,7 @@
 # Task 20 Report — Final Verification
 
+> **SUPERSEDED** — This document records an early-state verification run (894 passed / 2 failed, screenshot gate timeout, etc.). The issues documented here were resolved in later commits. See [final-verification.md](./final-verification.md) for the definitive final verification (917/917 tests, exit code 0, merged via PR #50 at commit a6a7cdb).
+
 **Verification commit:** `HEAD` — `chore: final verification for issue-49 integration UI`
 
 ## Verification Commands Run

@@ -8,7 +8,7 @@ interface TimelinePanelProps {
 }
 
 export const TimelinePanel: FC<TimelinePanelProps> = ({ timeline }) => {
-  const events = (timeline?.events ?? []).slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const events = (timeline?.events ?? []).slice().sort((a, b) => a.sequence - b.sequence);
 
   return (
     <div className="panel-section" data-testid="timeline-panel">

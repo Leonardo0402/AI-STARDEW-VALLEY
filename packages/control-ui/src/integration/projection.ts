@@ -26,6 +26,7 @@ export function projectTimelineIntegration(eventLog: DomainEvent[]): TimelineInt
     .sort((a, b) => a.sequence - b.sequence)
     .map((e) => ({
       eventId: e.eventId,
+      sequence: e.sequence,
       type: e.type,
       timestamp: e.occurredAt,
       payload: e.payload as Record<string, unknown>,

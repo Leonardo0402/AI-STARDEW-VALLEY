@@ -119,6 +119,8 @@ describe("projectTimelineIntegration", () => {
     ];
     const result = projectTimelineIntegration(events);
     expect(result.events.map((e) => e.eventId)).toEqual(["e1", "e2"]);
+    expect(result.events[0].sequence).toBe(1);
+    expect(result.events[1].sequence).toBe(2);
   });
 
   it("returns empty events for empty input", () => {

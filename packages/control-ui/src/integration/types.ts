@@ -13,6 +13,7 @@ export interface TimelineIntegrationView {
 
 export interface TimelineEventView {
   eventId: Id;
+  sequence: number;
   type: string;
   timestamp: string;
   payload: Record<string, unknown>;
